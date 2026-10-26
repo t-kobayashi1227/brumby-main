@@ -1,164 +1,163 @@
-"use client";
+import Link from "next/link";
+import { getSql } from "../../../lib/db";
+import { listPropertyCards, loadReport, targetRanking, mediaBreakdown, totalBudgetOptions, findFact, areaStats, nearbyFacilities, nearbyLists, type ReportFact } from "../../../lib/report";
+import type { ScoredAppealItem } from "../../../lib/scoring/decisions";
+import type { InputValue, PersonaResult, SalabilityResult, CompetitorComparison } from "../../../lib/scoring/types";
+import { CENSUS_SOURCE, MLIT_SOURCE } from "../../_lib/data";
+import PropertySteps from "../../_components/PropertySteps";
+import { card, emptyState } from "../../_lib/ui";
+import StrategyClient from "./StrategyClient";
+import AnalysisRunner from "./AnalysisRunner";
+import PropertyList from "./PropertyList";
+import { photoUrl, photoVersions } from "../../../lib/photos";
 
-import { useState } from "react";
-import UnderlineTabs from "../../_components/UnderlineTabs";
-import { SourceNote } from "../../_components/Notes";
-import {
-  type MediaBudget,
-  strategyTabDefs,
-  targetList,
-  appealList,
-  directionList,
-  computeDonut,
-  mediaRoleTable,
-  CENSUS_SOURCE,
-  MLIT_SOURCE,
-} from "../../_lib/data";
-import { card, fieldLabel, tableHead, btnPrimary, btnSecondary, budgetButtonClass } from "../../_lib/ui";
+// 販売戦略レポート（設計書 7章）：最新の分析結果（カード・判断カード・AIの文章）をそのまま見せる
+// ?property=<id> がなければ物件の一覧（写真・住所・価格・分析の結果）を出し、選ぶと ?property=<id> で開く。?done=<実行> は分析が終わった直後の印
 
-const BUDGETS: MediaBudget[] = ["10", "20", "30"];
+// 分析の各段階（とくにAIの文章）は数十秒かかる。この画面の Server Actions の上限（秒）。Vercel のプランの上限を超える値は効かない（設計書 D34・12章）
+export const maxDuration = 300;
 
-export default function StrategyPage() {
-  const [tab, setTab] = useState("overall");
-  const [budget, setBudget] = useState<MediaBudget>("20");
-  const { gradient, legend } = computeDonut(budget);
+const formatDate = (d: Date) => new Date(d).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
+
+export default async function StrategyPage({ searchParams }: { searchParams: SearchParams }) {
+  const sp = await searchParams;
+  const sql = getSql();
+  const propertyId = Number(sp.property) > 0 ? Number(sp.property) : null;
+  if (propertyId === null) {
+    const [cards, photos] = await Promise.all([listPropertyCards(sql), photoVersions(sql)]);
+    return <PropertyList properties={cards.map((c) => ({ ...c, lastAnalyzedAt: c.lastAnalyzedAt?.toISOString() ?? null, photoUrl: photoUrl(c.id, photos.get(c.id)) }))} />;
+  }
+  const backLink = (
+    <Link href="/strategy" className="inline-block mb-3 text-xs text-brand underline print:hidden">
+      ← 物件の一覧に戻る
+    </Link>
+  );
+
+  const report = await loadReport(sql, propertyId);
+  if (!report) return <>{backLink}<div className={emptyState}>物件 {propertyId} が見つかりません。</div></>;
+
+  const hasRun = report.run.id !== 0;
+  const [status] = await sql<{ has_location: boolean; fetched: boolean }[]>`
+    select geom is not null as has_location, exists (select 1 from property_fetches f where f.property_id = p.id) as fetched
+    from properties p where id = ${propertyId}
+  `;
+  const justFinished = hasRun && Number(sp.done) === report.run.id;
+  const narrative = report.narrative;
+  const budgetFact = findFact(report.facts, "decision.total_budget");
+  const totalManYen = budgetFact?.value ?? null;
+  const source = (budgetFact?.basis as { source?: unknown } | null)?.source;
+  const budgetSource = source === "input" || source === "rule" ? source : null;
+  const budgetOptions = [...new Set([...totalBudgetOptions(report.facts, report.rules), ...(totalManYen !== null ? [totalManYen] : [])])].sort((a, b) => a - b);
+  const budgetBasis = (budgetFact?.basis ?? {}) as { initial_man_yen?: number; additional_man_yen?: number; add_rule?: string; suggestion?: string; multiplier?: number };
+
+  // 採点ルール表（D35）：全ペルソナの点数と理由、採点に使った値、売れやすさ
+  const scoresBasis = (findFact(report.facts, "decision.persona_scores")?.basis ?? null) as
+    | { personas?: PersonaResult[]; inputs?: Record<string, InputValue>; competitors?: { hasCompetitors: boolean; items: CompetitorComparison[] } }
+    | null;
+  const salability = (findFact(report.facts, "decision.salability")?.basis ?? null) as SalabilityResult | null;
+  const scoring = scoresBasis?.personas
+    ? {
+        personas: scoresBasis.personas,
+        inputs: scoresBasis.inputs ?? {},
+        comparison: scoresBasis.competitors ?? { hasCompetitors: false, items: [] },
+        salability,
+        budget: {
+          initialManYen: budgetBasis.initial_man_yen ?? null,
+          additionalManYen: budgetBasis.additional_man_yen ?? null,
+          addRule: budgetBasis.add_rule ?? null,
+          suggestion: budgetBasis.suggestion ?? null,
+          multiplier: budgetBasis.multiplier ?? null,
+        },
+      }
+    : null;
+
+  // 訴求（ルール表で選ばれたもの）と、その根拠にした事実カード
+  const appealsFact = findFact(report.facts, "decision.appeals");
+  const appealItems = ((appealsFact?.basis ?? {}) as { items?: ScoredAppealItem[] }).items ?? [];
+  const appeals = appealItems
+    .filter((a) => a.selected)
+    .map((a) => ({
+      id: a.id,
+      label: a.label,
+      description: a.description,
+      judgement: a.judgement ?? null,
+      evidence: (a.needsFacts ?? [])
+        .map((k) => findFact(report.facts, k))
+        .filter((f): f is ReportFact => f !== undefined)
+        .map((f) => ({ seq: f.seq, text: f.valueText })),
+    }));
+  // 訴求の判定（強く訴求・訴求・弱み）を全項目分（採点ルール表の実行だけ）
+  const appealJudgements = appealItems.filter((a) => a.judgement !== undefined).map((a) => ({ id: a.id, label: a.label, judgement: a.judgement, description: a.description, score: a.score }));
+  const media = mediaBreakdown(report.facts);
+  const { property } = report;
+
+  const lastRadius = typeof report.run.params.radius_m === "number" ? report.run.params.radius_m : null;
+
+  const runnerOnTop = !hasRun;
+  const runner = <AnalysisRunner propertyId={propertyId} />;
 
   return (
     <>
-      <UnderlineTabs tabs={strategyTabDefs} active={tab} onChange={setTab} />
-
-      {tab === "overall" && (
-        <div className="grid gap-4">
-          <div className={`${card} p-5.5`}>
-            <div className="text-[13px] text-muted mb-3">この物件の総合評価</div>
-            <div className="text-base font-extrabold text-accent mb-2">子育てファミリー層への訴求が有効な物件です。</div>
-            <div className="text-[13px] text-body leading-[1.9]">
-              周辺の人口構成・取引価格・入力いただいた競合物件をもとに分析しました。30〜40代の割合が市平均より高く、小学校が徒歩8分の距離にあるため、子育てファミリー層に向けた住環境・性能の訴求が有効です。
-            </div>
-            <SourceNote className="mt-3">
-              {CENSUS_SOURCE}／{MLIT_SOURCE}
-            </SourceNote>
+      {backLink}
+      <PropertySteps
+        current="analysis"
+        propertyId={propertyId}
+        done={{ register: true, location: status?.has_location, surroundings: status?.fetched, analysis: hasRun }}
+      />
+      {hasRun && (
+        // 表示している結果がどの実行か。分析が終わった直後（?done=）は、そのことも出し続ける
+        <div className={`${card} px-5 py-3 mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs print:hidden ${justFinished ? "border-[#bfe5c6] bg-[#e9f8ec]" : ""}`}>
+          <div className={justFinished ? "font-bold text-[#157347]" : "text-body"}>
+            {justFinished ? "分析が終わりました。" : ""}表示中：実行 {report.run.id}（{formatDate(report.run.createdAt)}）の結果
+            {lastRadius !== null && `・人口構成の半径 ${lastRadius.toLocaleString("ja-JP")}m`}
           </div>
-
-          <div className={`${card} p-5`}>
-            <div className="text-[13px] font-bold text-ink mb-3.5">ターゲット</div>
-            <div className="grid grid-cols-3 gap-3">
-              {targetList.map((t) => (
-                <div key={t.num} className="bg-subtle rounded-lg p-4">
-                  <div className="flex gap-2.5 items-center mb-2">
-                    <div className="size-7 shrink-0 rounded-full bg-brand text-white font-extrabold text-[13px] flex items-center justify-center">{t.num}</div>
-                    <div className="text-[13px] font-extrabold text-ink">{t.title}</div>
-                  </div>
-                  <ul className="grid gap-1 text-xs text-body leading-[1.8]">
-                    {t.desc.map((d) => (
-                      <li key={d} className="flex gap-1">
-                        <span className="shrink-0">・</span>
-                        {d}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className={`${card} p-5`}>
-            <div className="text-[13px] font-bold text-ink mb-3.5">訴求ポイント</div>
-            <div className="grid gap-2.5">
-              {appealList.map((a) => (
-                <div key={a.text} className={fieldLabel}>
-                  ✓ {a.text}
-                  <span className="ml-2 text-xs text-muted">→ 根拠：{a.basis}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className={`${card} p-5`}>
-            <div className="text-[13px] font-bold text-ink mb-3.5">販売の方向性</div>
-            <div className="grid gap-2.5">
-              {directionList.map((d) => (
-                <div key={d} className={fieldLabel}>✓ {d}</div>
-              ))}
-            </div>
+          {report.run.error && <div className="text-[#b91c1c]">注意：{report.run.error.slice(0, 120)}</div>}
+          <div className="ml-auto flex gap-3">
+            <Link href={`/strategy/compare?property=${propertyId}&b=${report.run.id}`} className="text-brand underline">前回の結果と比べる</Link>
+            <Link href={`/properties/${propertyId}`} className="text-brand underline">物件の情報・位置を直す</Link>
           </div>
         </div>
       )}
-
-      {tab === "media" && (
-        <div className="grid gap-4">
-          <div className={`${card} p-5`}>
-            <div className="text-[13px] font-bold text-ink mb-4">推奨の媒体戦略（総予算{budget}万円の例）</div>
-            <div className="flex gap-7 items-center flex-wrap">
-              <div className="size-[150px] rounded-full flex items-center justify-center" style={{ background: gradient }}>
-                <div className="size-22 rounded-full bg-white flex flex-col items-center justify-center">
-                  <div className="text-[11px] text-muted">総予算</div>
-                  <div className="text-base font-extrabold text-ink">{budget}万円</div>
-                </div>
-              </div>
-              <div className="grid gap-2.5">
-                {legend.map((m, i) => (
-                  <div key={i} className={fieldLabel}>
-                    <span className="inline-block size-2.5 rounded-full mr-2" style={{ backgroundColor: m.color }} />
-                    {m.name}　{m.amt}（{m.pct}%）
-                    {m.note && <span className="text-xs text-muted">　{m.note}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className={`${card} p-5`}>
-            <div className="flex justify-between items-center mb-3.5">
-              <div className="text-[13px] font-bold text-ink">予算別シミュレーション</div>
-              <div className="flex gap-2">
-                {BUDGETS.map((b) => (
-                  <div key={b} onClick={() => setBudget(b)} className={budgetButtonClass(budget === b)}>
-                    {b}万円
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className={`${tableHead} grid-cols-[2fr_1fr]`}>
-              <div>媒体</div>
-              <div>予算目安</div>
-            </div>
-            {legend.map((m, i) => (
-              <div key={i} className="grid grid-cols-[2fr_1fr] gap-2 py-2.5 px-1 border-b border-divider">
-                <div className={fieldLabel}>{m.name}</div>
-                <div className="text-[13px] text-ink font-bold">
-                  {m.amt}
-                  {m.note && <span className="ml-1.5 text-xs font-normal text-muted">（{m.note}）</span>}
-                </div>
-              </div>
-            ))}
-            <div className="grid grid-cols-[2fr_1fr] gap-2 py-2.5 px-1">
-              <div className="text-[13px] font-extrabold text-ink">合計</div>
-              <div className="text-sm font-extrabold text-accent">{budget}万円</div>
-            </div>
-            <div className="text-[11px] text-muted mt-1">配分はBRUMBYのルール表から自動計算</div>
-          </div>
-          <div className={`${card} p-5`}>
-            <div className="text-[13px] font-bold text-ink mb-3.5">媒体ごとの役割と期待効果</div>
-            <div className={`${tableHead} grid-cols-[1.2fr_1.3fr_1.8fr]`}>
-              <div>媒体</div>
-              <div>主なターゲット</div>
-              <div>期待できる効果</div>
-            </div>
-            {mediaRoleTable.map((r, i) => (
-              <div key={i} className="grid grid-cols-[1.2fr_1.3fr_1.8fr] gap-2 py-2.5 px-1 border-b border-divider text-[13px] text-body">
-                <div>{r.media}</div>
-                <div>{r.target}</div>
-                <div>{r.effect}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex justify-end gap-2.5 mt-5">
-        <button className={btnSecondary}>PDFで出力</button>
-        <button className={btnPrimary}>このプランで相談する →</button>
-      </div>
+      {runnerOnTop && runner}
+      {/* 実行ごとに作り直す。分析が終わって同じ画面のまま結果に切り替わったとき、予算・媒体の状態が分析前のまま残らないように */}
+      <StrategyClient
+        key={report.run.id}
+        hasRun={hasRun}
+        runCreatedAt={hasRun ? report.run.createdAt.toISOString() : null}
+        property={{
+          name: property.name,
+          address: property.address,
+          photoUrl: photoUrl(propertyId, (await photoVersions(sql, [propertyId])).get(propertyId)),
+          priceManYen: property.priceManYen,
+          layout: property.layout,
+          landSqm: property.landSqm,
+          buildingSqm: property.buildingSqm,
+          parking: property.parking,
+          access: property.access,
+        }}
+        headline={narrative?.content?.headline ?? null}
+        sections={narrative?.content?.sections ?? []}
+        narrativeStatus={narrative?.status ?? null}
+        facts={report.facts.map((f) => ({ seq: f.seq, valueText: f.valueText, attribution: f.attribution }))}
+        targets={targetRanking(report.facts)}
+        appeals={appeals}
+        areaStats={areaStats(report.facts)}
+        nearby={nearbyFacilities(report.facts)}
+        nearbyLists={nearbyLists(report.facts)}
+        media={media.map((m) => ({ id: m.id, label: m.label, role: m.role, amount: m.amount, initialManYen: m.initialManYen, rules: m.rules }))}
+        scoring={scoring}
+        appealJudgements={appealJudgements}
+        mediaEvaluation={media.filter((m) => m.evaluation).map((m) => ({ id: m.id, label: m.label, formatExample: m.role, amount: m.amount, initialManYen: m.initialManYen, ...m.evaluation! }))}
+        totalManYen={totalManYen}
+        budgetSource={budgetSource}
+        budgetOptions={budgetOptions}
+        propertyId={propertyId}
+        censusSource={CENSUS_SOURCE}
+        mlitSource={MLIT_SOURCE}
+      />
+      {!runnerOnTop && <div className="mt-6">{runner}</div>}
     </>
   );
 }
