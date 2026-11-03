@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daysOnMarket, OTHER_MEDIA, readMediaResult, readSalesRecord } from "../lib/records";
+import { daysOnMarket, OTHER_MEDIA, readMediaResult, readSalesRecord, salesStage } from "../lib/records";
 
 const form = (values: Record<string, string>) => ({ get: (k: string) => values[k] ?? null });
 const OPTS = { mediaIds: ["C-01", "C-11"], households: ["若い夫婦", "60歳以上"] };
@@ -10,7 +10,7 @@ describe("readSalesRecord", () => {
     expect(r).toMatchObject({ status: "販売中", listed_on: null, price_cut_count: 0, buyer_age_band: null, buyer_first_media_id: null });
   });
 
-  it("成約のときは成約日と成約価格が要る", () => {
+  it("販売済み（成約）のときは成約日と成約価格が要る", () => {
     expect(() => readSalesRecord(form({ status: "成約", contracted_on: "2026-12-01" }), OPTS)).toThrow("成約日と成約価格");
     const r = readSalesRecord(form({ status: "成約", listed_on: "2026-11-01", contracted_on: "2026-12-01", contract_price_man_yen: "2,380" }), OPTS);
     expect(r.contract_price_man_yen).toBe(2380);
@@ -57,5 +57,28 @@ describe("daysOnMarket", () => {
   it("販売開始日から成約日までの日数。どちらかが無ければ null", () => {
     expect(daysOnMarket("2026-11-01", "2026-12-01")).toBe(30);
     expect(daysOnMarket(null, "2026-12-01")).toBeNull();
+  });
+});
+
+describe("salesStage", () => {
+  const none = { hasSucceeded: false, latest: null };
+  const done = { hasSucceeded: true, latest: "succeeded" };
+
+  it("販売の入力があればそれを優先し、成約は販売済みにする", () => {
+    expect(salesStage("成約", done)).toBe("販売済み");
+    expect(salesStage("販売中", none)).toBe("販売中");
+    expect(salesStage("販売中止", done)).toBe("販売中止");
+  });
+
+  it("入力が無いか販売前なら、販売戦略の有無で決める", () => {
+    expect(salesStage(null, done)).toBe("戦略作成済み");
+    expect(salesStage("販売前", done)).toBe("戦略作成済み");
+    expect(salesStage(null, { hasSucceeded: false, latest: "running" })).toBe("戦略作成中");
+    expect(salesStage(null, { hasSucceeded: false, latest: "failed" })).toBe("未着手");
+    expect(salesStage("販売前", none)).toBe("未着手");
+  });
+
+  it("最新の実行が失敗でも、前に完了した戦略があれば戦略作成済み", () => {
+    expect(salesStage(null, { hasSucceeded: true, latest: "failed" })).toBe("戦略作成済み");
   });
 });

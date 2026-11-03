@@ -1,12 +1,12 @@
 "use client";
 
 import { startTransition, useActionState, useRef, useState, useTransition } from "react";
-import { BUYER_AGE_BANDS, OTHER_MEDIA, SALE_STATUSES } from "../../../../lib/records";
+import { BUYER_AGE_BANDS, OTHER_MEDIA, SALE_STATUS_LABEL, SALE_STATUSES } from "../../../../lib/records";
 import { ChartIcon, PencilIcon, PlusIcon, TrashIcon, UsersIcon } from "../../../_components/icons";
 import { btnAction } from "../../../_lib/ui";
 import { deleteMediaResult, saveMediaResult, saveSalesRecord, type RecordFormState } from "../actions";
 
-// 販売の記録の入力（docs/設計まとめ.md「販売の記録」）
+// 販売記録の入力（docs/設計まとめ.md「販売記録」）
 // 送るときは onSubmit から action を呼ぶ（form の action に渡すと、誤りがあったときも入力が消えるため）
 // 欄の name は保存の処理（lib/records.ts）が読む名前のまま変えない
 
@@ -143,7 +143,7 @@ export function SalesRecordForm({
         <div className="grid gap-5">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <Field name="status" title="販売の状況">
-              <Select name="status" value={v.status} options={SALE_STATUSES} empty={null} />
+              <Select name="status" value={v.status} options={SALE_STATUSES.map((s) => ({ value: s, label: SALE_STATUS_LABEL[s] }))} empty={null} />
             </Field>
           </div>
 

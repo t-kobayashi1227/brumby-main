@@ -1,7 +1,9 @@
-// 販売の記録（docs/設計まとめ.md「販売の記録」）の選択肢と、入力欄の読み取り
+// 販売記録（docs/設計まとめ.md「販売記録」）の選択肢と、入力欄の読み取り
 // 値は supabase/migrations/20261031120000_sales_records.sql の check 制約と合わせる
 
 export const SALE_STATUSES = ["販売前", "販売中", "成約", "販売中止"] as const;
+/** 画面に出す言葉（DBの値「成約」は画面では「販売済み」と出す。2026-11-03 浩平さん指示で言葉をそろえた） */
+export const SALE_STATUS_LABEL: Record<(typeof SALE_STATUSES)[number], string> = { 販売前: "販売前", 販売中: "販売中", 成約: "販売済み", 販売中止: "販売中止" };
 export const BUYER_AGE_BANDS = ["20代以下", "30代", "40代", "50代", "60代", "70代以上"] as const;
 /** 媒体一覧にない媒体を選ぶときの値 */
 export const OTHER_MEDIA = "other";
@@ -60,7 +62,7 @@ export function readSalesRecord(f: Form, opts: { mediaIds: readonly string[]; ho
   const contracted_on = date(f, "contracted_on", "成約日");
   if (listed_on && contracted_on && contracted_on < listed_on) throw new Error("成約日が販売開始日より前になっています");
   const contract_price_man_yen = num(f, "contract_price_man_yen", "成約価格", { int: true, positive: true });
-  if (status === "成約" && (contracted_on === null || contract_price_man_yen === null)) throw new Error("成約のときは、成約日と成約価格を入れてください");
+  if (status === "成約" && (contracted_on === null || contract_price_man_yen === null)) throw new Error("販売済みのときは、成約日と成約価格を入れてください");
   const first = media(f, "buyer_first_media_id", "buyer_first_media_other", opts.mediaIds, "買主が最初に知った媒体", false);
   return {
     status,
@@ -104,4 +106,21 @@ export function readMediaResult(f: Form, opts: { mediaIds: readonly string[] }) 
 export function daysOnMarket(listedOn: string | null, contractedOn: string | null): number | null {
   if (!listedOn || !contractedOn) return null;
   return Math.round((Date.parse(contractedOn) - Date.parse(listedOn)) / 86_400_000);
+}
+
+/** 販売記録の一覧に出すステータス（色分けのバッジ） */
+export type SalesStage = "未着手" | "戦略作成中" | "戦略作成済み" | "販売中" | "販売済み" | "販売中止";
+
+/**
+ * 販売記録の入力（sales_records.status）と販売戦略の作成状況（strategy_runs）から、物件がいまどの段階にあるかを決める
+ * - 販売の入力があれば、それを優先する（DBの値「成約」は「販売済み」と表示する）
+ * - 入力が無い、または「販売前」のときは、販売戦略の有無で決める（一度でも完了していれば「戦略作成済み」）
+ */
+export function salesStage(saleStatus: string | null, strategy: { hasSucceeded: boolean; latest: string | null }): SalesStage {
+  if (saleStatus === "成約") return "販売済み";
+  if (saleStatus === "販売中") return "販売中";
+  if (saleStatus === "販売中止") return "販売中止";
+  if (strategy.hasSucceeded) return "戦略作成済み";
+  if (strategy.latest === "queued" || strategy.latest === "running") return "戦略作成中";
+  return "未着手";
 }
