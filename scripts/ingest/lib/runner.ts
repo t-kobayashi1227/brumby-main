@@ -1,100 +1,118 @@
 import type postgres from "postgres";
 import { getSql, type Sql } from "../../../lib/db";
-import { classifyFailure } from "./http";
-import { saveRaw } from "./raw-store";
+import { rawFiles, type RawFiles } from "./files";
 
-// 取り込みの共通の流れ（設計書 4.1）
-// 版を作る（loading）→ 取得して読み込む → 件数と空欄の割合を確かめる → 使用中に切り替える（active）
-// 失敗したら版は loading のまま残し、使用中のデータには触れない
+// 取り込みの共通の流れ（docs/実装の進め方.md 段階2）
+// 1. prepare（任意）：API などから集める。時間がかかるので、トランザクションの外で行う
+// 2. 1つのトランザクションで「このデータの古い行を消す → load で読み込む → 件数を数える → datasets を更新する」を行う
+// 失敗したら全部取り消されるので、使っているデータは壊れない。成功・失敗は ingest_logs に残す
 
 export type IngestArgs = Record<string, string | undefined>;
 
-export interface IngestContext {
+export interface PrepareContext {
+  /** トランザクションの外の接続（API のアクセスログ、読み込み済みの表の参照） */
   sql: Sql;
-  versionId: number;
   args: IngestArgs;
-  /** 生データを Storage の「source/dataset/版のID/name」に保存する */
-  saveRaw: (name: string, body: string | Uint8Array<ArrayBuffer>, contentType?: string) => Promise<string>;
+  /** data/raw/ の元データ（ダウンロード・展開・読み込み） */
+  raw: RawFiles;
   log: (message: string) => void;
+  /** データの時点（datasets.as_of）を、実際のファイルから分かった値に直す */
+  setAsOf: (datasetId: string, asOf: string) => void;
+  /** 確かめた結果（ingest_logs.checks）に1項目足す */
+  check: (name: string, value: unknown) => void;
   /**
-   * データの時点（yyyy-mm-dd）を記録する（D31。鮮度＝この日から実施日までの差を出すため）
-   * 取引価格は最新の四半期の最初の月、地価は年の1月1日、国勢調査は e-Stat の公開日
+   * 件数を、数え方を変えて記録する。表に自分の行を持たないデータに使う
+   * （例：D26 駅別乗降客数は、D25 の駅の行に乗降客数を足すので、乗降客数のあった駅の数を件数にする）
    */
-  setPublishedOn: (date: string) => void;
+  setRowCount: (datasetId: string, n: number) => void;
 }
 
-export interface IngestJob {
-  source: string;               // dataset_versions.source
-  dataset: string;              // dataset_versions.dataset
-  table: string;                // 読み込み先のテーブル。件数と空欄の割合を数える
-  attribution: string;          // 画面に出す出典
-  options: string[];            // 受け取る引数の名前（--from など）。これ以外はエラーにする
-  /** 引数から、この版の範囲（coverage）と期間（period）を決める */
-  describe: (args: IngestArgs) => { coverage: string; period?: string };
-  /** 取得して、dataset_version_id を付けて読み込む */
-  load: (ctx: IngestContext) => Promise<void>;
+export interface IngestContext<T = void> extends PrepareContext {
+  /** トランザクションの中の接続 */
+  sql: Sql;
+  /** prepare が返したもの */
+  prepared: T;
 }
 
-export async function runIngest(job: IngestJob, args: IngestArgs, command: string): Promise<void> {
+export interface IngestJob<T = void> {
+  /** このジョブが入れる datasets.id（例：["D39"]） */
+  datasets: string[];
+  /** 元データを置くフォルダ（data/raw/<rawDir>/）。提供元のコードにする（例：P29） */
+  rawDir: string;
+  /** 読み込み先の表。古い行の削除と件数の数え上げに使う（dataset_id の列を持つ表） */
+  table: string;
+  /** 受け取る引数の名前（refresh は共通） */
+  options: string[];
+  prepare?: (ctx: PrepareContext) => Promise<T>;
+  load: (ctx: IngestContext<T>) => Promise<void>;
+}
+
+/** prepare の型をジョブの中で決めたまま、ジョブの一覧（index.ts）に並べられるようにする */
+export function defineJob<T>(job: IngestJob<T>): IngestJob<unknown> {
+  return job as IngestJob<unknown>;
+}
+
+export async function runIngest(name: string, job: IngestJob<unknown>, args: IngestArgs, command: string): Promise<void> {
   const sql = getSql();
   const startedAt = new Date();
-  const { coverage, period } = job.describe(args);
-  const rawPrefix = `${job.source}/${job.dataset}`;
-
-  const [version] = await sql<{ id: number }[]>`
-    insert into dataset_versions (source, dataset, coverage, period, attribution)
-    values (${job.source}, ${job.dataset}, ${coverage}, ${period ?? null}, ${job.attribution})
-    returning id
-  `;
-  const versionId = Number(version.id);
-  let publishedOn: string | null = null;
-  const log = (message: string) => console.log(`[${job.dataset} v${versionId}] ${message}`);
-  log(`版を作りました（${coverage}${period ? `、${period}` : ""}）`);
+  const log = (message: string) => console.log(`[${name}] ${message}`);
+  const asOf = new Map<string, string>();
+  const checks: Record<string, unknown> = {};
+  const rowCounts = new Map<string, number>();
+  const raw = rawFiles(job.rawDir, { refresh: args.refresh !== undefined, log });
+  const base: PrepareContext = {
+    sql,
+    args,
+    raw,
+    log,
+    setAsOf: (id, value) => asOf.set(id, value),
+    check: (key, value) => {
+      checks[key] = value;
+    },
+    setRowCount: (id, n) => rowCounts.set(id, n),
+  };
 
   try {
-    await job.load({
-      sql,
-      versionId,
-      args,
-      saveRaw: (name, body, contentType) => saveRaw(`${rawPrefix}/${versionId}/${name}`, body, contentType),
-      log,
-      setPublishedOn: (date) => {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`データの時点の形が違います：${date}`);
-        if (publishedOn === null || date > publishedOn) publishedOn = date;
-      },
-    });
+    const prepared = job.prepare ? await job.prepare(base) : undefined;
+    const counts = await sql.begin(async (tx) => {
+      // 図形をつなぐ処理などは、DB の既定の時間制限（数分）を超えることがあるので、このトランザクションだけ延ばす
+      await tx`set local statement_timeout = '10min'`;
+      const deleted = await tx`delete from ${tx(job.table)} where dataset_id in ${tx(job.datasets)}`;
+      if (deleted.count > 0) log(`古い行 ${deleted.count}件を消しました`);
 
-    const { total, nullRatios } = await measure(sql, job.table, versionId);
-    if (total === 0) throw new Error("読み込んだ件数が0件のため、使用中に切り替えません");
-    log(`${total}件を読み込みました`);
+      await job.load({ ...base, sql: tx as unknown as Sql, prepared });
 
-    await sql.begin(async (tx) => {
-      await tx`
-        update dataset_versions set status = 'archived'
-        where source = ${job.source} and dataset = ${job.dataset}
-          and coverage = ${coverage} and status = 'active'
+      const rows = await tx<{ dataset_id: string; n: number }[]>`
+        select dataset_id, count(*)::int as n from ${tx(job.table)}
+        where dataset_id in ${tx(job.datasets)} group by dataset_id
       `;
-      await tx`
-        update dataset_versions
-        set status = 'active', row_count = ${total},
-            raw_uri = ${`storage://ingest-raw/${rawPrefix}/${versionId}/`},
-            source_published_at = coalesce(source_published_at, ${publishedOn}::date)
-        where id = ${versionId}
-      `;
-      await tx`
-        insert into ingest_logs (dataset_version_id, command, status, row_count, null_ratios, published_on, started_at)
-        values (${versionId}, ${command}, 'succeeded', ${total}, ${tx.json(nullRatios)}, ${publishedOn}, ${startedAt})
-      `;
+      const byId = new Map(rows.map((r) => [r.dataset_id, r.n]));
+      for (const [id, n] of rowCounts) byId.set(id, n);
+      if (rows.length === 0) throw new Error("読み込んだ件数が0件です");
+
+      for (const id of job.datasets) {
+        const n = byId.get(id) ?? 0;
+        await tx`
+          update datasets set row_count = ${n}, loaded_at = now(), as_of = coalesce(${asOf.get(id) ?? null}, as_of)
+          where id = ${id}
+        `;
+        await tx`
+          insert into ingest_logs (dataset_id, command, status, row_count, checks, started_at)
+          values (${id}, ${command}, 'succeeded', ${n}, ${Object.keys(checks).length > 0 ? tx.json(checks as postgres.JSONValue) : null}, ${startedAt})
+        `;
+      }
+      return job.datasets.map((id) => `${id} ${byId.get(id) ?? 0}件`);
     });
-    log(`使用中に切り替えました${publishedOn ? `（データの時点 ${publishedOn}）` : ""}`);
+    log(`完了：${counts.join("、")}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const failureKind = classifyFailure(error);
-    await sql`
-      insert into ingest_logs (dataset_version_id, command, status, error, failure_kind, started_at)
-      values (${versionId}, ${command}, 'failed', ${message}, ${failureKind}, ${startedAt})
-    `;
-    log(`失敗しました（${failureKind}）。版は loading のまま残します：${message}`);
+    for (const id of job.datasets) {
+      await sql`
+        insert into ingest_logs (dataset_id, command, status, error, started_at)
+        values (${id}, ${command}, 'failed', ${message}, ${startedAt})
+      `;
+    }
+    log(`失敗しました。DBは取り込み前のままです：${message}`);
     throw error;
   }
 }
@@ -103,30 +121,6 @@ export async function runIngest(job: IngestJob, args: IngestArgs, command: strin
 export async function insertRows(sql: Sql, table: string, rows: Record<string, unknown>[], chunkSize = 1000) {
   for (let i = 0; i < rows.length; i += chunkSize) {
     const chunk = rows.slice(i, i + chunkSize);
-    await sql`insert into ${sql(table)} ${sql(chunk as Record<string, postgres.ParameterOrJSON<never>>[])} on conflict do nothing`;
+    await sql`insert into ${sql(table)} ${sql(chunk as Record<string, postgres.ParameterOrJSON<never>>[])}`;
   }
-}
-
-// この版の件数と、列ごとの空欄の割合（確認1の材料）
-async function measure(sql: Sql, table: string, versionId: number) {
-  const columns = await sql<{ column_name: string }[]>`
-    select column_name from information_schema.columns
-    where table_schema = 'public' and table_name = ${table}
-      and column_name not in ('id', 'dataset_version_id', 'row_hash', 'raw')
-    order by ordinal_position
-  `;
-  const quote = (name: string) => `"${name.replace(/"/g, '""')}"`;
-  const ratios = columns
-    .map((c) => `1 - count(${quote(c.column_name)})::float8 / nullif(count(*), 0) as ${quote(c.column_name)}`)
-    .join(", ");
-
-  const [row] = await sql.unsafe<Record<string, number | null>[]>(
-    `select count(*)::int as __total, ${ratios} from public.${quote(table)} where dataset_version_id = $1`,
-    [versionId],
-  );
-  const { __total, ...rest } = row;
-  const nullRatios = Object.fromEntries(
-    Object.entries(rest).map(([k, v]) => [k, v === null ? null : Math.round(v * 1000) / 1000]),
-  );
-  return { total: Number(__total), nullRatios };
 }
