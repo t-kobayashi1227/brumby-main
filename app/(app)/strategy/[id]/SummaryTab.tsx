@@ -13,7 +13,7 @@ import PromptLog from "./PromptLog";
 
 // ① サマリー：結論（推奨方針・第一ターゲット・最大の訴求）→ 地図と区の価格相場（2カラム、2026-11-03 追加）→ 懸念点 → 次に確かめること → AIに送った内容（最初は閉じておく）
 // 懸念点の対策案（concerns[].action）は出さない（10/26 決定を 2026-11-03 に浩平さんが再確認）。AIの答えとDBには残る
-// 「次に確かめること」は、取得できず・要確認の事実から決まった文で作る（AIは使わない。lib/report.ts の nextCheck）
+// 「データの注意点」（2026-11-04 に「次に確かめること」から改名。利用者が作業を求められていると受け取らないように）は、取得できず・要確認の事実から決まった文で作る（AIは使わない。lib/report.ts の nextCheck）
 
 const MAX_CONCERNS = 3;
 
@@ -62,7 +62,7 @@ export default function SummaryTab({
             <KeyRow icon={<MegaphoneIcon className="size-5" />} label="最大の訴求" value={appeal?.text} ai />
             <KeyRow
               icon={<SearchIcon className="size-5" />}
-              label="確かめる事実"
+              label="データの注意点"
               value={missingFacts.length ? `${missingFacts.length}件（下に一覧）` : "なし"}
               tone={missingFacts.length ? "warn" : undefined}
             />
@@ -107,14 +107,14 @@ export default function SummaryTab({
         )}
       </Card>
 
-      <Card title="次に確かめること" icon={ClipboardIcon}>
+      <Card title="データの注意点" icon={ClipboardIcon}>
         {missingFacts.length === 0 && m.unknown.length === 0 ? (
-          <div className="text-[13px] text-sub">確かめることはありません。</div>
+          <div className="text-[13px] text-sub">注意点はありません。</div>
         ) : (
           <div className={`grid gap-4 ${missingFacts.length > 0 && m.unknown.length > 0 ? "lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]" : ""}`}>
             {missingFacts.length > 0 && (
             <div className="min-w-0">
-              <div className="mb-2 text-[12px] text-sub">販売の前に確かめたい事実です（災害・学区で取れなかったものと、戦略の根拠にした要確認の事実）。ほかに取れなかったデータは、根拠データタブで見られます。</div>
+              <div className="mb-2 text-[12px] text-sub">災害・学区で取れなかったデータと、戦略の根拠にした値で確かめが要るものです。確かめ方を添えています。ほかに取れなかったデータは、根拠データタブで見られます。</div>
               <ul className="grid gap-2">
                 {missingFacts.map((f) => {
                   const n = nextCheck(f);
