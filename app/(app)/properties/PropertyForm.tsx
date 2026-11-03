@@ -325,7 +325,7 @@ const IMPORT_TARGETS = [
  * - 解析中はボタンを読み込み中にし、二重に実行しない（ボタンを止めるだけでなく、ref でも弾く）
  * - 値はフォームに入れるだけで保存しない。登録は従来どおり「登録して位置を確認」で、必須項目の確かめもそのまま
  */
-function AiAssistPanel({ onImported }: { onImported: (r: ImportResult) => string }) {
+function AiAssistPanel({ onImported, onBusyChange }: { onImported: (r: ImportResult) => string; onBusyChange: (busy: boolean) => void }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
@@ -335,6 +335,7 @@ function AiAssistPanel({ onImported }: { onImported: (r: ImportResult) => string
     if (running.current || text.trim() === "") return;
     running.current = true;
     setBusy(true);
+    onBusyChange(true);
     setMessage(null);
     try {
       const fd = new FormData();
@@ -347,6 +348,7 @@ function AiAssistPanel({ onImported }: { onImported: (r: ImportResult) => string
     } finally {
       running.current = false;
       setBusy(false);
+      onBusyChange(false);
     }
   };
 
@@ -439,6 +441,8 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
   // 住所の確認の結果。確かめた住所も持ち、欄の住所と違う結果（確認中に書き換えたとき）は出さない
   const [addressCheck, setAddressCheck] = useState<PropertyFormState & { address?: string }>({});
   const [checkingAddress, startAddressCheck] = useTransition();
+  // AI入力アシストの解析中か。解析中は下の欄をロックする
+  const [analyzing, setAnalyzing] = useState(false);
 
   // 入力のたびに数え直す。行の追加・削除のあとは、描画が終わってから数える
   const recount = () => {
@@ -553,268 +557,281 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
         >
           {v.id && <input type="hidden" name="id" value={v.id} />}
 
-          {!v.id && <AiAssistPanel onImported={applyImport} />}
+          {!v.id && <AiAssistPanel onImported={applyImport} onBusyChange={setAnalyzing} />}
 
-          <SectionCard icon={<HomeIcon />} title="基本情報" note="物件の基本的な情報を入力してください。" required count={`${progress.basic} / ${TOTALS.basic} 項目`}>
-            <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] gap-4 items-start">
-              <label className={label}>
-                物件区分<Required />
-                <select name="property_class" defaultValue={v.property_class} required className={selectField}>
-                  <option value="">選択してください</option>
-                  {PROPERTY_CLASSES.map((c) => <option key={c}>{c}</option>)}
-                </select>
-              </label>
-              <label className={label}>
-                価格（万円）<Required />
-                <input name="price_man_yen" inputMode="numeric" required defaultValue={str(v.price_man_yen)} placeholder="例：2480" className={field} />
-              </label>
-              <div className="col-span-2 lg:col-span-1">
-                <label className={label} htmlFor="address">
-                  住所<Required />
+          {/* 解析中は下の欄をグレーにして操作できなくする（inert）。値は解析の終わりにプログラムから入れる */}
+          <div className="relative grid gap-4" inert={analyzing} aria-busy={analyzing}>
+            {analyzing && (
+              <div className="absolute -inset-1 z-20 rounded-xl bg-[#dfe4ec]/70 backdrop-grayscale cursor-wait">
+                <div role="status" className="sticky top-[40vh] mx-auto mt-16 flex w-fit items-center gap-2.5 rounded-full border border-line bg-white px-5 py-2.5 text-[13px] font-bold text-ink shadow-md">
+                  <SpinnerIcon className="size-4.5 animate-spin text-primary" />
+                  <LockIcon className="size-4 text-sub" />
+                  AIが解析中です。終わるまで入力できません
+                </div>
+              </div>
+            )}
+
+            <SectionCard icon={<HomeIcon />} title="基本情報" note="物件の基本的な情報を入力してください。" required count={`${progress.basic} / ${TOTALS.basic} 項目`}>
+              <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] gap-4 items-start">
+                <label className={label}>
+                  物件区分<Required />
+                  <select name="property_class" defaultValue={v.property_class} required className={selectField}>
+                    <option value="">選択してください</option>
+                    {PROPERTY_CLASSES.map((c) => <option key={c}>{c}</option>)}
+                  </select>
                 </label>
-                <div className="flex gap-3">
-                  <input
-                    id="address"
-                    ref={addressRef}
-                    name="address"
-                    required
-                    defaultValue={v.address}
-                    placeholder="例：新潟市西区寺尾東3丁目12-5"
-                    className={field}
-                    onChange={() => setAddressCheck({})}
-                  />
-                  <button
-                    type="button"
-                    onClick={checkAddress}
-                    disabled={checkingAddress}
-                    className="mt-1 h-10 shrink-0 flex items-center gap-1.5 rounded-lg border border-primary bg-white px-4 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft disabled:opacity-60"
-                  >
-                    <PinIcon className="size-4" />
-                    {checkingAddress ? "確認中…" : "住所を確認"}
+                <label className={label}>
+                  価格（万円）<Required />
+                  <input name="price_man_yen" inputMode="numeric" required defaultValue={str(v.price_man_yen)} placeholder="例：2480" className={field} />
+                </label>
+                <div className="col-span-2 lg:col-span-1">
+                  <label className={label} htmlFor="address">
+                    住所<Required />
+                  </label>
+                  <div className="flex gap-3">
+                    <input
+                      id="address"
+                      ref={addressRef}
+                      name="address"
+                      required
+                      defaultValue={v.address}
+                      placeholder="例：新潟市西区寺尾東3丁目12-5"
+                      className={field}
+                      onChange={() => setAddressCheck({})}
+                    />
+                    <button
+                      type="button"
+                      onClick={checkAddress}
+                      disabled={checkingAddress}
+                      className="mt-1 h-10 shrink-0 flex items-center gap-1.5 rounded-lg border border-primary bg-white px-4 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft disabled:opacity-60"
+                    >
+                      <PinIcon className="size-4" />
+                      {checkingAddress ? "確認中…" : "住所を確認"}
+                    </button>
+                  </div>
+                  {addressCheck.ok || addressCheck.error ? (
+                    <p role="status" className={`mt-1.5 text-xs ${addressCheck.ok ? "text-primary" : "text-[#b91c1c]"}`}>
+                      {addressCheck.ok ?? addressCheck.error}
+                    </p>
+                  ) : (
+                    <p className="mt-1.5 flex items-center gap-1 text-xs text-muted">
+                      <PinIcon className="size-3.5 text-primary" />
+                      番地まで入れてください。登録すると位置を取り、地図でピンの位置を確かめられます。
+                    </p>
+                  )}
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard icon={<TrainIcon />} title="交通アクセス" note="最寄り駅やバス停までのアクセスを入力してください。" required count={`${progress.transport} / ${TOTALS.transport} 項目`}>
+              <TransportRow position={1} values={v.transports[0]} />
+              {secondTransport ? (
+                <TransportRow
+                  key={secondTransport.key}
+                  position={2}
+                  values={secondTransport.values}
+                  onRemove={() => {
+                    setSecondTransport(null);
+                    recountLater();
+                  }}
+                />
+              ) : (
+                <div className="rounded-lg border border-dashed border-[#b9cdf0] p-2.5">
+                  <button type="button" onClick={() => setSecondTransport({ key: nextKey })} className="flex items-center gap-1.5 rounded-md border border-line bg-white px-3.5 py-2 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft">
+                    <PlusIcon className="size-4" />
+                    交通手段を追加
                   </button>
                 </div>
-                {addressCheck.ok || addressCheck.error ? (
-                  <p role="status" className={`mt-1.5 text-xs ${addressCheck.ok ? "text-primary" : "text-[#b91c1c]"}`}>
-                    {addressCheck.ok ?? addressCheck.error}
-                  </p>
-                ) : (
-                  <p className="mt-1.5 flex items-center gap-1 text-xs text-muted">
-                    <PinIcon className="size-3.5 text-primary" />
-                    番地まで入れてください。登録すると位置を取り、地図でピンの位置を確かめられます。
-                  </p>
-                )}
-              </div>
-            </div>
-          </SectionCard>
+              )}
+            </SectionCard>
 
-          <SectionCard icon={<TrainIcon />} title="交通アクセス" note="最寄り駅やバス停までのアクセスを入力してください。" required count={`${progress.transport} / ${TOTALS.transport} 項目`}>
-            <TransportRow position={1} values={v.transports[0]} />
-            {secondTransport ? (
-              <TransportRow
-                key={secondTransport.key}
-                position={2}
-                values={secondTransport.values}
-                onRemove={() => {
-                  setSecondTransport(null);
-                  recountLater();
-                }}
-              />
-            ) : (
-              <div className="rounded-lg border border-dashed border-[#b9cdf0] p-2.5">
-                <button type="button" onClick={() => setSecondTransport({ key: nextKey })} className="flex items-center gap-1.5 rounded-md border border-line bg-white px-3.5 py-2 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft">
-                  <PlusIcon className="size-4" />
-                  交通手段を追加
-                </button>
-              </div>
-            )}
-          </SectionCard>
-
-          <SectionCard icon={<BuildingIcon />} title="物件詳細" note="建物・土地の詳細情報を入力してください。" required count={`${progress.detail} / ${TOTALS.detail} 項目`}>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <label className={label}>
-                間取り<Required />
-                <input name="layout" required defaultValue={v.layout} placeholder="例：4LDK+S" className={field} />
-              </label>
-              <label className={label}>
-                建物面積（㎡）<Required />
-                <input name="building_sqm" inputMode="decimal" required defaultValue={str(v.building_sqm)} placeholder="例：120.50" className={field} />
-              </label>
-              <label className={label}>
-                土地面積（㎡）<Required />
-                <input name="land_sqm" inputMode="decimal" required defaultValue={str(v.land_sqm)} placeholder="例：150.00" className={field} />
-              </label>
-              <label className={label}>
-                駐車台数（台）<Required />
-                <input name="parking" inputMode="numeric" required defaultValue={str(v.parking)} placeholder="例：2" className={field} />
-              </label>
-              <label className={label}>
-                築年数（年）<Required />
-                <input name="building_age" inputMode="numeric" required defaultValue={str(v.building_age)} placeholder="新築は0" className={field} />
-              </label>
-              <label className={label}>
-                階数<Required />
-                <select name="floors" defaultValue={v.floors} required className={selectField}>
-                  <option value="">選択してください</option>
-                  {FLOORS.map((f) => <option key={f}>{f}</option>)}
-                </select>
-              </label>
-              <label className={label}>
-                庭<Required />
-                <select name="has_garden" defaultValue={yesNo(v.has_garden)} required className={selectField}>
-                  <option value="">選択してください</option>
-                  <option>あり</option>
-                  <option>なし</option>
-                </select>
-              </label>
-              <label className={label}>
-                リフォーム<Required />
-                <select name="renovated" defaultValue={yesNo(v.renovated)} required className={selectField} onChange={(e) => setRenovated(e.target.value === "あり")}>
-                  <option value="">選択してください</option>
-                  <option>あり</option>
-                  <option>なし</option>
-                </select>
-              </label>
-            </div>
-            {renovated && (
-              <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] gap-4 rounded-lg bg-subtle p-4">
+            <SectionCard icon={<BuildingIcon />} title="物件詳細" note="建物・土地の詳細情報を入力してください。" required count={`${progress.detail} / ${TOTALS.detail} 項目`}>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <label className={label}>
-                  リフォームの年<Required />
-                  <input name="renovation_year" inputMode="numeric" required defaultValue={str(v.renovation_year)} placeholder="例：2023" className={field} />
+                  間取り<Required />
+                  <input name="layout" required defaultValue={v.layout} placeholder="例：4LDK+S" className={field} />
                 </label>
-                <fieldset>
-                  <legend className={label}>
-                    リフォームの箇所（複数選べます）<Required />
-                  </legend>
-                  <div className="flex flex-wrap gap-2 mt-1.5">
-                    {RENOVATION_PARTS.map((p) => (
-                      <label key={p} className="cursor-pointer">
-                        <input type="checkbox" name="renovation_parts" value={p} defaultChecked={v.renovation_parts?.includes(p)} className="peer sr-only" />
-                        <span className="flex items-center gap-1 rounded-md border border-field bg-white px-3 py-1.5 text-[13px] text-body peer-checked:border-[#b9cdf0] peer-checked:bg-primary-soft peer-checked:text-primary peer-checked:font-bold peer-focus-visible:ring-2 peer-focus-visible:ring-primary/30 [&>svg]:hidden peer-checked:[&>svg]:block">
-                          <CheckIcon className="size-3.5" />
-                          {p}
-                        </span>
-                      </label>
+                <label className={label}>
+                  建物面積（㎡）<Required />
+                  <input name="building_sqm" inputMode="decimal" required defaultValue={str(v.building_sqm)} placeholder="例：120.50" className={field} />
+                </label>
+                <label className={label}>
+                  土地面積（㎡）<Required />
+                  <input name="land_sqm" inputMode="decimal" required defaultValue={str(v.land_sqm)} placeholder="例：150.00" className={field} />
+                </label>
+                <label className={label}>
+                  駐車台数（台）<Required />
+                  <input name="parking" inputMode="numeric" required defaultValue={str(v.parking)} placeholder="例：2" className={field} />
+                </label>
+                <label className={label}>
+                  築年数（年）<Required />
+                  <input name="building_age" inputMode="numeric" required defaultValue={str(v.building_age)} placeholder="新築は0" className={field} />
+                </label>
+                <label className={label}>
+                  階数<Required />
+                  <select name="floors" defaultValue={v.floors} required className={selectField}>
+                    <option value="">選択してください</option>
+                    {FLOORS.map((f) => <option key={f}>{f}</option>)}
+                  </select>
+                </label>
+                <label className={label}>
+                  庭<Required />
+                  <select name="has_garden" defaultValue={yesNo(v.has_garden)} required className={selectField}>
+                    <option value="">選択してください</option>
+                    <option>あり</option>
+                    <option>なし</option>
+                  </select>
+                </label>
+                <label className={label}>
+                  リフォーム<Required />
+                  <select name="renovated" defaultValue={yesNo(v.renovated)} required className={selectField} onChange={(e) => setRenovated(e.target.value === "あり")}>
+                    <option value="">選択してください</option>
+                    <option>あり</option>
+                    <option>なし</option>
+                  </select>
+                </label>
+              </div>
+              {renovated && (
+                <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] gap-4 rounded-lg bg-subtle p-4">
+                  <label className={label}>
+                    リフォームの年<Required />
+                    <input name="renovation_year" inputMode="numeric" required defaultValue={str(v.renovation_year)} placeholder="例：2023" className={field} />
+                  </label>
+                  <fieldset>
+                    <legend className={label}>
+                      リフォームの箇所（複数選べます）<Required />
+                    </legend>
+                    <div className="flex flex-wrap gap-2 mt-1.5">
+                      {RENOVATION_PARTS.map((p) => (
+                        <label key={p} className="cursor-pointer">
+                          <input type="checkbox" name="renovation_parts" value={p} defaultChecked={v.renovation_parts?.includes(p)} className="peer sr-only" />
+                          <span className="flex items-center gap-1 rounded-md border border-field bg-white px-3 py-1.5 text-[13px] text-body peer-checked:border-[#b9cdf0] peer-checked:bg-primary-soft peer-checked:text-primary peer-checked:font-bold peer-focus-visible:ring-2 peer-focus-visible:ring-primary/30 [&>svg]:hidden peer-checked:[&>svg]:block">
+                            <CheckIcon className="size-3.5" />
+                            {p}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                </div>
+              )}
+            </SectionCard>
+
+            <SectionCard icon={<PencilIcon />} title="特徴ピックアップ（任意）" note="この物件のアピールポイントや特徴を自由に入力してください。" required={false}>
+              <div className="grid lg:grid-cols-[minmax(0,1fr)_260px] gap-4">
+                <div>
+                  <textarea
+                    ref={featuresRef}
+                    name="features"
+                    defaultValue={str(v.features)}
+                    rows={3}
+                    placeholder="例：シャッター車庫あり、南向きリビング、2023年キッチン・浴室リフォーム済み"
+                    className={`${field} h-auto! py-2.5 leading-relaxed`}
+                  />
+                  <p className="mt-1 text-[11px] text-muted">物件資料のまとめ書きのまま貼れます。氏名・連絡先は書かないでください。</p>
+                </div>
+                <div>
+                  <div className="text-xs text-sub">入力例（押すと追加）</div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {FEATURE_EXAMPLES.map((t) => (
+                      <button key={t} type="button" onClick={() => addFeature(t)} className="rounded-full bg-divider px-2.5 py-1 text-[11px] text-body cursor-pointer hover:bg-primary-soft hover:text-primary">
+                        {t}
+                      </button>
                     ))}
                   </div>
-                </fieldset>
-              </div>
-            )}
-          </SectionCard>
-
-          <SectionCard icon={<PencilIcon />} title="特徴ピックアップ（任意）" note="この物件のアピールポイントや特徴を自由に入力してください。" required={false}>
-            <div className="grid lg:grid-cols-[minmax(0,1fr)_260px] gap-4">
-              <div>
-                <textarea
-                  ref={featuresRef}
-                  name="features"
-                  defaultValue={str(v.features)}
-                  rows={3}
-                  placeholder="例：シャッター車庫あり、南向きリビング、2023年キッチン・浴室リフォーム済み"
-                  className={`${field} h-auto! py-2.5 leading-relaxed`}
-                />
-                <p className="mt-1 text-[11px] text-muted">物件資料のまとめ書きのまま貼れます。氏名・連絡先は書かないでください。</p>
-              </div>
-              <div>
-                <div className="text-xs text-sub">入力例（押すと追加）</div>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {FEATURE_EXAMPLES.map((t) => (
-                    <button key={t} type="button" onClick={() => addFeature(t)} className="rounded-full bg-divider px-2.5 py-1 text-[11px] text-body cursor-pointer hover:bg-primary-soft hover:text-primary">
-                      {t}
-                    </button>
-                  ))}
                 </div>
               </div>
-            </div>
-          </SectionCard>
+            </SectionCard>
 
-          <SectionCard
-            icon={<UsersIcon />}
-            title="競合物件（任意）"
-            note="周辺の競合物件を追加すると、競合とも比べられます。"
-            required={false}
-            collapsible
-            open={showCompetitors}
-            onToggle={() => setCompetitorsOpen(!showCompetitors)}
-          >
-            <input type="hidden" name="competitor_count" value={competitors.length} />
-            {competitors.length > 0 && (
-              <div className="overflow-x-auto">
-                <div className="min-w-[640px] grid gap-2">
-                  <div className="grid grid-cols-[32px_100px_minmax(0,1fr)_100px_100px_80px_32px] gap-3 rounded-md bg-subtle px-2 py-2 text-xs font-bold text-sub">
-                    <span>No.</span>
-                    <span>価格（万円）</span>
-                    <span>住所</span>
-                    <span>建物面積（㎡）</span>
-                    <span>土地面積（㎡）</span>
-                    <span>築年数（年）</span>
-                    <span className="sr-only">操作</span>
-                  </div>
-                  {competitors.map((c, i) => (
-                    <div key={c.key} className="grid grid-cols-[32px_100px_minmax(0,1fr)_100px_100px_80px_32px] gap-3 items-center px-2">
-                      <span className="text-[13px] text-sub tabular-nums">{i + 1}</span>
-                      <input name={`c${i}_price_man_yen`} aria-label={`競合物件${i + 1}の価格（万円）`} inputMode="numeric" defaultValue={str(c.price_man_yen)} className={`${field} mt-0!`} />
-                      <input name={`c${i}_address`} aria-label={`競合物件${i + 1}の住所`} defaultValue={str(c.address)} placeholder="例：新潟市西区寺尾東2丁目" className={`${field} mt-0!`} />
-                      <input name={`c${i}_building_sqm`} aria-label={`競合物件${i + 1}の建物面積（㎡）`} inputMode="decimal" defaultValue={str(c.building_sqm)} className={`${field} mt-0!`} />
-                      <input name={`c${i}_land_sqm`} aria-label={`競合物件${i + 1}の土地面積（㎡）`} inputMode="decimal" defaultValue={str(c.land_sqm)} className={`${field} mt-0!`} />
-                      <input name={`c${i}_building_age`} aria-label={`競合物件${i + 1}の築年数（年）`} inputMode="numeric" defaultValue={str(c.building_age)} className={`${field} mt-0!`} />
-                      <button
-                        type="button"
-                        aria-label={`競合物件${i + 1}を消す`}
-                        onClick={() => {
-                          setCompetitors(competitors.filter((x) => x.key !== c.key));
-                          recountLater();
-                        }}
-                        className="h-10 flex items-center justify-center text-muted hover:text-[#e5484d] cursor-pointer"
-                      >
-                        <TrashIcon className="size-4.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setCompetitors([...competitors, { ...EMPTY_COMPETITOR, key: nextKey }]);
-                setNextKey(nextKey + 1);
-              }}
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-[#9dbaf0] py-2.5 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft"
+            <SectionCard
+              icon={<UsersIcon />}
+              title="競合物件（任意）"
+              note="周辺の競合物件を追加すると、競合とも比べられます。"
+              required={false}
+              collapsible
+              open={showCompetitors}
+              onToggle={() => setCompetitorsOpen(!showCompetitors)}
             >
-              <PlusIcon className="size-4" />
-              競合物件を追加
-            </button>
-            <p className="text-[11px] text-muted">住所から位置を出し、物件との直線距離も比べます。空の行は保存しません。</p>
-          </SectionCard>
+              <input type="hidden" name="competitor_count" value={competitors.length} />
+              {competitors.length > 0 && (
+                <div className="overflow-x-auto">
+                  <div className="min-w-[640px] grid gap-2">
+                    <div className="grid grid-cols-[32px_100px_minmax(0,1fr)_100px_100px_80px_32px] gap-3 rounded-md bg-subtle px-2 py-2 text-xs font-bold text-sub">
+                      <span>No.</span>
+                      <span>価格（万円）</span>
+                      <span>住所</span>
+                      <span>建物面積（㎡）</span>
+                      <span>土地面積（㎡）</span>
+                      <span>築年数（年）</span>
+                      <span className="sr-only">操作</span>
+                    </div>
+                    {competitors.map((c, i) => (
+                      <div key={c.key} className="grid grid-cols-[32px_100px_minmax(0,1fr)_100px_100px_80px_32px] gap-3 items-center px-2">
+                        <span className="text-[13px] text-sub tabular-nums">{i + 1}</span>
+                        <input name={`c${i}_price_man_yen`} aria-label={`競合物件${i + 1}の価格（万円）`} inputMode="numeric" defaultValue={str(c.price_man_yen)} className={`${field} mt-0!`} />
+                        <input name={`c${i}_address`} aria-label={`競合物件${i + 1}の住所`} defaultValue={str(c.address)} placeholder="例：新潟市西区寺尾東2丁目" className={`${field} mt-0!`} />
+                        <input name={`c${i}_building_sqm`} aria-label={`競合物件${i + 1}の建物面積（㎡）`} inputMode="decimal" defaultValue={str(c.building_sqm)} className={`${field} mt-0!`} />
+                        <input name={`c${i}_land_sqm`} aria-label={`競合物件${i + 1}の土地面積（㎡）`} inputMode="decimal" defaultValue={str(c.land_sqm)} className={`${field} mt-0!`} />
+                        <input name={`c${i}_building_age`} aria-label={`競合物件${i + 1}の築年数（年）`} inputMode="numeric" defaultValue={str(c.building_age)} className={`${field} mt-0!`} />
+                        <button
+                          type="button"
+                          aria-label={`競合物件${i + 1}を消す`}
+                          onClick={() => {
+                            setCompetitors(competitors.filter((x) => x.key !== c.key));
+                            recountLater();
+                          }}
+                          className="h-10 flex items-center justify-center text-muted hover:text-[#e5484d] cursor-pointer"
+                        >
+                          <TrashIcon className="size-4.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setCompetitors([...competitors, { ...EMPTY_COMPETITOR, key: nextKey }]);
+                  setNextKey(nextKey + 1);
+                }}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-[#9dbaf0] py-2.5 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft"
+              >
+                <PlusIcon className="size-4" />
+                競合物件を追加
+              </button>
+              <p className="text-[11px] text-muted">住所から位置を出し、物件との直線距離も比べます。空の行は保存しません。</p>
+            </SectionCard>
 
-          <SectionCard
-            icon={<ChartIcon />}
-            title="広告予算（任意）"
-            note="販売戦略のシミュレーションに使います。"
-            required={false}
-            collapsible
-            open={showBudget}
-            onToggle={() => setBudgetOpen(!showBudget)}
-          >
-            <label className={`${label} max-w-[260px]`}>
-              広告予算の総額（万円）
-              <input name="ad_budget_man_yen" inputMode="numeric" defaultValue={str(v.ad_budget_man_yen)} placeholder="例：30" className={field} />
-            </label>
-            <p className="text-[11px] text-muted">入力すると、媒体ごとの配分（%）から金額をシステムが計算して表示します。</p>
-          </SectionCard>
+            <SectionCard
+              icon={<ChartIcon />}
+              title="広告予算（任意）"
+              note="販売戦略のシミュレーションに使います。"
+              required={false}
+              collapsible
+              open={showBudget}
+              onToggle={() => setBudgetOpen(!showBudget)}
+            >
+              <label className={`${label} max-w-[260px]`}>
+                広告予算の総額（万円）
+                <input name="ad_budget_man_yen" inputMode="numeric" defaultValue={str(v.ad_budget_man_yen)} placeholder="例：30" className={field} />
+              </label>
+              <p className="text-[11px] text-muted">入力すると、媒体ごとの配分（%）から金額をシステムが計算して表示します。</p>
+            </SectionCard>
 
-          <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-end gap-3 rounded-xl border border-line bg-white/95 px-4 py-3 backdrop-blur">
-            {state.error && <div role="alert" className="mr-auto rounded-md border border-[#f3c4c4] bg-[#fdecec] px-3 py-2 text-xs text-[#b91c1c]">{state.error}</div>}
-            {state.ok && <div role="status" className="mr-auto rounded-md border border-[#bfe5c6] bg-[#e9f8ec] px-3 py-2 text-xs text-[#157347]">{state.ok}</div>}
-            {!state.error && !state.ok && (
-              <div className="mr-auto text-xs text-sub">
-                必須項目 <span className="font-bold text-ink tabular-nums">{doneCount}</span> / {REQUIRED_TOTAL}
-              </div>
-            )}
-            <button type="submit" disabled={pending} className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-bold text-white shadow-sm cursor-pointer hover:bg-[#2459b0] disabled:opacity-60">
-              {pending ? "保存中…" : v.id ? "保存する" : "登録して位置を確認"}
-              {!pending && !v.id && <ArrowRightIcon className="size-4" />}
-            </button>
+            <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-end gap-3 rounded-xl border border-line bg-white/95 px-4 py-3 backdrop-blur">
+              {state.error && <div role="alert" className="mr-auto rounded-md border border-[#f3c4c4] bg-[#fdecec] px-3 py-2 text-xs text-[#b91c1c]">{state.error}</div>}
+              {state.ok && <div role="status" className="mr-auto rounded-md border border-[#bfe5c6] bg-[#e9f8ec] px-3 py-2 text-xs text-[#157347]">{state.ok}</div>}
+              {!state.error && !state.ok && (
+                <div className="mr-auto text-xs text-sub">
+                  必須項目 <span className="font-bold text-ink tabular-nums">{doneCount}</span> / {REQUIRED_TOTAL}
+                </div>
+              )}
+              <button type="submit" disabled={pending} className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-bold text-white shadow-sm cursor-pointer hover:bg-[#2459b0] disabled:opacity-60">
+                {pending ? "保存中…" : v.id ? "保存する" : "登録して位置を確認"}
+                {!pending && !v.id && <ArrowRightIcon className="size-4" />}
+              </button>
+            </div>
           </div>
         </form>
       </div>
