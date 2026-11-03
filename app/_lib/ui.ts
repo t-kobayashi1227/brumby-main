@@ -20,5 +20,5 @@ export function navItemClass(active: boolean): string {
 }
 
 export function underlineTabClass(active: boolean): string {
-  return `px-4 py-2.5 text-[13px] cursor-pointer ${active ? "text-brand font-bold border-b-2 border-brand" : "text-muted"}`;
+  return `px-4 py-2.5 text-[13px] cursor-pointer whitespace-nowrap ${active ? "text-brand font-bold border-b-2 border-brand" : "text-muted"}`;
 }

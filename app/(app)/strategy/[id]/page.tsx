@@ -13,7 +13,7 @@ import Report from "./Report";
 import StrategyRunner, { type RunStatus } from "./StrategyRunner";
 
 // ⑤販売戦略レポート（docs/設計まとめ.md「⑤画面の表示」）。[id] は物件の番号
-// 上に物件の見出しと「戦略を作る」、その下に最新の完了した戦略を3つのタブで出す。根拠は、その戦略に使った事実シートから引く
+// 上に物件の見出しと「戦略を作る」、その下に最新の完了した戦略を6つのタブで出す（2026-11-03 3タブから変更）。根拠は、その戦略に使った事実シートから引く
 // 物件を登録した直後や地図で位置を確定したあとは ?auto=1 で開き、戦略づくりを自動で始める（StrategyRunner）
 // 事実シートの表はこの画面だけで見せる。戦略がまだ無いときは最新の事実シートを出し、
 // 戦略を作ったあとに周辺情報を取り直したときは、新しい事実シートを折りたたんで出す（レポートの「根拠データ」は、その戦略に使ったシートのまま）
@@ -71,7 +71,7 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
   if (done) {
     const [datasets, media] = await inOrder(
       () => sql<(DatasetInfo & { attribution: string | null })[]>`select id, name, provider, as_of, row_count, attribution from datasets`,
-      () => sql<{ id: string; name: string }[]>`select id, name from media`,
+      () => sql<{ id: string; name: string; category: string }[]>`select id, name, category from media`,
     );
     const facts = done.content.事実;
     const { rows, credits } = sourceList(facts, usedFactIds(done.result.戦略, done.result.媒体), [...datasets]);
@@ -85,7 +85,15 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
             note="レポートを作ったあとに、新しい事実シートを作りました。下のレポートは前回の事実シートで作っています。新しい事実シートは、戦略を作り直し終えると反映されます。"
           />
         )}
-        <Report result={done.result} facts={facts} sources={rows} credits={credits} mediaNames={Object.fromEntries(media.map((m) => [m.id, m.name]))} />
+        <Report
+          result={done.result}
+          facts={facts}
+          sources={rows}
+          credits={credits}
+          mediaInfo={Object.fromEntries(media.map((m) => [m.id, { name: m.name, category: m.category }]))}
+          sheetCreatedAt={formatJstDateTime(done.content.作成日時)}
+          priceManYen={p.price_man_yen}
+        />
       </>
     );
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MainOutput, MediaOutput } from "../lib/agents/schemas";
-import { evidenceText, sourceList, usedFactIds } from "../lib/report";
+import { evidenceText, factUsage, placeOfAnalysis, sourceList, usedFactIds } from "../lib/report";
+import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
 const fact = (id: string, 出典: string, 時点: string, 値: string | null = "x", 比較?: string): Fact => ({
@@ -61,5 +62,34 @@ describe("レポートの根拠と出典", () => {
     ]);
     // 津波（A40）は使っていないので出さない。A33 は決まった文言
     expect(r.credits).toEqual(["出典：新潟市オープンデータ（CC BY 2.1 JP）を加工して作成", "© OpenStreetMap contributors（ODbL）", "この国土数値情報（土砂災害警戒区域データ）は…"]);
+  });
+});
+
+describe("6タブへの振り分け", () => {
+  const an = (topic: StrategyOutput["analysis"][number]["topic"], evidence: string[]) => ({ topic, fact: "f", meaning: `m-${topic}`, use: "u", evidence, confidence: "中" as const });
+
+  it("分析の出し先：価格・組み合わせはタブ、災害・規制の根拠は土地・災害、ほかは topic と根拠で決める", () => {
+    expect(placeOfAnalysis(an("価格", ["M-01", "H-01"]))).toEqual({ tab: "price" });
+    expect(placeOfAnalysis(an("組み合わせ", ["S-01"]))).toEqual({ tab: "target" });
+    expect(placeOfAnalysis(an("立地", ["L-01", " H-02"]))).toEqual({ tab: "area", card: "land" });
+    expect(placeOfAnalysis(an("立地", ["L-01"]))).toEqual({ tab: "area", card: "living" });
+    expect(placeOfAnalysis(an("買い手", ["B-01"]))).toEqual({ tab: "area", card: "people" });
+    expect(placeOfAnalysis(an("物件", ["P-01"]))).toEqual({ tab: "area", card: "property" });
+    expect(placeOfAnalysis(an("その他", ["T-01"]))).toEqual({ tab: "area", card: "living" });
+    expect(placeOfAnalysis(an("その他", []))).toEqual({ tab: "area", card: "property" });
+  });
+
+  it("使用箇所：事実IDごとに引いている文とタブ。合わない層は数えない", () => {
+    const strategy: StrategyOutput = {
+      ...main,
+      not_fit: [{ name: "単身", reason: "r", evidence: ["T-03"] }],
+      analysis: [an("価格", ["P-02"]), an("立地", ["L-11"])],
+      unknown: [],
+    };
+    const u = factUsage(strategy, { media: [{ id: "C-01", name: "SUUMO", purpose: "p", target: "t", share: 100, share_reason: "s", reason: "mr", evidence: ["A-03"] }], cautions: [] });
+    expect(u.get("P-02")?.map((x) => x.tab)).toEqual(["summary", "price", "price"]);
+    expect(u.get("A-03")?.map((x) => `${x.tab}:${x.where}`)).toEqual(["summary:推奨方針（総合評価）", "target:第1候補 x", "sales:販売の方向性", "sales:媒体 SUUMO"]);
+    expect(u.get("L-11")?.map((x) => x.tab)).toEqual(["target", "area"]);
+    expect(u.has("T-03")).toBe(false);
   });
 });
