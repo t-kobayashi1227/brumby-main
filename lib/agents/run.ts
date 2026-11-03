@@ -10,8 +10,9 @@ import type { z } from "zod/v4";
 import { simulate } from "../calc/budget";
 import { serial, type Sql } from "../db";
 import { createFactSheet } from "../facts";
-import type { Fact, FactCategory, FactSheet } from "../facts/types";
+import type { FactSheet } from "../facts/types";
 import { checkProgram, removeSentences, splitWhere, type CheckIssue } from "./checks";
+import { checkInput, mediaInput, strategyInput } from "./input";
 import { STRATEGY_MODEL, type Model } from "./cost";
 import { callModel, DEFAULT_CALL, type CallOptions, type ChatMessage, type Effort } from "./llm";
 import { agentPrompt } from "./prompts";
@@ -41,8 +42,6 @@ const CHECK_CALL: CallOptions = { model: STRATEGY_MODEL, effort: "medium", maxTo
 /** 戦略担当は分析と戦略を1回で作るので出力が大きい（修正案 4.2） */
 const STRATEGY_MAX_TOKENS = 64000;
 
-const MEDIA_FACTS: FactCategory[] = ["P", "B", "C"];
-
 /** 確認エージェントの点検項目の番号（指示文の 1〜5） */
 const AI_CHECK_NAMES: Record<number, string> = {
   1: "数字が事実と合わない",
@@ -51,10 +50,6 @@ const AI_CHECK_NAMES: Record<number, string> = {
   4: "災害を軽く書いている",
   5: "価格や売れることの約束",
 };
-
-export function factsOf(sheet: FactSheet, categories: FactCategory[]): Fact[] {
-  return sheet.事実.filter((f) => categories.includes(f.id.split("-")[0] as FactCategory));
-}
 
 interface RunResult {
   runId: number;
@@ -115,7 +110,7 @@ export async function runStrategy(
   /** エージェントを1回呼び、agent_calls に入力・出力・トークン数・費用を残す。失敗したら例外 */
   const call = async <S extends z.ZodType>(agent: AgentName, input: unknown, schema: S, callOptions: CallOptions = DEFAULT_CALL) => {
     const prompt = agentPrompt(agent);
-    const messages: ChatMessage[] = [{ role: "user", content: JSON.stringify(input) }];
+    const messages: ChatMessage[] = [{ role: "user", content: typeof input === "string" ? input : JSON.stringify(input) }];
     const [row] = await db(
       () => sql<{ id: string }[]>`
         insert into agent_calls (run_id, agent, attempt, model, effort, prompt_file, prompt_sha256, input)
@@ -160,13 +155,13 @@ export async function runStrategy(
     out.issues.map((i) => ({ ...splitWhere(i.where), check_name: AI_CHECK_NAMES[i.check] ?? `点検${i.check}`, problem: i.problem, action: "作り直し" }));
 
   try {
-    // 1. 戦略（事実シート全体）
-    const strategyCall = await call("戦略", { 事実シート: sheet }, strategySchema, { ...options.strategy, maxTokens: STRATEGY_MAX_TOKENS });
+    // 1. 戦略（事実シートから、判断に効く事実を表にして渡す。lib/agents/input.ts）
+    const strategyCall = await call("戦略", strategyInput(sheet), strategySchema, { ...options.strategy, maxTokens: STRATEGY_MAX_TOKENS });
     let main: StrategyOutput = strategyCall.output;
 
-    // 2. 媒体（P・B・C と、戦略のうち分析を除いた部分）
+    // 2. 媒体（P・B・C のうち媒体に使う事実と、戦略のうち分析を除いた部分）
     await setStage("媒体");
-    const mediaCall = await call("媒体", { 距離の種類: sheet.距離の種類, 事実: factsOf(sheet, MEDIA_FACTS), メインの答え: mainPart(main) }, mediaSchema);
+    const mediaCall = await call("媒体", mediaInput(sheet, mainPart(main)), mediaSchema);
     let mediaOut: MediaOutput = mediaCall.output;
 
     // 3. 点検：プログラム → 確認エージェント。IDのない文はここで外す
@@ -174,7 +169,7 @@ export async function runStrategy(
     const program = checkProgram(main, mediaOut, sheet.事実, mediaIds);
     await saveChecks(program, "プログラム", null);
     ({ main, media: mediaOut } = removeSentences(main, mediaOut, program));
-    const check = await call("確認", { 事実シート: sheet, 点検する文章: { 戦略: main, 媒体: mediaOut } }, checkSchema, CHECK_CALL);
+    const check = await call("確認", checkInput(sheet, { 戦略: main, 媒体: mediaOut }), checkSchema, CHECK_CALL);
     const ai = aiIssues(check.output);
     await saveChecks(ai, "AI", check.callId);
 
