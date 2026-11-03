@@ -9,14 +9,10 @@
     "lint": "eslint",
     "test": "vitest run",
     "db:check": "tsx --env-file=.env.local scripts/db-check.ts",
-    "db:check-bus-stops": "tsx --env-file=.env.local scripts/check-bus-stops.ts",
-    "ingest": "tsx --env-file=.env.local scripts/ingest/index.ts",
-    "build:district-areas": "tsx --env-file=.env.local scripts/build-district-areas.ts",
-    "fetch-surroundings": "tsx --env-file=.env.local scripts/fetch-surroundings.ts",
-    "analyze": "tsx --env-file=.env.local scripts/analyze.ts",
-    "seed-rules": "tsx --env-file=.env.local scripts/seed-rules.ts",
-    "import-scoring": "tsx --env-file=.env.local scripts/import-scoring-xlsx.ts",
-    "generate-narrative": "tsx --env-file=.env.local scripts/generate-narrative.ts"
+    "facts": "tsx --env-file=.env.local scripts/facts.ts",
+    "ingest": "node --max-old-space-size=10000 --env-file=.env.local --import tsx scripts/ingest/index.ts",
+    "strategy": "tsx --env-file=.env.local scripts/strategy.ts",
+    "paste": "tsx --env-file=.env.local scripts/paste.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
@@ -29,6 +25,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/geojson": "^7946.0.16",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -36,6 +33,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "fflate": "^0.8.3",
+    "mapshaper": "^0.7.98",
     "shapefile": "^0.6.6",
     "supabase": "^2.119.0",
     "tailwindcss": "^4",

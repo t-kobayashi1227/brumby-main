@@ -2,228 +2,257 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getSql } from "../../../lib/db";
-import { GEOCODER, geocodeAddress } from "../../../lib/geocode";
-import { PROPERTY_TYPES } from "../../../lib/rules/describe";
-import { MANUAL_METRIC_KEYS } from "../../../lib/scoring/constants";
-import { MAX_PHOTO_BYTES, PHOTO_TYPES, photosReady } from "../../../lib/photos";
-import type { Sql } from "../../../lib/db";
-import { SCORING_PROPERTY_COLUMNS, scoringSchemaReady } from "../../../lib/scoring/schema-check";
-import { OSM_SUPERMARKET } from "../../../lib/surroundings/layers";
-import { readCompetitors, writeCompetitors } from "../../../lib/competitors";
+import { getSql, type Sql } from "../../../lib/db";
+import { geocodeAddress, isInNiigata } from "../../../lib/geocode";
+import { FLOORS, parseLayout, parsePropertyId, PROPERTY_CLASSES, RENOVATION_PARTS, TRANSPORT_MODES } from "../../../lib/property";
 
-// 物件の登録・変更（設計書 7章 /properties/new、D15）
-// 保存すると住所から緯度経度を取る。取れなかったとき・ずれていたときは、地図でピンを置き直す（setLocation）
-// テスト物件は秘密保持契約の対象。物件の中身をログに出さない（D28）
+// ①物件情報の入力の保存（docs/設計まとめ.md「①物件情報の入力」）
+// 保存すると住所から位置（国土地理院 住所検索）を取る。ずれていたら、物件の画面の地図でピンを置き直す
+// テスト物件は秘密保持契約の対象。物件の中身をログに出さない
 
 export interface PropertyFormState {
   ok?: string;
   error?: string;
 }
 
-/** 登録物件を削除する。分析結果や写真などの子レコードは DB の外部キーで一緒に削除される。 */
-export async function deleteProperty(propertyId: number): Promise<void> {
-  if (!Number.isSafeInteger(propertyId) || propertyId <= 0) throw new Error("物件の番号が正しくありません");
-  const sql = getSql();
-  const deleted = await sql.begin(async (tx) => {
-    const rows = await tx<{ id: number }[]>`delete from properties where id = ${propertyId} returning id`;
-    if (rows.length === 0) throw new Error("物件が見つかりません。画面を更新してください");
-    await tx`delete from geo_features where api_id = ${OSM_SUPERMARKET} and feature_id like ${`${propertyId}:%`}`;
-    return rows.length;
-  });
-  if (deleted) {
-    revalidatePath("/strategy");
-    revalidatePath("/dashboard");
-  }
-}
-
-const AREA_CLASSES = ["center", "suburb", "outer"] as const;
-
 function text(formData: FormData, name: string): string | null {
   const v = String(formData.get(name) ?? "").trim();
   return v === "" ? null : v;
 }
 
+function required(formData: FormData, name: string, label: string): string {
+  const v = text(formData, name);
+  if (v === null) throw new Error(`${label}を入れてください`);
+  return v;
+}
+
 /** 数字の欄。空なら null。カンマは取り除く */
-function num(formData: FormData, name: string, label: string, opts: { int?: boolean; min?: number } = {}): number | null {
+function num(formData: FormData, name: string, label: string, opts: { int?: boolean; min?: number; positive?: boolean } = {}): number | null {
   const raw = text(formData, name);
   if (raw === null) return null;
-  const n = Number(raw.replace(/[,，]/g, ""));
+  const n = Number(raw.normalize("NFKC").replace(/[,，]/g, ""));
   if (!Number.isFinite(n)) throw new Error(`${label}には数字を入れてください`);
   if (opts.int && !Number.isInteger(n)) throw new Error(`${label}は整数で入れてください`);
   if (opts.min !== undefined && n < opts.min) throw new Error(`${label}は${opts.min}以上にしてください`);
+  if (opts.positive && n <= 0) throw new Error(`${label}は0より大きい数にしてください`);
   return n;
 }
 
-/** はい／いいえ／未入力の選択 */
-function bool(formData: FormData, name: string): boolean | null {
-  const v = text(formData, name);
-  return v === null ? null : v === "1";
+function requiredNum(formData: FormData, name: string, label: string, opts: { int?: boolean; min?: number; positive?: boolean } = {}): number {
+  const n = num(formData, name, label, opts);
+  if (n === null) throw new Error(`${label}を入れてください`);
+  return n;
 }
 
-const WARDS = ["北区", "東区", "中央区", "江南区", "秋葉区", "南区", "西区", "西蒲区"];
+function oneOf<T extends string>(value: string | null, choices: readonly T[], label: string): T {
+  if (value === null || !(choices as readonly string[]).includes(value)) throw new Error(`${label}を選んでください`);
+  return value as T;
+}
 
-function readForm(formData: FormData) {
-  const name = text(formData, "name");
-  if (!name) throw new Error("物件名を入れてください");
-  const address = text(formData, "address");
-  if (!address) throw new Error("所在地を入れてください");
-  const propertyType = text(formData, "property_type");
-  if (!propertyType || !(PROPERTY_TYPES as readonly string[]).includes(propertyType)) throw new Error("物件種別を選んでください");
-  const areaClass = text(formData, "area_class");
-  if (areaClass !== null && !(AREA_CLASSES as readonly string[]).includes(areaClass)) throw new Error("エリアの区分を選び直してください");
-  const ward = text(formData, "ward");
-  if (ward !== null && !WARDS.includes(ward)) throw new Error("区を選び直してください");
-  // 手入力の値（採点ルール表。空欄の項目は入れない）
-  const manual: Record<string, number> = {};
-  for (const k of MANUAL_METRIC_KEYS) {
-    const n = num(formData, `m_${k}`, k, { min: 0 });
-    if (n !== null) manual[k] = n;
-  }
-  const deadline = text(formData, "sales_deadline");
-  if (deadline !== null && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) throw new Error("販売期限は日付で入れてください");
-
+function readProperty(formData: FormData) {
+  const layout = required(formData, "layout", "間取り");
+  const parsed = parseLayout(layout);
+  const renovated = oneOf(text(formData, "renovated"), ["あり", "なし"], "リフォーム") === "あり";
+  const parts = formData.getAll("renovation_parts").map(String);
+  if (parts.some((p) => !(RENOVATION_PARTS as readonly string[]).includes(p))) throw new Error("リフォームの箇所を選び直してください");
+  const renovationYear = renovated ? num(formData, "renovation_year", "リフォームの年", { int: true, min: 1950 }) : null;
+  if (renovated && renovationYear === null) throw new Error("リフォームの年を入れてください");
+  if (renovated && parts.length === 0) throw new Error("リフォームの箇所を1つ以上選んでください");
   return {
-    name,
-    property_type: propertyType,
-    price_man_yen: num(formData, "price_man_yen", "売出価格", { int: true, min: 1 }),
-    address,
-    area_class: areaClass,
-    layout: text(formData, "layout"),
-    land_sqm: num(formData, "land_sqm", "土地面積", { min: 0 }),
-    building_sqm: num(formData, "building_sqm", "建物面積", { min: 0 }),
-    parking: num(formData, "parking", "駐車場の台数", { int: true, min: 0 }),
-    access: text(formData, "access"),
+    property_class: oneOf(text(formData, "property_class"), PROPERTY_CLASSES, "物件区分"),
+    price_man_yen: requiredNum(formData, "price_man_yen", "価格", { int: true, positive: true }),
+    address: required(formData, "address", "住所"),
+    layout,
+    rooms: parsed?.rooms ?? null,
+    storerooms: parsed?.storerooms ?? null,
+    building_sqm: requiredNum(formData, "building_sqm", "建物面積", { positive: true }),
+    land_sqm: requiredNum(formData, "land_sqm", "土地面積", { positive: true }),
+    parking: requiredNum(formData, "parking", "駐車台数", { int: true, min: 0 }),
+    building_age: requiredNum(formData, "building_age", "築年数", { int: true, min: 0 }),
+    floors: oneOf(text(formData, "floors"), FLOORS, "階数"),
+    has_garden: oneOf(text(formData, "has_garden"), ["あり", "なし"], "庭") === "あり",
+    renovated,
+    renovation_year: renovationYear,
+    renovation_parts: renovated ? parts : null,
     features: text(formData, "features"),
-    total_budget_man_yen: num(formData, "total_budget_man_yen", "広告の総予算", { int: true, min: 1 }),
-    sales_deadline: deadline,
-    sales_goal: text(formData, "sales_goal"),
-    age_years: num(formData, "age_years", "築年数", { int: true, min: 0 }),
-    rooms: num(formData, "rooms", "居室数", { int: true, min: 0 }),
-    is_hiraya: bool(formData, "is_hiraya"),
-    has_garden: bool(formData, "has_garden"),
-    ward,
-    town: text(formData, "town"),
-    manual_metrics: manual,
+    ad_budget_man_yen: num(formData, "ad_budget_man_yen", "広告予算の総額", { int: true, positive: true }),
   };
 }
 
-/** 住所から緯度経度を取って保存する。取れなければ位置を空にし、理由を返す */
-async function geocodeAndStore(propertyId: number, address: string): Promise<string | null> {
-  const sql = getSql();
-  try {
-    const hit = await geocodeAddress(address);
-    if (!hit) {
-      await sql`update properties set geom = null, geocode_source = null, geocoded_at = null where id = ${propertyId}`;
-      return "住所から位置が見つかりませんでした。地図をクリックして位置を指定してください。";
+/** 交通（最大2つ）。1つ目は必須。2つ目は全部空なら無し */
+function readTransports(formData: FormData) {
+  const rows = [];
+  for (const position of [1, 2]) {
+    const p = (k: string) => text(formData, `t${position}_${k}`);
+    const empty = !p("mode") && !p("line") && !p("stop_name") && !p("walk_min");
+    if (empty) {
+      if (position === 1) throw new Error("交通（1つ目）を入れてください");
+      continue;
     }
-    await sql`
-      update properties
-      set geom = extensions.st_setsrid(extensions.st_makepoint(${hit.lon}, ${hit.lat}), 4326), geocode_source = ${GEOCODER}, geocoded_at = now()
-      where id = ${propertyId}
-    `;
-    return null;
-  } catch {
-    return "住所検索につながりませんでした。時間をおいて「住所から位置を取り直す」を押すか、地図で位置を指定してください。";
+    const label = `交通（${position}つ目）`;
+    rows.push({
+      position,
+      mode: oneOf(p("mode"), TRANSPORT_MODES, `${label}の種類`),
+      line: p("line"),
+      stop_name: required(formData, `t${position}_stop_name`, `${label}の駅またはバス停の名前`),
+      walk_min: requiredNum(formData, `t${position}_walk_min`, `${label}の徒歩分`, { int: true, min: 0 }),
+    });
   }
+  return rows;
 }
 
-/**
- * 物件の写真を保存する（フォームの photo）。photo_remove なら消して仮画像に戻す
- * 写真の表（property_photos）がまだない（マイグレーション前）ときは、写真だけ保存せずに知らせる
- */
-async function savePhoto(sql: Sql, propertyId: number, formData: FormData): Promise<string | null> {
-  const file = formData.get("photo");
-  const remove = formData.get("photo_remove") === "1";
-  if (!(file instanceof File && file.size > 0) && !remove) return null;
-  if (!(await photosReady(sql))) return "写真の表がまだDBにないため、写真は保存していません（マイグレーションの反映が必要です）。";
-  if (remove && !(file instanceof File && file.size > 0)) {
-    await sql`delete from property_photos where property_id = ${propertyId}`;
-    return null;
+interface CompetitorInput {
+  position: number;
+  price_man_yen: number | null;
+  address: string | null;
+  building_sqm: number | null;
+  land_sqm: number | null;
+  building_age: number | null;
+}
+
+/** 競合物件（任意・複数）。全部空の行は無視する */
+function readCompetitors(formData: FormData): CompetitorInput[] {
+  const count = Number(formData.get("competitor_count") ?? 0);
+  const rows: CompetitorInput[] = [];
+  for (let i = 0; i < count; i++) {
+    const c = (k: string) => text(formData, `c${i}_${k}`);
+    if (!c("price_man_yen") && !c("address") && !c("building_sqm") && !c("land_sqm") && !c("building_age")) continue;
+    const label = `競合物件（${rows.length + 1}件目）`;
+    rows.push({
+      position: rows.length + 1,
+      price_man_yen: num(formData, `c${i}_price_man_yen`, `${label}の価格`, { int: true, positive: true }),
+      address: c("address"),
+      building_sqm: num(formData, `c${i}_building_sqm`, `${label}の建物面積`, { positive: true }),
+      land_sqm: num(formData, `c${i}_land_sqm`, `${label}の土地面積`, { positive: true }),
+      building_age: num(formData, `c${i}_building_age`, `${label}の築年数`, { int: true, min: 0 }),
+    });
   }
-  const photo = file as File;
-  if (!(PHOTO_TYPES as readonly string[]).includes(photo.type)) throw new Error("写真は JPEG・PNG・WebP にしてください");
-  if (photo.size > MAX_PHOTO_BYTES) throw new Error("写真が大きすぎます（2.5MBまで）");
-  const size = (name: string) => {
-    const n = Number(formData.get(name));
-    return Number.isInteger(n) && n > 0 ? n : null;
-  };
-  const content = Buffer.from(await photo.arrayBuffer());
+  return rows;
+}
+
+/** 住所から位置を出して保存する。出せなかったときは、その旨の文を返す */
+async function geocodeAndStore(sql: Sql, propertyId: number, address: string): Promise<string | null> {
+  let hit;
+  try {
+    hit = await geocodeAddress(address);
+  } catch {
+    return "住所検索に接続できませんでした。地図をクリックしてピンを置いてください。";
+  }
+  if (!hit) return "住所から位置を出せませんでした。地図をクリックしてピンを置いてください。";
   await sql`
-    insert into property_photos (property_id, content, content_type, width, height, size_bytes)
-    values (${propertyId}, ${content}, ${photo.type}, ${size("photo_width")}, ${size("photo_height")}, ${photo.size})
-    on conflict (property_id) do update set content = excluded.content, content_type = excluded.content_type, width = excluded.width,
-      height = excluded.height, size_bytes = excluded.size_bytes, updated_at = now()
+    update properties
+    set geog = extensions.st_setsrid(extensions.st_point(${hit.lon}, ${hit.lat}), 4326)::extensions.geography,
+        location_source = '住所検索', geocode_title = ${hit.title}
+    where id = ${propertyId}
   `;
   return null;
 }
 
-/** 新規登録（id なし）と変更（id あり）。新規は保存後に物件の画面へ移る */
+/** 競合物件の住所から位置を出す（出せなければ位置なし。直線距離の事実が「取得できず」になる） */
+async function competitorsWithLocation(competitors: ReturnType<typeof readCompetitors>) {
+  const out = [];
+  for (const c of competitors) {
+    const hit = c.address ? await geocodeAddress(c.address).catch(() => null) : null;
+    out.push({ ...c, lon: hit?.lon ?? null, lat: hit?.lat ?? null });
+  }
+  return out;
+}
+
+async function writeChildren(tx: Sql, propertyId: number, transports: ReturnType<typeof readTransports>, competitors: Awaited<ReturnType<typeof competitorsWithLocation>>) {
+  await tx`delete from property_transports where property_id = ${propertyId}`;
+  for (const t of transports) await tx`insert into property_transports ${tx({ property_id: propertyId, ...t })}`;
+  await tx`delete from competitors where property_id = ${propertyId}`;
+  for (const { lon, lat, ...c } of competitors) {
+    await tx`
+      insert into competitors (property_id, position, price_man_yen, address, building_sqm, land_sqm, building_age, geog)
+      values (${propertyId}, ${c.position}, ${c.price_man_yen}, ${c.address}, ${c.building_sqm}, ${c.land_sqm}, ${c.building_age},
+        ${lon !== null && lat !== null ? ewktPoint(lon, lat) : null}::extensions.geography)
+    `;
+  }
+}
+
+/** 経度・緯度を、PostGIS が読める文字（EWKT）にする */
+function ewktPoint(lon: number, lat: number): string {
+  return `SRID=4326;POINT(${lon} ${lat})`;
+}
+
 export async function saveProperty(_prev: PropertyFormState, formData: FormData): Promise<PropertyFormState> {
   let createdId: number | null = null;
-  let geocodeWarning: string | null = null;
   try {
     const sql = getSql();
-    const form = readForm(formData);
-    // 競合物件の欄も、物件を保存する前に確かめる（誤りがあれば何も保存しない）
-    const competitors = readCompetitors(formData);
-    // 採点ルール表（D35）の列は、マイグレーションが入る前は保存しない
-    const v: Record<string, unknown> = { ...form, manual_metrics: sql.json(form.manual_metrics) };
-    const scoringReady = await scoringSchemaReady(sql);
-    if (!scoringReady) for (const c of SCORING_PROPERTY_COLUMNS) delete v[c];
+    // 先に全部の欄を確かめる（誤りがあれば何も保存しない）
+    const values = readProperty(formData);
+    const transports = readTransports(formData);
+    const competitors = await competitorsWithLocation(readCompetitors(formData));
     const id = Number(text(formData, "id") ?? 0);
 
     if (id > 0) {
-      const [before] = await sql<{ address: string; geocode_source: string | null }[]>`select address, geocode_source from properties where id = ${id}`;
+      const [before] = await sql<{ address: string }[]>`select address from properties where id = ${id}`;
       if (!before) throw new Error(`物件 ${id} がありません`);
       await sql.begin(async (tx) => {
-        await tx`update properties set ${tx(v)} where id = ${id}`;
-        await writeCompetitors(tx, id, competitors, scoringReady);
+        await tx`update properties set ${tx(values)} where id = ${id}`;
+        await writeChildren(tx as unknown as Sql, id, transports, competitors);
       });
-      revalidatePath("/research/detail");
-      revalidatePath("/research/result");
-      const photoWarning = await savePhoto(sql, id, formData);
-      // 住所を変えたら位置を取り直す。地図で置いたピン（manual）も、住所が変わったら取り直す
-      const warning = before.address !== form.address ? await geocodeAndStore(id, form.address) : null;
+      // 住所を変えたら位置を取り直す（地図で直したピンも、住所が変わったら取り直す）
+      const warning = before.address !== values.address ? await geocodeAndStore(sql, id, values.address) : null;
       revalidatePath(`/properties/${id}`);
-      if (warning || photoWarning) return { error: `保存しました。${[warning, photoWarning].filter(Boolean).join("")}` };
-      return { ok: before.address !== form.address ? "保存しました。住所が変わったので、位置を取り直しました。地図のピンを確かめてください。" : "保存しました。" };
+      revalidatePath("/properties");
+      if (warning) return { error: `保存しました。${warning}` };
+      return { ok: before.address !== values.address ? "保存しました。住所が変わったので、位置を取り直しました。地図のピンを確かめてください。" : "保存しました。" };
     }
 
     createdId = await sql.begin(async (tx) => {
-      const [row] = await tx<{ id: number }[]>`insert into properties ${tx(v)} returning id`;
-      await writeCompetitors(tx, Number(row.id), competitors, scoringReady);
+      const [row] = await tx<{ id: number }[]>`insert into properties ${tx(values)} returning id`;
+      await writeChildren(tx as unknown as Sql, Number(row.id), transports, competitors);
       return Number(row.id);
     });
-    // 写真が保存できなくても（マイグレーション前など）、物件の登録は済ませて物件の画面へ進む
-    await savePhoto(sql, createdId, formData).catch(() => null);
-    geocodeWarning = await geocodeAndStore(createdId, form.address);
+    await geocodeAndStore(sql, createdId, values.address);
+    revalidatePath("/properties");
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
-  redirect(`/properties/${createdId}?created=1${geocodeWarning ? "&geocode=failed" : ""}`);
+  // 登録したら、物件の画面（地図で位置を確かめる）へ
+  redirect(`/properties/${createdId}?created=1`);
 }
 
-/** 地図で置いたピンの位置を保存する */
+/** 地図で置き直したピンの位置を保存する */
 export async function setLocation(propertyId: number, lon: number, lat: number): Promise<PropertyFormState> {
-  if (!Number.isInteger(propertyId) || !Number.isFinite(lon) || !Number.isFinite(lat)) return { error: "位置が正しくありません" };
-  if (lon < 137.5 || lon > 140.0 || lat < 36.7 || lat > 38.6) return { error: "新潟県の外の位置です（PoCは新潟県内だけ）" };
+  if (parsePropertyId(propertyId) === null) return { error: "物件の番号が正しくありません。画面を読み込み直してください" };
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) return { error: "位置が正しくありません" };
+  if (!isInNiigata(lon, lat)) return { error: "新潟県の外の位置です（PoCは新潟県内だけ）" };
   const rows = await getSql()`
     update properties
-    set geom = extensions.st_setsrid(extensions.st_makepoint(${lon}, ${lat}), 4326), geocode_source = 'manual', geocoded_at = now()
+    set geog = extensions.st_setsrid(extensions.st_point(${lon}, ${lat}), 4326)::extensions.geography, location_source = '手で修正'
     where id = ${propertyId}
     returning id
   `;
   if (rows.length === 0) return { error: `物件 ${propertyId} がありません` };
   revalidatePath(`/properties/${propertyId}`);
-  return { ok: "位置を確定しました。この位置の周辺情報を取得します。" };
+  return { ok: "位置を確定しました。" };
 }
 
 /** 住所からもう一度位置を取る */
 export async function regeocode(propertyId: number): Promise<PropertyFormState> {
-  const [row] = await getSql()<{ address: string }[]>`select address from properties where id = ${propertyId}`;
+  const sql = getSql();
+  const [row] = await sql<{ address: string }[]>`select address from properties where id = ${propertyId}`;
   if (!row) return { error: `物件 ${propertyId} がありません` };
-  const warning = await geocodeAndStore(propertyId, row.address);
+  const warning = await geocodeAndStore(sql, propertyId, row.address);
   revalidatePath(`/properties/${propertyId}`);
   return warning ? { error: warning } : { ok: "住所から位置を取り直しました。地図のピンを確かめてください。" };
+}
+
+/** 登録の前に、住所が国土地理院の住所検索で見つかるかを確かめる（保存はしない） */
+export async function previewAddress(address: string): Promise<PropertyFormState> {
+  const q = String(address ?? "").trim();
+  if (q === "") return { error: "住所を入れてください" };
+  if (q.length > 200) return { error: "住所が長すぎます" };
+  let hit;
+  try {
+    hit = await geocodeAddress(q);
+  } catch {
+    return { error: "住所検索に接続できませんでした。登録したあと、地図でピンを置けます。" };
+  }
+  if (!hit) return { error: "この住所では位置を出せませんでした。番地まで入っているか確かめてください。登録したあと、地図でピンを置くこともできます。" };
+  // 町丁目までしか当たらないこともあるため、「番地まで合った」とは言わない
+  return { ok: `住所検索では「${hit.title || q}」として見つかりました。番地まで合っているとは限らないため、登録したあと地図でピンの位置を確かめてください。` };
 }
