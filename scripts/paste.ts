@@ -12,7 +12,7 @@ import path from "node:path";
 import { z, type ZodType } from "zod/v4";
 import { checkProgram, removeSentences, splitWhere } from "../lib/agents/checks";
 import { agentPrompt } from "../lib/agents/prompts";
-import { factsOf } from "../lib/agents/run";
+import { checkInput, mediaInput, strategyInput } from "../lib/agents/input";
 import { checkSchema, mainPart, mediaSchema, strategySchema, type MediaOutput, type StrategyOutput } from "../lib/agents/schemas";
 import { simulate } from "../lib/calc/budget";
 import { getSql } from "../lib/db";
@@ -31,7 +31,7 @@ function pasteText(agent: "戦略" | "媒体" | "確認", schema: ZodType, input
     JSON.stringify(z.toJSONSchema(schema), null, 1),
     "",
     "【入力】",
-    JSON.stringify(input, null, 1),
+    typeof input === "string" ? input : JSON.stringify(input, null, 1),
   ].join("\n");
 }
 
@@ -102,15 +102,14 @@ async function main() {
     );
 
   // 1. 戦略
-  writeFileSync(at("1_戦略.txt"), pasteText("戦略", strategySchema, { 事実シート: sheet }));
+  writeFileSync(at("1_戦略.txt"), pasteText("戦略", strategySchema, strategyInput(sheet)));
   const strategy = readAnswer(at("戦略.json"), strategySchema);
   if (!strategy) return next(at("1_戦略.txt"), at("戦略.json"));
   console.log(`  戦略.json：分析 ${strategy.analysis.length}件（組み合わせ ${strategy.analysis.filter((a) => a.topic === "組み合わせ").length}件）・ターゲット ${strategy.targets.length}件`);
   html({ strategy });
 
   // 2. 媒体（メインの答えの部分だけを渡す）
-  const mediaInput = { 距離の種類: sheet.距離の種類, 事実: factsOf(sheet, ["P", "B", "C"]), メインの答え: mainPart(strategy) };
-  writeFileSync(at("2_媒体.txt"), pasteText("媒体", mediaSchema, mediaInput));
+  writeFileSync(at("2_媒体.txt"), pasteText("媒体", mediaSchema, mediaInput(sheet, mainPart(strategy))));
   const media = readAnswer(at("媒体.json"), mediaSchema);
   if (!media) return next(at("2_媒体.txt"), at("媒体.json"), at("戦略.html"));
 
@@ -124,7 +123,7 @@ async function main() {
     adBudget,
   );
   console.log(`  プログラムの点検：${program.length}件（${count(program.map((i) => i.check_name))}）`);
-  writeFileSync(at("3_確認.txt"), pasteText("確認", checkSchema, { 事実シート: sheet, 点検する文章: { 戦略: kept.main, 媒体: kept.media } }));
+  writeFileSync(at("3_確認.txt"), pasteText("確認", checkSchema, checkInput(sheet, { 戦略: kept.main, 媒体: kept.media })));
 
   const check = readAnswer(at("確認.json"), checkSchema);
   const ai = (check?.issues ?? []).map((i) => ({ ...splitWhere(i.where), check: i.check, problem: i.problem }));

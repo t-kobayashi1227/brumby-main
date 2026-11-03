@@ -46,7 +46,7 @@ export default function PromptLog({ propertyId, runId }: { propertyId: number; r
       </summary>
       <div className="mt-3 grid gap-3">
         <div className="text-[12px] text-sub leading-relaxed">
-          このレポートを作るときに、AIへ送った指示文と入力です。入力は、読みやすいように改行と字下げを入れて出しています（中身は送ったものと同じです）。このほかに、答えの形（JSON の形）の指定も送っています。
+          このレポートを作るときに、AIへ送った指示文と入力です。指示文はシステムプロンプト、入力はユーザーの発言として送っています。入力の JSON の部分は、読みやすいように改行と字下げを入れて出しています（中身は送ったものと同じで、文字数は送った分を数えています）。このほかに、答えの形（JSON の形）の指定も送っています。
         </div>
         {load.state === "loading" && <div className="text-[13px] text-sub">読み込んでいます…</div>}
         {load.state === "error" && (
@@ -78,7 +78,7 @@ export default function PromptLog({ propertyId, runId }: { propertyId: number; r
                 <div className="mt-1 text-[12px] text-accent">この実行のあとで指示文を直したため、送ったときの指示文は出せません（今の指示文とは違います）。</div>
               )}
               {c.messages.map((m, j) => (
-                <Block key={j} title={c.messages.length > 1 ? `入力 ${j + 1}（${m.role}）` : "入力"}>
+                <Block key={j} title={c.messages.length > 1 ? `入力 ${j + 1}（${m.role}）` : "入力"} sentLength={m.content.length}>
                   {pretty(m.content)}
                 </Block>
               ))}
@@ -90,7 +90,7 @@ export default function PromptLog({ propertyId, runId }: { propertyId: number; r
 }
 
 /** 開いて読む、文字のかたまり。長いので枠の中でスクロールし、コピーできるようにする */
-function Block({ title, children }: { title: string; children: string | null }) {
+function Block({ title, children, sentLength }: { title: string; children: string | null; sentLength?: number }) {
   const [copied, setCopied] = useState(false);
   if (children === null) return null;
   const copy = async () => {
@@ -106,7 +106,7 @@ function Block({ title, children }: { title: string; children: string | null }) 
     <details className="mt-2 min-w-0">
       <summary className="cursor-pointer text-[13px] text-primary">
         {title}
-        <span className="ml-1.5 text-[11px] text-muted">{children.length.toLocaleString("ja-JP")}文字</span>
+        <span className="ml-1.5 text-[11px] text-muted">{(sentLength ?? children.length).toLocaleString("ja-JP")}文字</span>
       </summary>
       <div className="relative mt-1.5">
         <button type="button" onClick={() => void copy()} className="absolute right-2 top-2 rounded border border-line bg-white px-2 py-0.5 text-[11px] text-sub cursor-pointer hover:text-primary">
@@ -118,11 +118,14 @@ function Block({ title, children }: { title: string; children: string | null }) 
   );
 }
 
-/** 入力は JSON の文字列なので、読める形に整える。JSON でなければそのまま */
+/** 入力は、JSON の文字列（2026-11-04 より前）か、事実の表と JSON を見出しで並べた文字列。JSON の部分だけ読める形に整える */
 function pretty(text: string): string {
-  try {
-    return JSON.stringify(JSON.parse(text), null, 2);
-  } catch {
-    return text;
-  }
+  const json = (t: string) => {
+    try {
+      return JSON.stringify(JSON.parse(t), null, 2);
+    } catch {
+      return null;
+    }
+  };
+  return json(text) ?? text.split("\n").map((line) => (/^[{[]/.test(line) ? (json(line) ?? line) : line)).join("\n");
 }
