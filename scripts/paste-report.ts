@@ -65,7 +65,7 @@ export function reportHtml(r: PasteReport): string {
     block(
       4,
       "価格の見方",
-      `<div class="head"><span class="tag">${s.price_view.position}</span><span class="tag">${s.price_view.sellability}</span></div><p>${esc(s.price_view.text)}</p>${evidence(s.price_view.evidence)}`,
+      `<div class="head"><span class="tag">${s.price_view.position}</span></div><p>${esc(s.price_view.text)}</p>${evidence(s.price_view.evidence)}`,
     ),
     block(5, "懸念点", s.concerns.map((c) => `<div class="item"><div class="head">${esc(c.text)}</div><p>対策：${esc(c.action)}</p>${evidence(c.evidence)}</div>`).join("")),
     block(6, "販売の方向性", `<p>${esc(s.direction.text)}</p>${evidence(s.direction.evidence)}`),

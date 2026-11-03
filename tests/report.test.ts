@@ -38,7 +38,7 @@ const main: StrategyOutput = {
   targets: [{ rank: 1, name: "x", source: "候補", definition: null, reason: "r", evidence: ["A-03"], confidence: "高" }],
   not_fit: [{ name: "単身", reason: "r", evidence: ["H-99"] }],
   appeals: [{ rank: 1, ...s(["L-11"]) }],
-  price_view: { position: "相場なみ", sellability: "標準", ...s(["P-02"]) },
+  price_view: { position: "相場なみ", ...s(["P-02"]) },
   concerns: [{ ...s(["H-02"]), action: "a" }],
   direction: s([" A-03 "]),
 };
@@ -148,5 +148,6 @@ describe("見せ方の補助", () => {
     expect(nextCheck({ ...FACTS[3], 項目: "リフォーム", 値: null }).who).toBe("売主・物件資料");
     expect(nextCheck({ ...FACTS[2], 項目: "液状化の発生傾向" }).what).toBe("物件の位置で液状化の発生傾向を確かめる");
     expect(nextCheck({ ...FACTS[0], id: "B-05", 項目: "買主の年代（二次取得の世帯主）", 状態: "要確認" }).who).toBe("元の資料");
+    expect(nextCheck({ ...FACTS[0], id: "N-05", 項目: "最寄りの幼稚園（直線）", 状態: "要確認", 比較: "データは2015年時点。今もあるかを市の一覧で確かめる" })).toEqual({ who: "市の一覧・現地", what: "最寄りの幼稚園が今もあるかを、最新の一覧か現地で確かめる" });
   });
 });
