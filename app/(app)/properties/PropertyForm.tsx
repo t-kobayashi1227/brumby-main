@@ -161,7 +161,11 @@ function valuesToFormData(v: PropertyValues): FormData {
 // ---- 見た目の部品 ----
 
 const label = "block text-[13px] font-medium text-ink";
-const field = `w-full mt-1 h-10 px-3 bg-white rounded-lg border border-field text-[13px] text-ink placeholder:text-[#a3abbb] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 data-[ai-filled]:bg-[#fff8e1] data-[ai-filled]:border-[#e8b94a]`;
+const fieldBase = `w-full mt-1 px-3 bg-white rounded-lg border border-field text-[13px] text-ink placeholder:text-[#a3abbb] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 data-[ai-filled]:bg-[#fff8e1] data-[ai-filled]:border-[#e8b94a]`;
+const field = `${fieldBase} h-10`;
+// 複数行の入力欄（textarea）。高さは rows で決め、右下のつまみで上下に広げられる。
+// height に !important（h-auto! など）を付けると、つまみで付く高さ（style属性）が打ち消されて広げられなくなるので付けない。
+const textArea = `${fieldBase} min-h-20 resize-y py-2.5 leading-relaxed`;
 const selectField = `${field} pr-8`;
 
 const Required = () => <span className="ml-0.5 text-[#e5484d]">*</span>;
@@ -358,7 +362,7 @@ function AiAssistPanel({ onImported, onBusyChange }: { onImported: (r: ImportRes
             maxLength={IMPORT_MAX_CHARS}
             aria-label="物件の紹介文"
             placeholder="例：JR越後線「寺尾」駅 徒歩8分、4LDK+S、建物面積105.98㎡、土地面積165.30㎡、2015年築の2階建て。販売価格は2,480万円…"
-            className={`${field} h-auto! py-2.5 leading-relaxed read-only:bg-subtle`}
+            className={`${textArea} read-only:bg-subtle`}
           />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <button
@@ -713,7 +717,7 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
                     defaultValue={str(v.features)}
                     rows={3}
                     placeholder="例：シャッター車庫あり、南向きリビング、2023年キッチン・浴室リフォーム済み"
-                    className={`${field} h-auto! py-2.5 leading-relaxed`}
+                    className={textArea}
                   />
                   <p className="mt-1 text-[11px] text-muted">物件資料のまとめ書きのまま貼れます。氏名・連絡先は書かないでください。</p>
                 </div>
