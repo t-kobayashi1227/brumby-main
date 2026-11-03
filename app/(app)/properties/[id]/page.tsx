@@ -87,16 +87,13 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
           ← 物件一覧に戻る
         </Link>
         <div className="text-sm font-bold text-ink mr-auto">物件ID {p.code}</div>
-        <Link href={`/properties/${propertyId}/facts`} className="text-xs text-brand underline">
-          周辺情報を取り直す →
-        </Link>
         <Link href={`/strategy/${propertyId}`} className="text-xs text-brand underline">
           販売戦略を見る →
         </Link>
       </div>
       {sp.created === "1" && (
         <div className="rounded-md border border-[#bfe5c6] bg-[#e9f8ec] px-4 py-3 text-xs text-[#157347]">
-          登録しました。下の地図で、ピンが建物の位置にあるか確かめてください。
+          登録しました。住所から位置を出せなかったため、下の地図をクリックしてピンを置き、「この位置で確定」を押してください。販売戦略づくりに進みます。
         </div>
       )}
       <LocationMap propertyId={propertyId} lon={p.lon} lat={p.lat} source={p.location_source} geocodeTitle={p.geocode_title} />

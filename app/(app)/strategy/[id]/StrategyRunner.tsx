@@ -9,6 +9,8 @@ import { btnAction, btnSecondary, card } from "../../../_lib/ui";
 // 物件の見出しカード（children）の右側にボタンを置き、進み具合や失敗はカードの下側に出す（提案資料の画面イメージに合わせる）
 
 const STAGES = [
+  // 事実シートは、実行の行を作る前に作る（サーバーの stage には出ない。始める合図を待つあいだ、ここを進行中にする）
+  { key: "事実", label: "周辺情報を集め、事実シートを作る" },
   { key: "戦略", label: "事実を分析し、販売戦略を決める" },
   { key: "媒体", label: "媒体と配分を決める" },
   { key: "確認", label: "点検する（プログラムと確認）" },
@@ -32,9 +34,12 @@ export default function StrategyRunner({
   hasReport,
   lastCreatedAt,
   hasLocation,
+  autoStart = false,
   children,
 }: {
   propertyId: number;
+  /** ?auto=1 で開いたとき（登録の直後・位置の確定のあと）、自動で作り始める */
+  autoStart?: boolean;
   initial: RunStatus | null;
   hasReport: boolean;
   /** 画面に出しているレポートを作り終えた日時（日本時間、表示用）。AIの費用は strategy_runs.cost_usd に保存し、画面には出さない */
@@ -89,6 +94,18 @@ export default function StrategyRunner({
     }
   };
 
+  // 自動で始めるのは最初の1回だけ。?auto=1 は外す（読み込み直しや戻るで、もう一度作らないため）
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!autoStart || autoStarted.current) return;
+    autoStarted.current = true;
+    router.replace(`/strategy/${propertyId}`);
+    // 画面の描画のあとで始める（effect の中で直接 state を変えない）
+    if (!running && hasLocation) queueMicrotask(() => void start());
+    // start は毎回作り直されるが、自動で始めるのは最初の1回だけ
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
+
   const currentIndex = run?.status === "running" ? STAGES.findIndex((s) => s.key === run.stage) : -1;
   const seconds = run?.startedAt ? Math.max(0, Math.round((now - new Date(run.startedAt).getTime()) / 1000)) : null;
 
@@ -111,7 +128,7 @@ export default function StrategyRunner({
         </div>
       </div>
       {!hasReport && !running && (
-        <div className="text-[12px] text-muted print:hidden">最新の事実シートから、AIエージェントが戦略を作ります。数分かかります。画面を閉じても作成は続きます</div>
+        <div className="text-[12px] text-muted print:hidden">周辺情報を集めて事実シートを作り、AIエージェントが戦略を作ります。数分かかります。画面を閉じても作成は続きます</div>
       )}
       {!hasLocation && <div className="print:hidden text-xs text-[#b91c1c]">物件の位置がありません。物件の画面の地図でピンを置いてから作ってください。</div>}
 
@@ -134,7 +151,7 @@ export default function StrategyRunner({
               </li>
             );
           })}
-          {seconds !== null && <li className="text-[12px] text-muted mt-1">経過 {seconds}秒（事実シートがまだ無いときは、先に作ります）</li>}
+          {seconds !== null && <li className="text-[12px] text-muted mt-1">経過 {seconds}秒</li>}
         </ol>
       )}
       {!running && run?.status === "failed" && (

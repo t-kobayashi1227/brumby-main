@@ -83,9 +83,12 @@ export async function runStrategy(
 ): Promise<RunResult> {
   const db = serial();
 
-  // 最新の事実シートを使う。無ければ作る
+  // 最新の事実シートを使う。無いとき、または物件（入力・位置）を直したあとに作ったものが無いときは、作り直す
+  // properties.updated_at は保存・位置の確定のたびに更新される（トリガー）
   const [latest] = await sql<{ id: string; content: FactSheet }[]>`
-    select id, content from fact_sheets where property_id = ${propertyId} order by created_at desc limit 1
+    select f.id, f.content from fact_sheets f join properties p on p.id = f.property_id
+    where f.property_id = ${propertyId} and f.created_at >= p.updated_at
+    order by f.created_at desc limit 1
   `;
   const { id: factSheetId, sheet } = latest ? { id: Number(latest.id), sheet: latest.content } : await createFactSheet(sql, propertyId);
   const mediaIds = (await sql<{ id: string }[]>`select id from media order by sort`).map((m) => m.id);

@@ -12,8 +12,8 @@ describe("findPage", () => {
     expect(findPage("/strategy/12")?.title).toBe("販売戦略の詳細");
   });
 
-  it("/properties/<id>/facts は事実シートの画面になる", () => {
-    expect(findPage("/properties/3/facts")?.title).toBe("事実シート");
+  it("事実シートの画面は無くした（表は販売戦略の画面で見せる）", () => {
+    expect(findPage("/properties/3/facts")).toBeUndefined();
   });
 
   it("知らない画面は undefined", () => {
@@ -29,7 +29,6 @@ describe("isNavActive", () => {
   it("物件の画面・入力・販売戦略のレポートでは「物件一覧」を選択中にする", () => {
     expect(isNavActive(list, "/properties")).toBe(true);
     expect(isNavActive(list, "/properties/new")).toBe(true);
-    expect(isNavActive(list, "/properties/3/facts")).toBe(true);
     expect(isNavActive(list, "/strategy/12")).toBe(true);
     expect(isNavActive(list, "/settings")).toBe(false);
   });
