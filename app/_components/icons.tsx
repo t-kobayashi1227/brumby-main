@@ -185,3 +185,161 @@ export const SpinnerIcon = (p: IconProps) => (
     <path d="M12 3a9 9 0 1 0 9 9" />
   </Svg>
 );
+
+// ---- 販売戦略レポート（6タブ）で使う（2026-11-03） ----
+
+export const SchoolIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2 9l10-5 10 5-10 5z" />
+    <path d="M6 11v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5" />
+  </Svg>
+);
+
+export const TreeIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3c-3 0-5 2.3-5 5 0 .5 0 1 .2 1.4A4 4 0 0 0 8 17h8a4 4 0 0 0 .8-7.6c.1-.4.2-.9.2-1.4 0-2.7-2-5-5-5z" />
+    <path d="M12 17v4" />
+  </Svg>
+);
+
+export const CartIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 4h2l2.2 10.5h10.6L20 7H6.2" />
+    <circle cx="9" cy="19" r="1.3" />
+    <circle cx="17" cy="19" r="1.3" />
+  </Svg>
+);
+
+export const MedicalIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4" y="4" width="16" height="16" rx="3" />
+    <path d="M12 8v8M8 12h8" />
+  </Svg>
+);
+
+export const BusIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="5" y="3" width="14" height="15" rx="2.5" />
+    <path d="M5 11h14M8 18v2.5M16 18v2.5" />
+    <circle cx="8.5" cy="14.5" r=".6" />
+    <circle cx="15.5" cy="14.5" r=".6" />
+  </Svg>
+);
+
+export const WaveIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2 9c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2" />
+    <path d="M2 15c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2" />
+  </Svg>
+);
+
+export const MountainIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 20l6.5-11 4 6.5 2.5-3.5L21 20z" />
+  </Svg>
+);
+
+export const LayersIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3l9 5-9 5-9-5z" />
+    <path d="M3 13l9 5 9-5" />
+  </Svg>
+);
+
+export const WrenchIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M14.5 6.5a4 4 0 0 0 5 5L12 19a2.1 2.1 0 0 1-3-3z" />
+    <path d="M14.5 6.5L17 4l3 3-2.5 2.5" />
+  </Svg>
+);
+
+export const BookIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z" />
+    <path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5" />
+  </Svg>
+);
+
+export const AlertIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 4L2.5 20h19z" />
+    <path d="M12 10v4.5M12 17.5v.1" />
+  </Svg>
+);
+
+export const DatabaseIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <ellipse cx="12" cy="5.5" rx="7.5" ry="2.5" />
+    <path d="M4.5 5.5v13c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-13" />
+    <path d="M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5" />
+  </Svg>
+);
+
+export const TargetIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <circle cx="12" cy="12" r="4.5" />
+    <circle cx="12" cy="12" r=".8" />
+  </Svg>
+);
+
+export const MegaphoneIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 10v4h3l8 4V6L7 10z" />
+    <path d="M7 14l1.5 5h2.5l-1.3-4.3M18 9.5a3 3 0 0 1 0 5" />
+  </Svg>
+);
+
+export const SearchIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="M16 16l4.5 4.5" />
+  </Svg>
+);
+
+export const ClipboardIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="5" y="4" width="14" height="17" rx="2" />
+    <path d="M9 4V3h6v1M9 11h6M9 15h4" />
+  </Svg>
+);
+
+export const MapIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z" />
+    <path d="M9 4v14M15 6v14" />
+  </Svg>
+);
+
+export const PieIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3v9h9" />
+    <path d="M20.5 15A9 9 0 1 1 9 3.5" />
+  </Svg>
+);
+
+export const TrendIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 17l6-6 4 4 8-8" />
+    <path d="M15 7h6v6" />
+  </Svg>
+);
+
+export const ScaleIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 4v16M6 20h12M5 7h14" />
+    <path d="M5 7l-3 6a3 3 0 0 0 6 0zM19 7l-3 6a3 3 0 0 0 6 0z" />
+  </Svg>
+);
+
+export const ChatIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 5h16v11H9l-5 4z" />
+  </Svg>
+);
+
+export const ShieldIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3l8 3v6c0 4.5-3.4 7.8-8 9-4.6-1.2-8-4.5-8-9V6z" />
+  </Svg>
+);
