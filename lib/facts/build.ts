@@ -300,8 +300,9 @@ function propertyFacts(c: Collected): FactDraft[] {
     fact("P", "駐車台数", `${p.parking}台`, src),
     fact("P", "築年数", p.building_age === 0 ? "新築（築0年）" : `築${p.building_age}年`, src),
     fact("P", "階数", p.floors, src),
-    fact("P", "庭", p.has_garden === null ? "不明（入力なし）" : p.has_garden ? "あり" : "なし", src),
-    fact("P", "リフォーム", renovation, src),
+    // 入力が無いときは値が分からないので「要確認」にする（2026-11-03。「取得」のままだと分かっている値に見えるため）
+    fact("P", "庭", p.has_garden === null ? "不明（入力なし）" : p.has_garden ? "あり" : "なし", src, { 状態: p.has_garden === null ? "要確認" : undefined }),
+    fact("P", "リフォーム", renovation, src, { 状態: p.renovated === null ? "要確認" : undefined }),
     fact("P", "特徴ピックアップ（物件資料のまま）", p.features ?? "入力なし", src),
     fact("P", "所在地", p.address, src),
     fact("P", "広告予算の総額", p.ad_budget_man_yen ? formatManYen(p.ad_budget_man_yen * 10_000) : "入力なし", src),
@@ -418,6 +419,10 @@ function marketFacts(c: Collected): FactDraft[] {
 const SIZE_RATIO_HIGH = 1.5;
 const SIZE_RATIO_LOW = 0.5;
 
+/** M-09・M-10 の項目名。合計を相場の価格と、残りを割安・割高の判定と読まれないよう、何のための数字かを書く（2026-11-03） */
+const TOTAL_LABEL = "土地と建物の目安の合計（土地と建物を分けて見るための目安。鑑定や相場の価格ではない）";
+const REMAINDER_LABEL = "価格から土地の目安を引いた残り（建物にあたる分の目安。割安・割高の判定ではない）";
+
 /**
  * 土地と建物の目安（docs/履歴/土地と建物の目安_修正案.md）。不動産鑑定評価基準の原価法の考え方を簡単な形で足したもので、
  * 鑑定・査定ではない「目安」。計算はここだけで行い、AI には計算させない
@@ -429,19 +434,21 @@ function landBuildingValueFacts(c: Collected): FactDraft[] {
 
   let landValueManYen: number | null = null;
   let landValueFact: FactDraft;
+  // 地点の種類は landFact と同じく書き分ける（D02 は公示地、D03 は基準地）
+  const kind = !l ? "公示地・基準地" : l.dataset_id === "D02" ? "公示地" : "基準地";
   if (!l || l.price_per_sqm === null) {
-    landValueFact = fact("M", "土地の目安（近くの公示地の価格×土地面積）", null, landSrc);
+    landValueFact = fact("M", `土地の目安（近くの${kind}の価格×土地面積）`, null, landSrc);
   } else {
     const yen = l.price_per_sqm * p.land_sqm;
     landValueManYen = Math.round(yen / 10_000);
     const sizeNote =
       l.chiseki_sqm !== null && (p.land_sqm > l.chiseki_sqm * SIZE_RATIO_HIGH || p.land_sqm < l.chiseki_sqm * SIZE_RATIO_LOW)
-        ? "（公示地と広さが大きく違うため、ずれが大きい可能性）"
+        ? `（${kind}と広さが大きく違うため、ずれが大きい可能性）`
         : "";
-    const 比較 = l.chiseki_sqm !== null ? `公示地の地積 ${sqm(l.chiseki_sqm)}、物件から${formatDistance(l.distance_m)}` : `物件から${formatDistance(l.distance_m)}`;
+    const 比較 = l.chiseki_sqm !== null ? `${kind}の地積 ${sqm(l.chiseki_sqm)}、物件から${formatDistance(l.distance_m)}` : `物件から${formatDistance(l.distance_m)}`;
     landValueFact = fact(
       "M",
-      "土地の目安（近くの公示地の価格×土地面積）",
+      `土地の目安（近くの${kind}の価格×土地面積）`,
       `${formatManYen(yen)}（${formatNumber(l.price_per_sqm)}円/㎡×${sqm(p.land_sqm)}）${sizeNote}`,
       { 出典: `${landSrc.出典}・入力`, 時点: String(l.year) },
       { 比較 },
@@ -464,16 +471,16 @@ function landBuildingValueFacts(c: Collected): FactDraft[] {
   const totalSrc = { 出典: "M-07・M-08 から計算", 時点: l ? `${l.year}・${unitPrice.as_of}` : unitPrice.as_of };
   const totalFact =
     landValueManYen === null
-      ? fact("M", "土地と建物の目安の合計", null, totalSrc)
-      : fact("M", "土地と建物の目安の合計", `${formatNumber(landValueManYen + buildingValueManYen)}万円`, totalSrc, {
+      ? fact("M", TOTAL_LABEL, null, totalSrc)
+      : fact("M", TOTAL_LABEL, `${formatNumber(landValueManYen + buildingValueManYen)}万円`, totalSrc, {
           比較: `価格 ${formatNumber(p.price_man_yen)}万円`,
         });
   const remainderFact =
     landValueManYen === null
-      ? fact("M", "価格から土地の目安を引いた残り", null, totalSrc)
+      ? fact("M", REMAINDER_LABEL, null, totalSrc)
       : fact(
           "M",
-          "価格から土地の目安を引いた残り",
+          REMAINDER_LABEL,
           `${formatNumber(p.price_man_yen - landValueManYen)}万円${p.price_man_yen - landValueManYen < 0 ? "（土地の目安が価格より大きい）" : ""}`,
           totalSrc,
           { 比較: `建物の目安 ${formatManYen(buildingYen)}` },
@@ -649,11 +656,22 @@ function schoolFact(c: Collected, label: string, s: SchoolInput): FactDraft {
  */
 export const NO_WARD_COMPARE = new Set(["小学校", "中学校", "保育園", "地域型保育", "幼稚園", "認定こども園", "放課後児童クラブ", "図書館", "役所", "大規模小売店舗"]);
 
+/**
+ * 時点が古く、今も同じかを確かめたいデータ（2026-11-03）。放課後児童クラブ（D21）は 2017-03 時点の一覧で、
+ * 閉所・新設が反映されていない。公園・図書館などに広げるかは別に決める
+ */
+const OLD_DATA_DATASETS = new Set(["D21"]);
+const OLD_DATA_YEARS = 5;
+
 function nearbyFact(c: Collected, f: NearbyKindInput): FactDraft {
   const ward = c.town?.ward;
   const compare = f.wardAverage !== null && ward && !NO_WARD_COMPARE.has(f.label);
-  return fact("L", `${f.label}（1km以内）`, formatNearby(f.within1km, f.nearest3km), sourcesOf(c, f.datasetIds), {
-    比較: compare ? `${ward}の町の平均 ${f.wardAverage!.toFixed(1)}件` : undefined,
+  const src = sourcesOf(c, f.datasetIds);
+  const year = Number(src.時点.slice(0, 4));
+  const old = f.datasetIds.some((id) => OLD_DATA_DATASETS.has(id)) && Number.isFinite(year) && Number(c.today.slice(0, 4)) - year >= OLD_DATA_YEARS;
+  return fact("L", `${f.label}（1km以内）`, formatNearby(f.within1km, f.nearest3km), src, {
+    比較: old ? `データは${src.時点}時点。その後の閉所・新設を市の最新の一覧で確かめる` : compare ? `${ward}の町の平均 ${f.wardAverage!.toFixed(1)}件` : undefined,
+    状態: old ? "要確認" : undefined,
   });
 }
 

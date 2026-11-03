@@ -421,8 +421,9 @@ describe("事実シートの組み立て", () => {
       property: { ...base.property, has_garden: null, renovated: null, renovation_year: null, renovation_parts: null },
       transports: [],
     });
-    expect(find(unknown, "庭").値).toBe("不明（入力なし）");
-    expect(find(unknown, "リフォーム").値).toBe("不明（入力なし）");
+    expect(find(unknown, "庭")).toMatchObject({ 値: "不明（入力なし）", 状態: "要確認" });
+    expect(find(unknown, "リフォーム")).toMatchObject({ 値: "不明（入力なし）", 状態: "要確認" });
+    expect(find(buildFacts(sample()), "庭").状態).toBe("取得");
     expect(unknown.some((f) => /物件資料の徒歩分/.test(f.項目))).toBe(false);
     const partial = buildFacts({ ...base, property: { ...base.property, renovated: true, renovation_year: null, renovation_parts: null } });
     expect(find(partial, "リフォーム").値).toBe("年は不明：箇所は不明");
@@ -475,16 +476,16 @@ describe("事実シートの組み立て", () => {
       出典: "地域別・構造別の工事費用表（国税庁）新潟県・木造・入力（木造とみなした。リフォームは反映していない）",
       時点: "令和8年分",
     });
-    expect(find(facts, "土地と建物の目安の合計")).toMatchObject({ id: "M-09", 値: "1,684万円", 比較: "価格 2,480万円" });
-    expect(find(facts, "価格から土地の目安を引いた残り")).toMatchObject({ id: "M-10", 値: "1,764万円", 比較: "建物の目安 968万円" });
+    expect(find(facts, "土地と建物の目安の合計（土地と建物を分けて見るための目安。鑑定や相場の価格ではない）")).toMatchObject({ id: "M-09", 値: "1,684万円", 比較: "価格 2,480万円" });
+    expect(find(facts, "価格から土地の目安を引いた残り（建物にあたる分の目安。割安・割高の判定ではない）")).toMatchObject({ id: "M-10", 値: "1,764万円", 比較: "建物の目安 968万円" });
   });
 
   it("土地と建物の目安：公示地が無ければ土地と合計は「取得できず」。建物は出し、残りは出せない", () => {
     const f = buildFacts(sample({ landPrice: null }));
-    expect(find(f, "土地の目安（近くの公示地の価格×土地面積）")).toMatchObject({ id: "M-07", 値: null, 状態: "取得できず" });
+    expect(find(f, "土地の目安（近くの公示地・基準地の価格×土地面積）")).toMatchObject({ id: "M-07", 値: null, 状態: "取得できず" });
     expect(find(f, "建物の目安（建て直す費用×残りの割合）")).toMatchObject({ id: "M-08", 状態: "取得" });
-    expect(find(f, "土地と建物の目安の合計")).toMatchObject({ id: "M-09", 値: null, 状態: "取得できず" });
-    expect(find(f, "価格から土地の目安を引いた残り")).toMatchObject({ id: "M-10", 値: null, 状態: "取得できず" });
+    expect(find(f, "土地と建物の目安の合計（土地と建物を分けて見るための目安。鑑定や相場の価格ではない）")).toMatchObject({ id: "M-09", 値: null, 状態: "取得できず" });
+    expect(find(f, "価格から土地の目安を引いた残り（建物にあたる分の目安。割安・割高の判定ではない）")).toMatchObject({ id: "M-10", 値: null, 状態: "取得できず" });
   });
 
   it("土地と建物の目安：新築（築0年）は建物の残り100%。耐用年数を過ぎた築古は下限20%で止める", () => {
@@ -499,7 +500,7 @@ describe("事実シートの組み立て", () => {
   it("土地と建物の目安：土地の目安が価格より大きいと、残りはマイナスのまま出す（埋めない）", () => {
     const f = buildFacts(sample({ property: { ...sample().property, price_man_yen: 500 } }));
     // 土地の目安716万円 > 価格500万円
-    expect(find(f, "価格から土地の目安を引いた残り")).toMatchObject({ 値: "-216万円（土地の目安が価格より大きい）" });
+    expect(find(f, "価格から土地の目安を引いた残り（建物にあたる分の目安。割安・割高の判定ではない）")).toMatchObject({ 値: "-216万円（土地の目安が価格より大きい）" });
   });
 
   it("土地と建物の目安：物件の土地面積が公示地の1.5倍を超える・0.5倍未満だと注記を添える", () => {
@@ -509,6 +510,26 @@ describe("事実シートの組み立て", () => {
     expect(narrow.値).toContain("（公示地と広さが大きく違うため、ずれが大きい可能性）");
     const ok = find(buildFacts(sample()), "土地の目安（近くの公示地の価格×土地面積）");
     expect(ok.値).not.toContain("ずれが大きい可能性");
+  });
+
+  it("土地の目安：地点が基準地なら「基準地」と書く", () => {
+    const l = sample().landPrice!;
+    const f = buildFacts(sample({ landPrice: { ...l, dataset_id: "D03" }, property: { ...sample().property, land_sqm: 300 } }));
+    const m07 = find(f, "土地の目安（近くの基準地の価格×土地面積）");
+    expect(m07.値).toContain("（基準地と広さが大きく違うため、ずれが大きい可能性）");
+    expect(m07.比較).toContain("基準地の地積");
+  });
+
+  it("生活施設（L）：放課後児童クラブは一覧が5年以上前なら「要確認」にし、時点を書き添える", () => {
+    const base = sample();
+    const club = { label: "放課後児童クラブ", within1km: [{ name: "架空児童クラブ", distance_m: 400 }], nearest3km: null, wardAverage: null, datasetIds: ["D21"] };
+    const withAsOf = (asOf: string) =>
+      find(
+        buildFacts({ ...base, datasets: { ...base.datasets, D21: ds("D21", "放課後児童クラブ", "新潟市オープンデータ", asOf) }, facilities: [...base.facilities, club] }),
+        "放課後児童クラブ（1km以内）",
+      );
+    expect(withAsOf("2017-03")).toMatchObject({ 状態: "要確認", 比較: "データは2017-03時点。その後の閉所・新設を市の最新の一覧で確かめる" });
+    expect(withAsOf("2025-04").状態).toBe("取得");
   });
 
   it("相場（M）：取引が無ければ5件とも「取得できず」で、IDの並びは変わらない", () => {

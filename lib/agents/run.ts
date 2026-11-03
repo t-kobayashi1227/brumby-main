@@ -47,7 +47,7 @@ const MEDIA_FACTS: FactCategory[] = ["P", "B", "C"];
 const AI_CHECK_NAMES: Record<number, string> = {
   1: "数字が事実と合わない",
   2: "名前が事実にない",
-  3: "見立てが事実と矛盾する",
+  3: "見立てが事実と矛盾する・事実にない条件を前提にしている",
   4: "災害を軽く書いている",
   5: "価格や売れることの約束",
 };

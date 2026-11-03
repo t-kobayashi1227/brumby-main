@@ -5,7 +5,7 @@ import { z } from "zod/v4";
 import { costUsd, providerOf, resolveModels } from "../lib/agents/cost";
 import { parseJson } from "../lib/agents/llm";
 import { agentPrompt, PROMPT_FILES, readPrompt } from "../lib/agents/prompts";
-import { mainPart, type MediaOutput, type StrategyOutput } from "../lib/agents/schemas";
+import { mainPart, strategySchema, type MediaOutput, type StrategyOutput } from "../lib/agents/schemas";
 import { allocate, simulate } from "../lib/calc/budget";
 import type { Fact } from "../lib/facts/types";
 
@@ -53,7 +53,7 @@ function main(overrides: Partial<StrategyOutput> = {}): StrategyOutput {
       { rank: 1, text: "公園が近い", evidence: ["L-04"] },
       { rank: 2, text: "IDなし", evidence: [] },
     ],
-    price_view: { position: "相場なみ", sellability: "標準", text: "価格", evidence: ["P-02"] },
+    price_view: { position: "相場なみ", text: "価格", evidence: ["P-02"] },
     concerns: [{ text: "駅の乗降客数", action: "説明する", evidence: ["T-03"] }],
     direction: { text: "方向性", evidence: ["S-02"] },
     ...overrides,
@@ -73,13 +73,23 @@ function media(overrides: Partial<MediaOutput> = {}): MediaOutput {
 }
 
 describe("点検（プログラム）", () => {
-  it("IDのない文は外し、知らないIDと「取得できず」は作り直し。要確認は使ってよい", () => {
+  it("IDのない文は外し、知らないIDと「取得できず」は作り直し。要確認だけが根拠の文は記録だけ", () => {
     const issues = checkProgram(main(), media(), FACTS, MEDIA_IDS);
     expect(issues).toEqual([
       { target: "戦略", location: "appeals[1]", check_name: "IDのない文", problem: "根拠の事実IDがありません", action: "外す" },
       { target: "戦略", location: "concerns[0]", check_name: "取得できずの事実を根拠にしている", problem: "「取得できず」の事実です：T-03", action: "作り直し" },
+      { target: "戦略", location: "direction", check_name: "要確認の事実だけを根拠にしている", problem: "根拠がすべて「要確認」の事実です：S-02", action: "記録だけ" },
       { target: "媒体", location: "media[2]", check_name: "IDが事実シートにない", problem: "事実シートにないIDです：X-99", action: "作り直し" },
     ]);
+  });
+
+  it("要確認の事実がほかの事実と一緒なら、記録しない", () => {
+    const issues = checkProgram(main({ direction: { text: "方向性", evidence: ["S-02", "L-04"] } }), media(), FACTS, MEDIA_IDS);
+    expect(issues.some((i) => i.check_name === "要確認の事実だけを根拠にしている")).toBe(false);
+  });
+
+  it("価格の見方は「判定保留」を選べる", () => {
+    expect(strategySchema.shape.price_view.parse({ position: "判定保留", text: "価格", evidence: ["M-02"] }).position).toBe("判定保留");
   });
 
   it("1つしかない文（総合評価など）にIDがなければ、外せないので作り直し", () => {
