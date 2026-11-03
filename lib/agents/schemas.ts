@@ -28,8 +28,8 @@ const mainSchema = z.object({
   not_fit: z.array(z.object({ name: z.string(), reason: z.string(), evidence })),
   appeals: z.array(z.object({ rank: z.number().int(), text: z.string(), evidence })),
   price_view: z.object({
-    position: z.enum(["割安", "相場なみ", "割高"]),
-    sellability: z.enum(["売れやすい", "標準", "売れにくい"]),
+    // 判定保留：相場の事実どうしが同じ向きを示さないとき（2026-11-03）。売れやすさは、販売日数などの事実がないので外した（以前の答えには残る）
+    position: z.enum(["割安", "相場なみ", "割高", "判定保留"]),
     text: z.string(),
     evidence,
   }),

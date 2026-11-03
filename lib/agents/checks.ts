@@ -4,6 +4,7 @@
 // 3. 「取得できず」の事実を根拠にしていないか → 作り直し
 // 4. 媒体が C-01〜C-16 の中から3〜6件で、配分の合計が100か → 媒体を作り直し
 // 5. 禁止語がないか → 記録だけ（言葉の一致で見るので、問題のない文にも当たる。どのくらい当たるかを数える）
+// 6. 「要確認」の事実だけを根拠にしていないか → 記録だけ（戦略の守ること5。確かめが要ると書き添えてあれば問題ないので、外さない）
 // PoC では作り直さない（docs/設計まとめ.md「処理の流れ」）。action は点検が求める扱いのまま check_results に残す
 
 import type { Fact } from "../facts/types";
@@ -85,6 +86,10 @@ export function checkProgram(main: StrategyOutput, media: MediaOutput, facts: Fa
     if (missing.length) issues.push({ ...pick(s), check_name: "IDが事実シートにない", problem: `事実シートにないIDです：${missing.join("、")}`, action: "作り直し" });
     const notFound = ids.filter((id) => byId.get(id)?.状態 === "取得できず");
     if (notFound.length) issues.push({ ...pick(s), check_name: "取得できずの事実を根拠にしている", problem: `「取得できず」の事実です：${notFound.join("、")}`, action: "作り直し" });
+    const known = ids.filter((id) => byId.has(id));
+    if (known.length && known.every((id) => byId.get(id)!.状態 === "要確認")) {
+      issues.push({ ...pick(s), check_name: "要確認の事実だけを根拠にしている", problem: `根拠がすべて「要確認」の事実です：${known.join("、")}`, action: "記録だけ" });
+    }
   }
 
   const ids = media.media.map((m) => m.id);
