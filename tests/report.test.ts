@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MainOutput, MediaOutput } from "../lib/agents/schemas";
-import { evidenceText, factUsage, placeOfAnalysis, sourceList, usedFactIds } from "../lib/report";
+import { evidenceText, factOrigin, factUsage, groupByAspect, nextCheck, placeOfAnalysis, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds } from "../lib/report";
 import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -91,5 +91,34 @@ describe("6タブへの振り分け", () => {
     expect(u.get("A-03")?.map((x) => `${x.tab}:${x.where}`)).toEqual(["summary:推奨方針（総合評価）", "target:第1候補 x", "sales:販売の方向性", "sales:媒体 SUUMO"]);
     expect(u.get("L-11")?.map((x) => x.tab)).toEqual(["target", "area"]);
     expect(u.has("T-03")).toBe(false);
+  });
+});
+
+describe("見せ方の補助", () => {
+  it("値を大きく出す部分と補足に分ける", () => {
+    expect(splitValue("3件：A 直線240m、B 直線400m")).toEqual({ main: "3件", sub: "A 直線240m、B 直線400m" });
+    expect(splitValue("0件。3km以内の最寄り：C 直線1.2km")).toEqual({ main: "0件", sub: "3km以内の最寄り：C 直線1.2km" });
+    expect(splitValue("大島小学校（物件から直線350m）")).toEqual({ main: "大島小学校", sub: "（物件から直線350m）" });
+    expect(splitValue(null)).toEqual({ main: "不明", sub: null });
+    expect(splitValue("4LDK")).toEqual({ main: "4LDK", sub: null });
+  });
+
+  it("短い名前、出どころ、坪単価の読み取り", () => {
+    expect(shortLabel("洪水の想定浸水深（想定最大規模）")).toBe("洪水の想定浸水深");
+    expect(factOrigin(FACTS[3])).toBe("入力");
+    expect(factOrigin({ ...FACTS[0], id: "M-01" })).toBe("システム計算");
+    expect(factOrigin(FACTS[0])).toBe("公的・調査データ");
+    expect(unitPriceOf("物件68.8万円/坪")).toBe(68.8);
+    expect(unitPriceOf("中央区・築30年以上の中央値 52.1万円/坪（41件）")).toBe(52.1);
+    expect(unitPriceOf(null)).toBeNull();
+  });
+
+  it("ターゲットの根拠を観点で分ける", () => {
+    expect(groupByAspect(["A-01", "P-02", "B-01", "S-01", "C-01"]).map((g) => g.ids)).toEqual([["A-01", "S-01"], ["P-02"], ["B-01"]]);
+  });
+
+  it("取れなかった事実の次に確かめること", () => {
+    expect(nextCheck({ ...FACTS[3], 項目: "リフォーム", 値: null }).who).toBe("売主・物件資料");
+    expect(nextCheck({ ...FACTS[2], 項目: "液状化の発生傾向" }).what).toBe("物件の位置で液状化の発生傾向を確かめる");
   });
 });

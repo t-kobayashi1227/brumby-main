@@ -140,3 +140,66 @@ export function factUsage(main: StrategyOutput, media: MediaOutput, mediaName: (
   }
   return out;
 }
+
+// ---- 見せ方の補助（2026-11-03 第2版：数字とアイコンで見せる、取得状態と出どころを分ける） ----
+
+/** 事実の出どころ。「取得」は値を取れたことで、内容を人が確かめたことではないため、状態とは別に出す */
+export type FactOrigin = "入力" | "公的・調査データ" | "システム計算" | "設定値";
+export function factOrigin(f: Fact): FactOrigin {
+  if (f.出典.startsWith("入力")) return "入力";
+  if (f.出典.includes("計算") || (categoryOf(f.id) === "M" && !f.項目.startsWith("公示地"))) return "システム計算";
+  if (f.出典.includes("一覧（")) return "設定値";
+  return "公的・調査データ";
+}
+
+/** 項目の末尾の（…）を外した短い名前。「洪水の想定浸水深（想定最大規模）」→「洪水の想定浸水深」 */
+export function shortLabel(項目: string): string {
+  const s = 項目.replace(/（[^（）]*）$/, "").replace(/^【(.+?)】/, "$1 ");
+  return s || 項目;
+}
+
+/**
+ * 値を、大きく出す部分（main）と補足（sub）に分ける。表示だけに使い、値そのものは変えない
+ * 「3件：A 直線240m、B 直線400m」→ main「3件」sub「A 直線240m ほか」。「0件。3km以内の最寄り：…」→ main「0件」
+ */
+export function splitValue(値: string | null): { main: string; sub: string | null } {
+  if (値 === null) return { main: "不明", sub: null };
+  const count = 値.match(/^(\d+件)[：。](.*)$/);
+  if (count) {
+    const rest = count[2].trim();
+    return { main: count[1], sub: rest ? rest : null };
+  }
+  const i = 値.search(/[（。、]/);
+  if (i > 0 && i <= 24) return { main: 値.slice(0, i), sub: 値.slice(値[i] === "（" ? i : i + 1).trim() || null };
+  if (値.length > 24) return { main: `${値.slice(0, 22)}…`, sub: null };
+  return { main: 値, sub: null };
+}
+
+/** ターゲットの根拠を3つの観点に分ける（事実の分類で機械的に分ける。AIの答えの形は変えない） */
+export const TARGET_ASPECTS: { key: string; title: string; categories: FactCategory[] }[] = [
+  { key: "area", title: "地域の特性", categories: ["A", "S", "L", "T", "H", "R"] },
+  { key: "fit", title: "物件との合い方", categories: ["P", "M", "K"] },
+  { key: "afford", title: "買える見込み", categories: ["B"] },
+];
+export function groupByAspect(evidence: string[]): { key: string; title: string; ids: string[] }[] {
+  const ids = [...new Set(evidence.map((e) => e.trim()).filter(Boolean))];
+  return TARGET_ASPECTS.map((a) => ({ key: a.key, title: a.title, ids: ids.filter((id) => a.categories.includes(categoryOf(id)!)) }));
+}
+
+/** 取得できず・要確認の事実ごとの、次に確かめること（決まった文。AIは使わない） */
+export function nextCheck(f: Fact): { who: string; what: string } {
+  const c = categoryOf(f.id);
+  const name = shortLabel(f.項目);
+  if (factOrigin(f) === "入力" || c === "P" || c === "K") return { who: "売主・物件資料", what: `${name}を確認し、物件情報に入力する` };
+  if (c === "H" || c === "R") return { who: "ハザードマップ・都市計画図", what: `物件の位置で${name}を確かめる` };
+  if (c === "S") return { who: "市の通学区域", what: `住所から${name}を確かめる` };
+  if (c === "M") return { who: "取引事例・査定資料", what: `${name}は公的データで出せなかったので、近い条件の取引を確かめる` };
+  if (c === "L" || c === "T") return { who: "地図・現地", what: `${name}を地図か現地で確かめる` };
+  return { who: "資料", what: `${name}は公的データで取れなかったので、必要なら資料で確かめる` };
+}
+
+/** 「物件68.8万円/坪」「…の中央値 52.1万円/坪（41件）」から坪単価（万円）を読む。読めなければ null */
+export function unitPriceOf(text: string | null | undefined): number | null {
+  const m = text?.match(/([\d,]+(?:\.\d+)?)万円\/坪/);
+  return m ? Number(m[1].replace(/,/g, "")) : null;
+}

@@ -2,13 +2,17 @@
 
 import { useMemo, useState } from "react";
 import { FACT_CATEGORIES, type Fact, type FactCategory, type FactStatus } from "../../../../lib/facts/types";
-import { categoryOf, TAB_LABEL, type FactUse, type SourceRow } from "../../../../lib/report";
-import { Badge, Card, useReportNav } from "./parts";
+import { categoryOf, factOrigin, TAB_LABEL, type FactUse, type SourceRow } from "../../../../lib/report";
+import { SearchIcon, SparkIcon } from "../../../_components/icons";
+import { Card, useReportNav } from "./parts";
 
 // ⑥ 根拠データ：事実シートを、検索・分類・状態・使用の有無で絞り込んで見る。行を押すと右に詳細と、その事実を引いている文を出す
-// 状態は事実シートの「取得／取得できず／要確認」（システムが付けたもの）。「検証済み」の印は使わない
+// 状態は事実シートの「取得／取得できず／要確認」（システムが付けたもの）。「取得済み」は値を取れたことで、内容を人が確かめたことではない
+// そのため「検証済み」の印は使わず、取得の状態・出どころ（入力・公的データ・システム計算）・使用の有無を別の列に分ける
+// 事実は1物件で数十件なので、ページ分けはせず絞り込みで探す
 
 const STATUSES: FactStatus[] = ["取得", "要確認", "取得できず"];
+const STATUS_LABEL: Record<FactStatus, string> = { 取得: "取得済み", 要確認: "要確認", 取得できず: "取得できず" };
 
 function TimePoint({ value }: { value: string }) {
   const i = value.indexOf("（");
@@ -22,7 +26,7 @@ function TimePoint({ value }: { value: string }) {
 }
 
 function StatusChip({ status }: { status: FactStatus }) {
-  return <span className={`inline-block whitespace-nowrap rounded px-2 py-0.5 text-[12px] ${status === "取得" ? "bg-primary-soft text-primary" : "bg-[#fdf1e7] text-accent"}`}>{status}</span>;
+  return <span className={`inline-block whitespace-nowrap rounded px-2 py-0.5 text-[12px] ${status === "取得" ? "bg-primary-soft text-primary" : "bg-[#fdf1e7] text-accent"}`}>{STATUS_LABEL[status]}</span>;
 }
 
 const pill = (on: boolean) => `rounded-full border px-3 py-1 text-[13px] cursor-pointer ${on ? "border-primary bg-primary text-white" : "border-line bg-white text-body hover:border-primary"}`;
@@ -66,10 +70,23 @@ export default function EvidenceTab({
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <section className="rounded-[10px] border border-line bg-white p-4 grid gap-3">
-        <div className="text-[13px] text-sub">
-          戦略の各文は、ここにある事実のIDを根拠にしています。事実シート作成：{sheetCreatedAt}（距離はすべて直線距離）。ID の英字は事実の分類です。
+        <div className="grid gap-1 text-[13px] text-sub">
+          <div>
+            戦略の各文は、ここにある事実のIDを根拠にしています。事実シート作成：{sheetCreatedAt}（距離はすべて直線距離）。
+          </div>
+          <div>「取得済み」はデータから値を取れたという意味で、内容を人が確かめたものではありません。入力の値は入力のまま、計算は入力と公的データの値から行っています。</div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <span className="rounded bg-subtle px-2 py-0.5">登録 {facts.length}件</span>
+            {STATUSES.map((st) => (
+              <span key={st} className={`rounded px-2 py-0.5 ${st === "取得" ? "bg-primary-soft text-primary" : "bg-[#fdf1e7] text-accent"}`}>
+                {STATUS_LABEL[st]} {facts.filter((f) => f.状態 === st).length}件
+              </span>
+            ))}
+            <span className="rounded bg-subtle px-2 py-0.5">戦略で使用 {facts.filter((f) => usage.has(f.id)).length}件</span>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <SearchIcon className="size-4 text-muted" />
           <input
             type="search"
             value={q}
@@ -91,7 +108,7 @@ export default function EvidenceTab({
           </button>
           {STATUSES.map((s) => (
             <button key={s} type="button" className={pill(status === s)} onClick={() => setStatus(status === s ? "" : s)}>
-              {s}
+              {STATUS_LABEL[s]}
             </button>
           ))}
           <label className="ml-1 flex items-center gap-1.5 text-[13px] text-body cursor-pointer">
@@ -99,7 +116,7 @@ export default function EvidenceTab({
             戦略で使った事実だけ
           </label>
           <span className="ml-auto text-[13px] text-sub">
-            {shown.length} / {facts.length}件
+            表示 {shown.length}件（全{facts.length}件）
           </span>
         </div>
       </section>
@@ -112,13 +129,13 @@ export default function EvidenceTab({
                 <col style={{ width: 64 }} />
                 <col />
                 <col style={{ width: 200 }} />
-                <col style={{ width: 120 }} />
-                <col style={{ width: 84 }} />
+                <col style={{ width: 110 }} />
+                <col style={{ width: 96 }} />
                 <col style={{ width: 150 }} />
               </colgroup>
               <thead>
                 <tr className="text-left text-sub bg-subtle">
-                  {["ID", "項目", "出典", "時点", "状態", "使用箇所"].map((h) => (
+                  {["ID・分類", "項目と値", "出典・出どころ", "時点", "取得の状態", "使用箇所"].map((h) => (
                     <th key={h} className="px-3 py-2 font-bold text-[12px] whitespace-nowrap border-b border-line">
                       {h}
                     </th>
@@ -135,12 +152,18 @@ export default function EvidenceTab({
                       onClick={() => onSelect(f.id)}
                       className={`cursor-pointer align-top border-b border-line ${active ? "bg-primary-soft/60" : "hover:bg-primary-soft/30"}`}
                     >
-                      <td className="px-3 py-2.5 font-mono text-[12px] text-sub whitespace-nowrap">{f.id}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <div className="font-mono text-[12px] text-sub">{f.id}</div>
+                        <div className="text-[11px] text-muted">{FACT_CATEGORIES[categoryOf(f.id)!]?.name}</div>
+                      </td>
                       <td className="px-3 py-2.5 leading-relaxed">
                         <div className="font-bold">{f.項目}</div>
                         <div className={`text-[12px] ${f.値 === null ? "text-sub" : "text-body"} line-clamp-2`}>{f.値 ?? "不明"}</div>
                       </td>
-                      <td className="px-3 py-2.5 text-body leading-relaxed">{f.出典}</td>
+                      <td className="px-3 py-2.5 text-body leading-relaxed">
+                        {f.出典}
+                        <div className="text-[11px] text-muted">{factOrigin(f)}</div>
+                      </td>
                       <td className="px-3 py-2.5 text-body leading-relaxed">
                         <TimePoint value={f.時点} />
                       </td>
@@ -198,18 +221,20 @@ export default function EvidenceTab({
                 )}
                 <dt className="text-sub">出典</dt>
                 <dd className="text-body">{current.出典}</dd>
+                <dt className="text-sub">出どころ</dt>
+                <dd className="text-body">{factOrigin(current)}</dd>
                 <dt className="text-sub">時点</dt>
                 <dd className="text-body">{current.時点}</dd>
-                <dt className="text-sub">状態</dt>
+                <dt className="text-sub">取得</dt>
                 <dd>
                   <StatusChip status={current.状態} />
                 </dd>
-                <dt className="text-sub">取得</dt>
+                <dt className="text-sub">作成</dt>
                 <dd className="text-body">事実シート作成 {sheetCreatedAt}</dd>
               </dl>
               <div>
                 <div className="mb-1.5 flex items-center gap-2 text-sub">
-                  この事実を根拠にしている文 <Badge kind="ai" />
+                  この事実を根拠にしているAIの文 <SparkIcon className="size-3.5 text-[#6b4fc0]" />
                 </div>
                 {uses.length === 0 ? (
                   <div className="text-sub">画面の文では使っていません。</div>

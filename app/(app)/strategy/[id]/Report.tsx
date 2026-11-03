@@ -7,7 +7,7 @@ import { factUsage, FIXED_CREDITS, REPORT_TABS, type ReportTab, type SourceRow }
 import UnderlineTabs from "../../../_components/UnderlineTabs";
 import AreaTab from "./AreaTab";
 import EvidenceTab from "./EvidenceTab";
-import { ReportNav } from "./parts";
+import { Legend, ReportNav } from "./parts";
 import PriceTab from "./PriceTab";
 import SalesTab, { type MediaInfo } from "./SalesTab";
 import SummaryTab from "./SummaryTab";
@@ -27,6 +27,7 @@ export default function Report({
   mediaInfo,
   sheetCreatedAt,
   priceManYen,
+  propertyId,
 }: {
   result: StrategyResult;
   facts: Fact[];
@@ -35,6 +36,7 @@ export default function Report({
   mediaInfo: Record<string, MediaInfo>;
   sheetCreatedAt: string;
   priceManYen: number;
+  propertyId: number;
 }) {
   const [tab, setTab] = useState<ReportTab>("summary");
   const [selectedFact, setSelectedFact] = useState<string | null>(null);
@@ -65,9 +67,10 @@ export default function Report({
       <div className="sticky top-0 z-10 -mx-1 bg-canvas/95 px-1 pt-1 backdrop-blur print:hidden">
         <UnderlineTabs tabs={[...REPORT_TABS]} active={tab} onChange={(k) => setTab(k as ReportTab)} />
       </div>
+      <Legend />
       {tab === "summary" && <SummaryTab r={result} facts={byId} factList={facts} />}
       {tab === "target" && <TargetTab r={result} facts={byId} />}
-      {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} />}
+      {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} />}
       {tab === "price" && <PriceTab r={result} facts={byId} factList={facts} priceManYen={priceManYen} />}
       {tab === "area" && <AreaTab r={result} facts={byId} factList={facts} />}
       {tab === "evidence" && <EvidenceTab facts={facts} usage={usage} sources={sources} sheetCreatedAt={sheetCreatedAt} selected={selectedFact} onSelect={setSelectedFact} />}
