@@ -49,15 +49,20 @@ function oneOf<T extends string>(value: string | null, choices: readonly T[], la
   return value as T;
 }
 
+/** あり／なしの欄。空なら null（不明） */
+function yesNoOrNull(value: string | null, label: string): boolean | null {
+  if (value === null) return null;
+  return oneOf(value, ["あり", "なし"], label) === "あり";
+}
+
 function readProperty(formData: FormData) {
   const layout = required(formData, "layout", "間取り");
   const parsed = parseLayout(layout);
-  const renovated = oneOf(text(formData, "renovated"), ["あり", "なし"], "リフォーム") === "あり";
+  // 庭・リフォーム（年と箇所を含む）は任意。空は null（不明）として保存する（2026-11-03 浩平さん指示）
+  const renovated = yesNoOrNull(text(formData, "renovated"), "リフォーム");
   const parts = formData.getAll("renovation_parts").map(String);
   if (parts.some((p) => !(RENOVATION_PARTS as readonly string[]).includes(p))) throw new Error("リフォームの箇所を選び直してください");
-  const renovationYear = renovated ? num(formData, "renovation_year", "リフォームの年", { int: true, min: 1950 }) : null;
-  if (renovated && renovationYear === null) throw new Error("リフォームの年を入れてください");
-  if (renovated && parts.length === 0) throw new Error("リフォームの箇所を1つ以上選んでください");
+  const renovationYear = renovated === true ? num(formData, "renovation_year", "リフォームの年", { int: true, min: 1950 }) : null;
   return {
     property_class: oneOf(text(formData, "property_class"), PROPERTY_CLASSES, "物件区分"),
     price_man_yen: requiredNum(formData, "price_man_yen", "価格", { int: true, positive: true }),
@@ -70,25 +75,22 @@ function readProperty(formData: FormData) {
     parking: requiredNum(formData, "parking", "駐車台数", { int: true, min: 0 }),
     building_age: requiredNum(formData, "building_age", "築年数", { int: true, min: 0 }),
     floors: oneOf(text(formData, "floors"), FLOORS, "階数"),
-    has_garden: oneOf(text(formData, "has_garden"), ["あり", "なし"], "庭") === "あり",
+    has_garden: yesNoOrNull(text(formData, "has_garden"), "庭"),
     renovated,
     renovation_year: renovationYear,
-    renovation_parts: renovated ? parts : null,
+    renovation_parts: renovated === true && parts.length > 0 ? parts : null,
     features: text(formData, "features"),
     ad_budget_man_yen: num(formData, "ad_budget_man_yen", "広告予算の総額", { int: true, positive: true }),
   };
 }
 
-/** 交通（最大2つ）。1つ目は必須。2つ目は全部空なら無し */
+/** 交通（最大2つ・任意）。全部空の行は無し。書いた行は種類・駅（バス停）・徒歩分をそろえる */
 function readTransports(formData: FormData) {
   const rows = [];
   for (const position of [1, 2]) {
     const p = (k: string) => text(formData, `t${position}_${k}`);
     const empty = !p("mode") && !p("line") && !p("stop_name") && !p("walk_min");
-    if (empty) {
-      if (position === 1) throw new Error("交通（1つ目）を入れてください");
-      continue;
-    }
+    if (empty) continue;
     const label = `交通（${position}つ目）`;
     rows.push({
       position,

@@ -35,7 +35,7 @@ import { IMPORT_MAX_CHARS, type ImportResult } from "../../../lib/property-impor
 // ①物件情報の入力フォーム（docs/設計まとめ.md「①物件情報の入力」の15項目）
 // 見た目は 2026-10-26 のデザイン（物件情報入力ダッシュボード①〜③）に合わせた
 // - 手順は「基本情報 → 詳細条件 → 分析情報」の3つ。PoCでは基本情報だけを使い、詳細条件と分析情報は鍵つきで操作できない
-// - 必須12項目（基本情報3・交通アクセス1・物件詳細8）の入力数を数え、各欄の見出しと下の登録ボタンの横に出す（右の「入力状況」の枠は 2026-11-03 浩平さん指示で外した）
+// - 必須9項目（基本情報3・物件詳細6）の入力数を数え、各欄の見出しと下の登録ボタンの横に出す（右の「入力状況」の枠は 2026-11-03 浩平さん指示で外した）
 // - 交通：「交通手段を追加」で2つ目の欄が出る（最大2つ）
 // - リフォーム：「あり」を選ぶと、年と箇所の欄が出る
 // - 競合物件・広告予算は開閉できる。閉じても入力は消えずに送られる（hidden で隠すだけ）
@@ -109,35 +109,23 @@ const FEATURE_EXAMPLES = ["カーポート付き", "小学校近く", "南向き
 const str = (v: string | number | null | undefined) => (v === null || v === undefined ? "" : String(v));
 const yesNo = (v: boolean | null) => (v === null ? "" : v ? "あり" : "なし");
 
-// ---- 入力状況（必須12項目と任意3項目）を数える ----
+// ---- 入力状況（必須9項目）を数える ----
 
 const BASIC_FIELDS = ["property_class", "price_man_yen", "address"];
-const DETAIL_FIELDS = ["layout", "building_sqm", "land_sqm", "parking", "building_age", "floors", "has_garden"];
+// 交通・庭・リフォームは任意（2026-11-03 浩平さん指示。物件資料に無く不明なことがあるため）
+const DETAIL_FIELDS = ["layout", "building_sqm", "land_sqm", "parking", "building_age", "floors"];
 
 interface Progress {
   basic: number;
-  transport: number;
   detail: number;
-  optional: number;
 }
 
-const TOTALS = { basic: BASIC_FIELDS.length, transport: 1, detail: DETAIL_FIELDS.length + 1, optional: 3 };
-const REQUIRED_TOTAL = TOTALS.basic + TOTALS.transport + TOTALS.detail;
+const TOTALS = { basic: BASIC_FIELDS.length, detail: DETAIL_FIELDS.length };
+const REQUIRED_TOTAL = TOTALS.basic + TOTALS.detail;
 
 function countProgress(fd: FormData): Progress {
   const has = (name: string) => String(fd.get(name) ?? "").trim() !== "";
-  const renovated = String(fd.get("renovated") ?? "");
-  // リフォームは「なし」か、「あり」で年と箇所まで入っていれば入力済み
-  const renovationDone = renovated === "なし" || (renovated === "あり" && has("renovation_year") && fd.getAll("renovation_parts").length > 0);
-  const competitorCount = Number(fd.get("competitor_count") ?? 0);
-  let hasCompetitor = false;
-  for (let i = 0; i < competitorCount; i++) if (COMPETITOR_FIELDS.some((k) => has(`c${i}_${k}`))) hasCompetitor = true;
-  return {
-    basic: BASIC_FIELDS.filter(has).length,
-    transport: has("t1_mode") && has("t1_stop_name") && has("t1_walk_min") ? 1 : 0,
-    detail: DETAIL_FIELDS.filter(has).length + (renovationDone ? 1 : 0),
-    optional: [has("features"), hasCompetitor, has("ad_budget_man_yen")].filter(Boolean).length,
-  };
+  return { basic: BASIC_FIELDS.filter(has).length, detail: DETAIL_FIELDS.filter(has).length };
 }
 
 /** 初めの表示用に、保存済みの値をフォームの送信と同じ形にする */
@@ -265,12 +253,11 @@ function Stepper() {
 
 function TransportRow({ position, values, onRemove }: { position: 1 | 2; values?: TransportValues; onRemove?: () => void }) {
   const name = (k: string) => `t${position}_${k}`;
-  const req = position === 1;
   return (
     <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,0.8fr)_32px] gap-4 items-end">
       <label className={label}>
-        種別{req && <Required />}
-        <select name={name("mode")} defaultValue={values?.mode ?? ""} required={req} className={selectField}>
+        種別
+        <select name={name("mode")} defaultValue={values?.mode ?? ""} className={selectField}>
           <option value="">選択してください</option>
           {TRANSPORT_MODES.map((m) => <option key={m}>{m}</option>)}
         </select>
@@ -280,12 +267,12 @@ function TransportRow({ position, values, onRemove }: { position: 1 | 2; values?
         <input name={name("line")} defaultValue={str(values?.line)} placeholder="例：JR越後線／新潟交通バス" className={field} />
       </label>
       <label className={label}>
-        駅またはバス停名{req && <Required />}
-        <input name={name("stop_name")} defaultValue={str(values?.stop_name)} required={req} placeholder="例：寺尾駅／寺尾小学校前" className={field} />
+        駅またはバス停名
+        <input name={name("stop_name")} defaultValue={str(values?.stop_name)} placeholder="例：寺尾駅／寺尾小学校前" className={field} />
       </label>
       <label className={label}>
-        徒歩（分）{req && <Required />}
-        <input name={name("walk_min")} inputMode="numeric" defaultValue={str(values?.walk_min)} required={req} placeholder="例：3" className={field} />
+        徒歩（分）
+        <input name={name("walk_min")} inputMode="numeric" defaultValue={str(values?.walk_min)} placeholder="例：3" className={field} />
       </label>
       {onRemove ? (
         <button type="button" onClick={onRemove} aria-label={`交通（${position}つ目）を消す`} className="h-10 flex items-center justify-center text-muted hover:text-[#e5484d] cursor-pointer">
@@ -448,7 +435,7 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
   const recount = () => {
     if (!formRef.current) return;
     const next = countProgress(new FormData(formRef.current));
-    setProgress((prev) => (prev.basic === next.basic && prev.transport === next.transport && prev.detail === next.detail && prev.optional === next.optional ? prev : next));
+    setProgress((prev) => (prev.basic === next.basic && prev.detail === next.detail ? prev : next));
   };
   const recountLater = () => requestAnimationFrame(recount);
 
@@ -513,7 +500,7 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
     });
   };
 
-  const doneCount = progress.basic + progress.transport + progress.detail;
+  const doneCount = progress.basic + progress.detail;
   // 閉じた欄の入力で保存に失敗したときは、その欄を開いて見せる
   const showCompetitors = competitorsOpen || Boolean(state.error?.includes("競合物件"));
   const showBudget = budgetOpen || Boolean(state.error?.includes("広告予算"));
@@ -623,7 +610,7 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
               </div>
             </SectionCard>
 
-            <SectionCard icon={<TrainIcon />} title="交通アクセス" note="最寄り駅やバス停までのアクセスを入力してください。" required count={`${progress.transport} / ${TOTALS.transport} 項目`}>
+            <SectionCard icon={<TrainIcon />} title="交通アクセス（任意）" note="最寄り駅やバス停までのアクセスを入力してください。わからなければ空のままでかまいません。" required={false}>
               <TransportRow position={1} values={v.transports[0]} />
               {secondTransport ? (
                 <TransportRow
@@ -675,17 +662,17 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
                   </select>
                 </label>
                 <label className={label}>
-                  庭<Required />
-                  <select name="has_garden" defaultValue={yesNo(v.has_garden)} required className={selectField}>
-                    <option value="">選択してください</option>
+                  庭
+                  <select name="has_garden" defaultValue={yesNo(v.has_garden)} className={selectField}>
+                    <option value="">不明</option>
                     <option>あり</option>
                     <option>なし</option>
                   </select>
                 </label>
                 <label className={label}>
-                  リフォーム<Required />
-                  <select name="renovated" defaultValue={yesNo(v.renovated)} required className={selectField} onChange={(e) => setRenovated(e.target.value === "あり")}>
-                    <option value="">選択してください</option>
+                  リフォーム
+                  <select name="renovated" defaultValue={yesNo(v.renovated)} className={selectField} onChange={(e) => setRenovated(e.target.value === "あり")}>
+                    <option value="">不明</option>
                     <option>あり</option>
                     <option>なし</option>
                   </select>
@@ -694,12 +681,12 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
               {renovated && (
                 <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] gap-4 rounded-lg bg-subtle p-4">
                   <label className={label}>
-                    リフォームの年<Required />
-                    <input name="renovation_year" inputMode="numeric" required defaultValue={str(v.renovation_year)} placeholder="例：2023" className={field} />
+                    リフォームの年
+                    <input name="renovation_year" inputMode="numeric" defaultValue={str(v.renovation_year)} placeholder="例：2023" className={field} />
                   </label>
                   <fieldset>
                     <legend className={label}>
-                      リフォームの箇所（複数選べます）<Required />
+                      リフォームの箇所（複数選べます）
                     </legend>
                     <div className="flex flex-wrap gap-2 mt-1.5">
                       {RENOVATION_PARTS.map((p) => (

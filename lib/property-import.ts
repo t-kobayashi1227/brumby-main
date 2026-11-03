@@ -231,7 +231,7 @@ export function toFormFields(output: ImportOutput, sourceText: string, today: Da
   const garden = chosen(output.garden);
   put("庭", garden ? { has_garden: garden } : null);
 
-  // リフォーム：「あり」は年と箇所まで確かめられたときだけ入れる（保存のときに年と箇所が必須のため）
+  // リフォーム：年と箇所は、資料で確かめられたものだけ入れる（どちらも任意）
   const renovationParts: string[] = [];
   const reno = chosen(output.renovation);
   if (reno === "なし") put("リフォーム", { renovated: "なし" });
