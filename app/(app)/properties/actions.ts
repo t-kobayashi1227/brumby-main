@@ -181,6 +181,7 @@ function ewktPoint(lon: number, lat: number): string {
 
 export async function saveProperty(_prev: PropertyFormState, formData: FormData): Promise<PropertyFormState> {
   let createdId: number | null = null;
+  let located = false;
   try {
     const sql = getSql();
     // 先に全部の欄を確かめる（誤りがあれば何も保存しない）
@@ -209,13 +210,14 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
       await writeChildren(tx as unknown as Sql, Number(row.id), transports, competitors);
       return Number(row.id);
     });
-    await geocodeAndStore(sql, createdId, values.address);
+    located = (await geocodeAndStore(sql, createdId, values.address)) === null;
     revalidatePath("/properties");
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
-  // 登録したら、物件の画面（地図で位置を確かめる）へ
-  redirect(`/properties/${createdId}?created=1`);
+  // 登録したら、そのまま販売戦略の画面で戦略づくりを始める（周辺情報の取得と事実シートの作成も、その中で行う）
+  // 住所から位置を出せなかったときだけ、物件の画面（地図でピンを置く）へ
+  redirect(located ? `/strategy/${createdId}?auto=1` : `/properties/${createdId}?created=1`);
 }
 
 /** 地図で置き直したピンの位置を保存する */

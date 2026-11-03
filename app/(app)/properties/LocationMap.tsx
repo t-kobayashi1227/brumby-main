@@ -75,8 +75,8 @@ export default function LocationMap({ propertyId, lon, lat, source, geocodeTitle
       const r = await setLocation(propertyId, position[0], position[1]);
       if (r.ok) {
         setPicked(null);
-        setMessage({ ok: `${r.ok}周辺情報の取得を始めます。` });
-        router.push(`/properties/${propertyId}/facts?auto=1`);
+        setMessage({ ok: `${r.ok}販売戦略を作ります。` });
+        router.push(`/strategy/${propertyId}?auto=1`);
       } else setMessage(r);
     });
   };

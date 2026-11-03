@@ -14,7 +14,8 @@ import StrategyRunner, { type RunStatus } from "./StrategyRunner";
 
 // ⑤販売戦略レポート（docs/設計まとめ.md「⑤画面の表示」）。[id] は物件の番号
 // 上に物件の見出しと「戦略を作る」、その下に最新の完了した戦略を3つのタブで出す。根拠は、その戦略に使った事実シートから引く
-// 事実シートの表はこの画面だけで見せる（事実シートの画面は取得の進み具合だけ）。戦略がまだ無いときは最新の事実シートを出し、
+// 物件を登録した直後や地図で位置を確定したあとは ?auto=1 で開き、戦略づくりを自動で始める（StrategyRunner）
+// 事実シートの表はこの画面だけで見せる。戦略がまだ無いときは最新の事実シートを出し、
 // 戦略を作ったあとに周辺情報を取り直したときは、新しい事実シートを折りたたんで出す（レポートの「根拠データ」は、その戦略に使ったシートのまま）
 
 export const dynamic = "force-dynamic";
@@ -32,8 +33,9 @@ interface PropertyRow {
   has_location: boolean;
 }
 
-export default async function StrategyDetailPage({ params }: PageProps<"/strategy/[id]">) {
+export default async function StrategyDetailPage({ params, searchParams }: PageProps<"/strategy/[id]">) {
   const { id } = await params;
+  const sp = await searchParams;
   const propertyId = parsePropertyId(id);
   if (propertyId === null) notFound();
 
@@ -80,7 +82,7 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
           <LatestFactSheet
             sheet={latestSheet.content}
             collapsed
-            note="戦略を作ったあとに周辺情報を取り直しました。下のレポートは前回の事実シートで作っています。新しい事実シートは「戦略を作り直す」で反映されます。"
+            note="レポートを作ったあとに、新しい事実シートを作りました。下のレポートは前回の事実シートで作っています。新しい事実シートは、戦略を作り直し終えると反映されます。"
           />
         )}
         <Report result={done.result} facts={facts} sources={rows} credits={credits} mediaNames={Object.fromEntries(media.map((m) => [m.id, m.name]))} />
@@ -112,12 +114,9 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
         <Link href={`/properties/${propertyId}`} className="text-xs text-brand underline">
           物件情報を直す
         </Link>
-        <Link href={`/properties/${propertyId}/facts`} className="text-xs text-brand underline">
-          周辺情報を取り直す
-        </Link>
       </div>
 
-      <StrategyRunner propertyId={propertyId} initial={initial} hasReport={!!done} lastCreatedAt={done ? formatJstDateTime(done.finished_at) : null} hasLocation={p.has_location}>
+      <StrategyRunner propertyId={propertyId} initial={initial} autoStart={sp.auto === "1"} hasReport={!!done} lastCreatedAt={done ? formatJstDateTime(done.finished_at) : null} hasLocation={p.has_location}>
         <div className="text-[12px] text-muted">
           物件ID {p.code}・{p.property_class}・{p.building_age === 0 ? "新築" : `築${p.building_age}年`}
         </div>

@@ -23,7 +23,6 @@ export function findPage(pathname: string): PageDef | undefined {
   if (exact) return exact;
   if (/^\/strategy\/\d+$/.test(pathname)) return { href: pathname, title: "販売戦略の詳細" };
   if (/^\/properties\/\d+$/.test(pathname)) return { href: pathname, title: "物件情報の入力（登録した物件）" };
-  if (/^\/properties\/\d+\/facts$/.test(pathname)) return { href: pathname, title: "事実シート" };
   if (/^\/records\/\d+$/.test(pathname)) return { href: pathname, title: "販売の記録（物件ごと）" };
   return undefined;
 }
