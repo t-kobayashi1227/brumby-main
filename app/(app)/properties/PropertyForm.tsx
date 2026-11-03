@@ -35,7 +35,7 @@ import { IMPORT_MAX_CHARS, type ImportResult } from "../../../lib/property-impor
 // ①物件情報の入力フォーム（docs/設計まとめ.md「①物件情報の入力」の15項目）
 // 見た目は 2026-10-26 のデザイン（物件情報入力ダッシュボード①〜③）に合わせた
 // - 手順は「基本情報 → 詳細条件 → 分析情報」の3つ。PoCでは基本情報だけを使い、詳細条件と分析情報は鍵つきで操作できない
-// - 右の「入力状況」は必須12項目（基本情報3・交通アクセス1・物件詳細8）の入力数を数える
+// - 必須12項目（基本情報3・交通アクセス1・物件詳細8）の入力数を数え、各欄の見出しと下の登録ボタンの横に出す（右の「入力状況」の枠は 2026-11-03 浩平さん指示で外した）
 // - 交通：「交通手段を追加」で2つ目の欄が出る（最大2つ）
 // - リフォーム：「あり」を選ぶと、年と箇所の欄が出る
 // - 競合物件・広告予算は開閉できる。閉じても入力は消えずに送られる（hidden で隠すだけ）
@@ -260,84 +260,6 @@ function Stepper() {
         </li>
       ))}
     </ol>
-  );
-}
-
-function ProgressRing({ done, total }: { done: number; total: number }) {
-  const r = 52;
-  const c = 2 * Math.PI * r;
-  return (
-    <div className="relative mx-auto size-36">
-      <svg viewBox="0 0 120 120" className="size-full -rotate-90" aria-hidden="true">
-        <circle cx="60" cy="60" r={r} fill="none" stroke="#e8edf5" strokeWidth="10" />
-        <circle cx="60" cy="60" r={r} fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - done / total)} className="text-primary transition-[stroke-dashoffset] duration-300" />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <div className="tabular-nums">
-          <span className="text-3xl font-bold text-ink">{done}</span>
-          <span className="text-sm text-sub"> / {total}</span>
-        </div>
-        <div className="text-[11px] text-muted">項目完了</div>
-      </div>
-    </div>
-  );
-}
-
-function StatusIcon({ done, total }: { done: number; total: number }) {
-  if (done === total)
-    return (
-      <span className="flex size-4.5 items-center justify-center rounded-full bg-[#22a35a] text-white">
-        <CheckIcon className="size-3" />
-      </span>
-    );
-  return <span className={`size-4.5 rounded-full border-[3px] ${done > 0 ? "border-primary" : "border-field"}`} />;
-}
-
-function ProgressPanel({ progress }: { progress: Progress }) {
-  const done = progress.basic + progress.transport + progress.detail;
-  const rows = [
-    { label: "基本情報", done: progress.basic, total: TOTALS.basic },
-    { label: "交通アクセス", done: progress.transport, total: TOTALS.transport },
-    { label: "物件詳細", done: progress.detail, total: TOTALS.detail },
-  ];
-  return (
-    <aside className="grid gap-4 content-start xl:sticky xl:top-0">
-      <div className="bg-white border border-line rounded-xl p-5 grid gap-5">
-        <div className="text-[15px] font-bold text-ink">入力状況</div>
-        <ProgressRing done={done} total={REQUIRED_TOTAL} />
-        <dl className="grid gap-2.5 text-[13px]">
-          {[
-            { label: "入力済み", value: done, dot: "bg-primary" },
-            { label: "未入力", value: REQUIRED_TOTAL - done, dot: "bg-field" },
-            { label: "任意項目", value: progress.optional, dot: "bg-divider border border-field" },
-          ].map((r) => (
-            <div key={r.label} className="flex items-center gap-2.5">
-              <span className={`size-2.5 rounded-full ${r.dot}`} />
-              <dt className="text-body">{r.label}</dt>
-              <dd className="ml-auto font-bold text-ink tabular-nums">{r.value}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="border-t border-line pt-4 grid gap-2.5">
-          <div className="text-[13px] font-bold text-ink">必須項目の内訳</div>
-          {rows.map((r) => (
-            <div key={r.label} className="flex items-center gap-2.5 text-[13px]">
-              <StatusIcon done={r.done} total={r.total} />
-              <span className="text-body">{r.label}</span>
-              <span className="ml-auto text-sub tabular-nums">
-                {r.done} / {r.total}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-      {done === REQUIRED_TOTAL && (
-        <div className="rounded-xl border border-[#cfe0fa] bg-primary-soft p-4">
-          <div className="text-[13px] font-bold text-primary">必須項目がそろいました</div>
-          <div className="mt-1 text-xs text-body leading-relaxed">このまま登録できます。任意の項目は、あとから追加・編集できます。</div>
-        </div>
-      )}
-    </aside>
   );
 }
 
@@ -613,7 +535,7 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
         )}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_260px] items-start">
+      <div className="grid gap-6 items-start">
         {/* action={formAction} にすると、保存に失敗したときも入力が元に戻ってしまう（React の form の自動リセット）ため、送信を自分で行う */}
         <form
           ref={formRef}
@@ -895,8 +817,6 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
             </button>
           </div>
         </form>
-
-        <ProgressPanel progress={progress} />
       </div>
     </div>
   );
