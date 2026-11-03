@@ -53,8 +53,8 @@ docs/
 |---|---|
 | `DATABASE_URL` | DBへの接続（`lib/db/`、`scripts/`）。Vercel では Transaction pooler（ポート 6543）の接続文字列にする |
 | `AI_PROVIDER` | AIの提供元。`anthropic`（省略時）か `openai`。これだけ変えれば、担当ごとのモデルも提供元の既定に切り替わる（`lib/agents/cost.ts`） |
-| `AI_MODEL_STRATEGY` | 戦略担当・確認担当のモデル（省略可）。既定は `claude-sonnet-5-5`、OpenAI では `gpt-6.1-sol` |
-| `AI_MODEL_MEDIA` | 媒体担当のモデル（省略可）。既定は `claude-haiku-5-5`、OpenAI では `gpt-6-luna` |
+| `AI_MODEL_HIGH` | 高性能の方のモデル。戦略担当と確認担当が使う（省略可）。既定は `claude-sonnet-5-5`、OpenAI では `gpt-6.1-sol` |
+| `AI_MODEL_LIGHT` | 軽い方のモデル。媒体担当が使う（省略可）。既定は `claude-haiku-5-5`、OpenAI では `gpt-6-luna` |
 | `ANTHROPIC_API_KEY` | エージェントの呼び出し（`lib/agents/llm.ts`）。`AI_PROVIDER` が `anthropic` のとき必要 |
 | `OPENAI_API_KEY` | 同上。`AI_PROVIDER` が `openai` のとき必要 |
 | `REINFOLIB_API_KEY` | 取引価格の取り込み（`scripts/ingest/lib/reinfolib.ts`）。利用規約によりアクセスログを保存する |

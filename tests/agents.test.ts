@@ -246,14 +246,14 @@ describe("提供元とモデルの選び方（環境変数）", () => {
   });
 
   it("担当ごとのモデルを変えられる", () => {
-    expect(resolveModels({ AI_PROVIDER: "openai", AI_MODEL_STRATEGY: "gpt-6.1-terra" }).strategy).toBe("gpt-6.1-terra");
-    expect(resolveModels({ AI_MODEL_STRATEGY: "", AI_MODEL_MEDIA: "claude-sonnet-5-5" })).toEqual({ provider: "anthropic", strategy: "claude-sonnet-5-5", media: "claude-sonnet-5-5" });
+    expect(resolveModels({ AI_PROVIDER: "openai", AI_MODEL_HIGH: "gpt-6.1-terra" }).strategy).toBe("gpt-6.1-terra");
+    expect(resolveModels({ AI_MODEL_HIGH: "", AI_MODEL_LIGHT: "claude-sonnet-5-5" })).toEqual({ provider: "anthropic", strategy: "claude-sonnet-5-5", media: "claude-sonnet-5-5" });
   });
 
   it("知らない提供元・料金表にないモデル・提供元と合わないモデルは例外", () => {
     expect(() => resolveModels({ AI_PROVIDER: "chatgpt" })).toThrow(/AI_PROVIDER/);
-    expect(() => resolveModels({ AI_MODEL_MEDIA: "gpt-4o" })).toThrow(/料金表/);
-    expect(() => resolveModels({ AI_PROVIDER: "openai", AI_MODEL_STRATEGY: "claude-sonnet-5-5" })).toThrow(/AI_PROVIDER/);
+    expect(() => resolveModels({ AI_MODEL_LIGHT: "gpt-4o" })).toThrow(/料金表/);
+    expect(() => resolveModels({ AI_PROVIDER: "openai", AI_MODEL_HIGH: "claude-sonnet-5-5" })).toThrow(/AI_PROVIDER/);
   });
 
   it("モデル名から提供元がわかる", () => {

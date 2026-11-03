@@ -1,6 +1,6 @@
 // 戦略を作る：npm run strategy -- <物件の番号> [--model strategy|media] [--effort medium|high]
 // 戦略・媒体・確認の3回の呼び出し。--model・--effort は戦略担当だけに効く（比べるとき用。既定は strategy・medium）
-// --model strategy は戦略担当のモデル（AI_MODEL_STRATEGY、既定は Sonnet か gpt-6.1-sol）、media は媒体担当のモデル（AI_MODEL_MEDIA）。sonnet・haiku は前の書き方で、それぞれ strategy・media と同じ
+// --model strategy は戦略担当のモデル（AI_MODEL_HIGH、既定は Sonnet か gpt-6.1-sol）、media は媒体担当のモデル（AI_MODEL_LIGHT）。sonnet・haiku は前の書き方で、それぞれ strategy・media と同じ
 // 提供元（Anthropic か OpenAI）は環境変数 AI_PROVIDER で選ぶ
 // 最新の事実シートを使う（無ければ作る）。AI を呼ぶので費用がかかる。結果・費用・点検は DB（strategy_runs など）に残る
 // 画面には段階・呼び出しの数・トークン数・費用・点検の件数だけを出す（テスト物件は秘密保持契約の対象のため、中身は出さない）

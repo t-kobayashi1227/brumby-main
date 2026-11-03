@@ -1,6 +1,6 @@
 // AI の提供元・モデルと、呼び出しの費用（CLAUDE.md「各呼び出しのトークン数と費用を記録します」）
 // 提供元は環境変数 AI_PROVIDER（anthropic または openai、省略時は anthropic）で選ぶ
-// 担当ごとのモデルは AI_MODEL_STRATEGY（戦略担当・確認担当）と AI_MODEL_MEDIA（媒体担当）で変えられる。省略時は提供元ごとの既定
+// モデルは AI_MODEL_HIGH（高性能の方。戦略担当と確認担当が使う）と AI_MODEL_LIGHT（軽い方。媒体担当が使う）で変えられる。省略時は提供元ごとの既定
 // 費用を記録するため、使えるモデルは下の料金表（RATES）にあるものだけ。モデルを足すときは料金表に行を足す
 
 export type Provider = "anthropic" | "openai";
@@ -61,14 +61,14 @@ export function resolveModels(env: Record<string, string | undefined> = process.
   const raw = (env.AI_PROVIDER ?? "").trim().toLowerCase() || "anthropic";
   if (raw !== "anthropic" && raw !== "openai") throw new Error(`AI_PROVIDER は anthropic か openai です（いまの値：${raw}）`);
   const provider: Provider = raw;
-  const pick = (name: "AI_MODEL_STRATEGY" | "AI_MODEL_MEDIA", fallback: Model): Model => {
+  const pick = (name: "AI_MODEL_HIGH" | "AI_MODEL_LIGHT", fallback: Model): Model => {
     const value = (env[name] ?? "").trim();
     if (!value) return fallback;
     if (!isModel(value)) throw new Error(`${name} のモデル「${value}」は料金表（lib/agents/cost.ts）にありません。使えるもの：${Object.keys(RATES).join("、")}`);
     if (providerOf(value) !== provider) throw new Error(`${name} のモデル「${value}」は AI_PROVIDER（${provider}）のモデルではありません`);
     return value;
   };
-  return { provider, strategy: pick("AI_MODEL_STRATEGY", DEFAULT_MODELS[provider].strategy), media: pick("AI_MODEL_MEDIA", DEFAULT_MODELS[provider].media) };
+  return { provider, strategy: pick("AI_MODEL_HIGH", DEFAULT_MODELS[provider].strategy), media: pick("AI_MODEL_LIGHT", DEFAULT_MODELS[provider].media) };
 }
 
 const RESOLVED = resolveModels();
