@@ -72,10 +72,13 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
       () => sql<(DatasetInfo & { attribution: string | null })[]>`select id, name, provider, as_of, row_count, attribution from datasets`,
       () => sql<{ id: string; name: string; category: string }[]>`select id, name, category from media`,
       () => loadAreaMap(sql, propertyId),
-      () => loadAreaPrice(sql, propertyId),
+      () => loadAreaPrice(sql, propertyId, done.content.事実),
     );
     const facts = done.content.事実;
-    const { rows, credits } = sourceList(facts, usedFactIds(done.result.戦略, done.result.媒体), [...datasets]);
+    const { rows, credits: usedCredits } = sourceList(facts, usedFactIds(done.result.戦略, done.result.媒体), [...datasets]);
+    // 地図の施設と区の価格相場はAIが根拠に引いていなくても画面に出すので、そのデータのクレジットも足す（2026-11-03）
+    const shown = new Set([...(areaMap?.datasetIds ?? []), ...(areaPrice.ok ? ["D01"] : [])]);
+    const credits = [...new Set([...usedCredits, ...datasets.filter((d) => d.attribution && shown.has(d.id)).map((d) => d.attribution as string)])];
     const refetched = latestSheet && String(latestSheet.id) !== String(done.fact_sheet_id);
     report = (
       <>

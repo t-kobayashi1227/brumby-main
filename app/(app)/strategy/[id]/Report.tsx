@@ -6,7 +6,7 @@ import type { Fact } from "../../../../lib/facts/types";
 import { factUsage, FIXED_CREDITS, REPORT_TABS, type ReportTab, type SourceRow } from "../../../../lib/report";
 import UnderlineTabs from "../../../_components/UnderlineTabs";
 import type { AreaMapData } from "../../../../lib/area-map";
-import type { AreaPriceData } from "../../../../lib/area-price";
+import type { AreaPriceResult } from "../../../../lib/area-price";
 import AreaTab from "./AreaTab";
 import EvidenceTab from "./EvidenceTab";
 import { Legend, ReportNav } from "./parts";
@@ -44,8 +44,8 @@ export default function Report({
   runId: number;
   /** エリア分析の地図に出す点（位置が無い物件は null） */
   areaMap: AreaMapData | null;
-  /** サマリーの周辺の価格相場（区×築年数帯の取引から計算） */
-  areaPrice: AreaPriceData | null;
+  /** サマリーの区の価格相場（区×築年数帯の取引から計算） */
+  areaPrice: AreaPriceResult;
 }) {
   const [tab, setTab] = useState<ReportTab>("summary");
   const [selectedFact, setSelectedFact] = useState<string | null>(null);

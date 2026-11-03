@@ -3,7 +3,7 @@
 
 import { inOrder, type Sql } from "./db";
 import { formatNumber } from "./facts/format";
-import { facilityGroupOf, formatDistance, pickFacilities, RINGS_M, type AreaMapData, type FacilityRow, type MapPoint } from "./area-map";
+import { cutFacilities, facilityGroupOf, formatDistance, pickFacilities, RINGS_M, type AreaMapData, type FacilityRow, type MapPoint } from "./area-map";
 
 export async function loadAreaMap(sql: Sql, propertyId: number): Promise<AreaMapData | null> {
   const [p] = await sql<{ code: string; address: string; price_man_yen: number; lon: number | null; lat: number | null }[]>`
@@ -31,16 +31,16 @@ export async function loadAreaMap(sql: Sql, propertyId: number): Promise<AreaMap
       where s.status = '成約' and p.id <> ${propertyId} and p.geog is not null and extensions.st_dwithin(p.geog, ${pt}, ${far})
       order by distance_m
     `,
-    () => sql<{ kind: string; name: string; lon: number; lat: number; distance_m: number }[]>`
-      select kind, name,
+    () => sql<{ kind: string; name: string; dataset_id: string; lon: number; lat: number; distance_m: number }[]>`
+      select kind, name, dataset_id,
         extensions.st_x(geog::extensions.geometry) as lon, extensions.st_y(geog::extensions.geometry) as lat,
         extensions.st_distance(geog, ${pt}) as distance_m
       from facilities where extensions.st_dwithin(geog, ${pt}, ${far})
       order by distance_m
     `,
     // 駅は3kmより遠いこともあるので、最寄りを別に引く
-    () => sql<{ kind: string; name: string; lon: number; lat: number; distance_m: number }[]>`
-      select kind, name,
+    () => sql<{ kind: string; name: string; dataset_id: string; lon: number; lat: number; distance_m: number }[]>`
+      select kind, name, dataset_id,
         extensions.st_x(geog::extensions.geometry) as lon, extensions.st_y(geog::extensions.geometry) as lat,
         extensions.st_distance(geog, ${pt}) as distance_m
       from facilities where kind = '駅' order by geog operator(extensions.<->) ${pt} limit 1
@@ -50,6 +50,7 @@ export async function loadAreaMap(sql: Sql, propertyId: number): Promise<AreaMap
   const facilityRows: FacilityRow[] = facilities.map((f) => ({ ...f, lon: Number(f.lon), lat: Number(f.lat), distance_m: Number(f.distance_m) }));
   if (station && !facilityRows.some((f) => f.kind === "駅")) facilityRows.push({ ...station, lon: Number(station.lon), lat: Number(station.lat), distance_m: Number(station.distance_m) });
 
+  const picked = pickFacilities(facilityRows);
   const points: MapPoint[] = [
     { kind: "target", lon: Number(p.lon), lat: Number(p.lat), title: `対象物件（${p.code}）`, lines: [p.address, `${formatNumber(p.price_man_yen)}万円`], distance_m: null },
     ...competitors
@@ -85,7 +86,7 @@ export async function loadAreaMap(sql: Sql, propertyId: number): Promise<AreaMap
         distance_m: Number(s.distance_m),
       }),
     ),
-    ...pickFacilities(facilityRows).map(
+    ...picked.map(
       (f): MapPoint => ({
         kind: "facility",
         lon: f.lon,
@@ -101,6 +102,8 @@ export async function loadAreaMap(sql: Sql, propertyId: number): Promise<AreaMap
   return {
     center: { lon: Number(p.lon), lat: Number(p.lat) },
     points,
+    datasetIds: [...new Set(picked.flatMap((f) => (f.dataset_id ? [f.dataset_id] : [])))],
+    cut: cutFacilities(facilityRows),
     competitorsWithoutLocation: competitors.filter((c) => c.lon === null || c.lat === null).length,
   };
 }

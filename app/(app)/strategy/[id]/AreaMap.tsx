@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as MapLibreMap, Marker } from "maplibre-gl";
-import { circleRing, FACILITY_GROUPS, MAP_COLORS, MAP_LABELS, pointOnRing, RINGS_M, type AreaMapData, type FacilityGroup, type MapPoint, type MapPointKind } from "../../../../lib/area-map";
+import { circleRing, FACILITY_GROUPS, PER_KIND_LIMIT, MAP_COLORS, MAP_LABELS, pointOnRing, RINGS_M, type AreaMapData, type FacilityGroup, type MapPoint, type MapPointKind } from "../../../../lib/area-map";
 import { MapIcon } from "../../../_components/icons";
 import { Card } from "./parts";
 
@@ -202,7 +202,8 @@ export default function AreaMap({ data, compact = false }: { data: AreaMapData; 
           </div>
         ) : (
           <div>
-            競合物件は入力された住所の位置、成約事例は販売記録で「成約」にした自社の物件（3km以内）、生活施設は取り込み済みの公的データ（種類ごとに1km以内すべて、無ければ3km以内の最寄り）です。
+            競合物件は入力された住所の位置、成約事例は販売記録で販売の状況を「販売済み」にした自社の物件（3km以内）、生活施設は取り込み済みの公的データ（種類ごとに1km以内を近い順に{PER_KIND_LIMIT}件まで、無ければ3km以内の最寄り）です。ボタンの数字は地図に出した件数で、バス停は乗り場（ポール）ごとに数えるため、事実シートの件数と違うことがあります。
+            {data.cut.length > 0 && ` 1km以内に多いため近い${PER_KIND_LIMIT}件だけ出した種類：${data.cut.map((c) => `${c.kind}（${c.total}件）`).join("、")}。`}
           {data.competitorsWithoutLocation > 0 && ` 住所から位置が出なかった競合物件 ${data.competitorsWithoutLocation}件は地図に出ていません。`}
           </div>
         )}

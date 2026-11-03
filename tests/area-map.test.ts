@@ -44,3 +44,12 @@ describe("エリアの地図", () => {
     expect(facilityGroupOf("その他")).toBeNull();
   });
 });
+
+describe("地図の施設の上限", () => {
+  it("1km以内が上限を超えた種類と件数を返す", async () => {
+    const { cutFacilities } = await import("../lib/area-map");
+    const rows = Array.from({ length: 5 }, (_, i) => ({ kind: "バス停", name: `B${i}`, distance_m: 100 * i, lon: 0, lat: 0 }));
+    expect(cutFacilities(rows, 3)).toEqual([{ kind: "バス停", total: 5 }]);
+    expect(cutFacilities(rows, 5)).toEqual([]);
+  });
+});

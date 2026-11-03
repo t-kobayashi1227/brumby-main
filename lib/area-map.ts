@@ -53,6 +53,10 @@ export interface MapPoint {
 export interface AreaMapData {
   center: { lon: number; lat: number };
   points: MapPoint[];
+  /** 地図に出した生活施設のデータ（datasets.id）。フッターのクレジットに使う */
+  datasetIds: string[];
+  /** 種類ごとの上限で地図に出さなかった施設（種類と、1km以内の件数） */
+  cut: { kind: string; total: number }[];
   /** 競合物件のうち、住所から位置が出ず地図に置けなかった件数 */
   competitorsWithoutLocation: number;
 }
@@ -89,6 +93,7 @@ export function formatDistance(m: number): string {
 
 export interface FacilityRow {
   kind: string;
+  dataset_id?: string;
   name: string;
   lon: number;
   lat: number;
@@ -100,7 +105,7 @@ export interface FacilityRow {
  * バス停は数が多いので1km以内だけ。駅は3kmより遠くても最寄りを1つ出す（rows に入っていれば）
  * rows は近い順に並んでいること
  */
-export function pickFacilities(rows: FacilityRow[], perKindLimit = 30): FacilityRow[] {
+export function pickFacilities(rows: FacilityRow[], perKindLimit = PER_KIND_LIMIT): FacilityRow[] {
   const byKind = new Map<string, FacilityRow[]>();
   for (const r of rows) {
     if (!facilityGroupOf(r.kind)) continue;
@@ -115,4 +120,14 @@ export function pickFacilities(rows: FacilityRow[], perKindLimit = 30): Facility
     else if (kind !== "バス停" && (kind === "駅" || list[0].distance_m <= RINGS_M[1])) out.push(list[0]);
   }
   return out.sort((a, b) => a.distance_m - b.distance_m);
+}
+
+/** 1km以内の施設が多い種類は、近い順にこの件数まで地図に出す（ピンで地図が埋まらないように） */
+export const PER_KIND_LIMIT = 30;
+
+/** 上限で地図に出さなかった種類と、1km以内の件数（地図の注記に使う） */
+export function cutFacilities(rows: FacilityRow[], perKindLimit = PER_KIND_LIMIT): { kind: string; total: number }[] {
+  const near = new Map<string, number>();
+  for (const r of rows) if (facilityGroupOf(r.kind) && r.distance_m <= RINGS_M[0]) near.set(r.kind, (near.get(r.kind) ?? 0) + 1);
+  return [...near].filter(([, n]) => n > perKindLimit).map(([kind, total]) => ({ kind, total }));
 }
