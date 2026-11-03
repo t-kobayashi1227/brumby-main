@@ -125,3 +125,63 @@ export const GearIcon = (p: IconProps) => (
     <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
   </Svg>
 );
+
+// ---- AI入力アシストで使う ----
+
+export const SparkIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M10 3.5l1.7 4.6 4.6 1.7-4.6 1.7L10 16.1l-1.7-4.6-4.6-1.7 4.6-1.7z" />
+    <path d="M18 14l.8 2.2 2.2.8-2.2.8L18 20l-.8-2.2-2.2-.8 2.2-.8z" />
+  </Svg>
+);
+
+export const YenIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 4l6 8 6-8" />
+    <path d="M12 12v8M7.5 13.5h9M7.5 17h9" />
+  </Svg>
+);
+
+export const FloorPlanIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4" y="4" width="16" height="16" rx="1.5" />
+    <path d="M4 12h7M11 4v12M15 12h5" />
+  </Svg>
+);
+
+export const AreaIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 2v16h16" />
+    <path d="M2 6h16v16" />
+  </Svg>
+);
+
+export const CalendarIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="4" y="5" width="16" height="15" rx="1.5" />
+    <path d="M4 10h16M8 3v4M16 3v4" />
+  </Svg>
+);
+
+export const CarIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5 16V11l2-5h10l2 5v5" />
+    <path d="M3 16h18v3H3zM5 11h14" />
+    <circle cx="8" cy="13.5" r=".6" />
+    <circle cx="16" cy="13.5" r=".6" />
+  </Svg>
+);
+
+export const DocIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 3h8l4 4v14H6z" />
+    <path d="M14 3v4h4M9 12h6M9 16h6" />
+  </Svg>
+);
+
+/** 読み込み中のくるくる。回転は animate-spin で付ける */
+export const SpinnerIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3a9 9 0 1 0 9 9" />
+  </Svg>
+);

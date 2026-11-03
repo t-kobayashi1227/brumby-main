@@ -19,9 +19,17 @@ import {
   TrainIcon,
   TrashIcon,
   UsersIcon,
+  SparkIcon,
+  YenIcon,
+  FloorPlanIcon,
+  AreaIcon,
+  CalendarIcon,
+  CarIcon,
+  DocIcon,
+  SpinnerIcon,
 } from "../../_components/icons";
 import { previewAddress, saveProperty, type PropertyFormState } from "./actions";
-import { importFromText } from "./import-actions";
+import { importDraft } from "./import-actions";
 import { IMPORT_MAX_CHARS, type ImportResult } from "../../../lib/property-import";
 
 // ①物件情報の入力フォーム（docs/設計まとめ.md「①物件情報の入力」の15項目）
@@ -32,8 +40,8 @@ import { IMPORT_MAX_CHARS, type ImportResult } from "../../../lib/property-impor
 // - リフォーム：「あり」を選ぶと、年と箇所の欄が出る
 // - 競合物件・広告予算は開閉できる。閉じても入力は消えずに送られる（hidden で隠すだけ）
 // - 欄の name は保存の処理（actions.ts）が読む名前のまま変えない
-// - 「物件資料から入力」：貼った資料から AI が書かれたままの文字を抜き出し、システムが数字に直して、空の欄にだけ入れる（import-actions.ts）。
-//   入れた欄は黄色にし、担当者が直すと色を消す。登録は担当者が見比べてから押す
+// - 「AI入力アシスト」：貼った紹介文から AI が書かれたままの文字を抜き出し、システムが数字に直して、空の欄にだけ入れる（import-actions.ts）。
+//   入れた欄は黄色にし、担当者が直すと色を消す。保存はしない。登録は担当者が見比べてから押す（必須項目の確かめは従来どおり）
 
 export interface TransportValues {
   mode: string;
@@ -368,65 +376,125 @@ function TransportRow({ position, values, onRemove }: { position: 1 | 2; values?
   );
 }
 
-/** 物件資料のテキストを貼って、入力欄の下書きを作る欄 */
-function ImportPanel({ onImported }: { onImported: (r: ImportResult) => string }) {
+/** 「サンプルを入力」で入れる例文（架空の物件） */
+const SAMPLE_TEXT = `【中古戸建】新潟市西区寺尾東3丁目
+価格　2,480万円
+所在地　新潟市西区寺尾東3丁目12-5
+交通　JR越後線「寺尾」駅 徒歩8分／新潟交通バス「寺尾小学校前」停 徒歩3分
+間取り　4LDK+S
+建物面積　105.98㎡（32.05坪）　土地面積　165.30㎡（50.00坪）
+駐車　並列2台
+築年月　2015年3月　木造2階建
+2023年にキッチン・浴室をリフォーム済み
+南向きリビング、シャッター車庫あり、小学校まで徒歩5分`;
+
+/** 抽出できる主な項目（見せるだけ） */
+const IMPORT_TARGETS = [
+  { label: "価格", icon: YenIcon },
+  { label: "間取り", icon: FloorPlanIcon },
+  { label: "面積", icon: AreaIcon },
+  { label: "築年数", icon: CalendarIcon },
+  { label: "駐車台数", icon: CarIcon },
+  { label: "アクセス", icon: TrainIcon },
+];
+
+/**
+ * AI入力アシスト：物件の紹介文を貼って解析し、空の欄に値を入れる
+ * - 解析中はボタンを読み込み中にし、二重に実行しない（ボタンを止めるだけでなく、ref でも弾く）
+ * - 値はフォームに入れるだけで保存しない。登録は従来どおり「登録して位置を確認」で、必須項目の確かめもそのまま
+ */
+function AiAssistPanel({ onImported }: { onImported: (r: ImportResult) => string }) {
   const [text, setText] = useState("");
-  const [open, setOpen] = useState(true);
   const [busy, setBusy] = useState(false);
+  const running = useRef(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const run = async () => {
+    if (running.current || text.trim() === "") return;
+    running.current = true;
     setBusy(true);
     setMessage(null);
     try {
-      const r = await importFromText(text);
-      if (!r.ok) setMessage({ ok: false, text: r.error });
-      else setMessage({ ok: true, text: onImported(r) });
+      const fd = new FormData();
+      fd.set("kind", "text");
+      fd.set("text", text);
+      const r = await importDraft(fd);
+      setMessage(r.ok ? { ok: true, text: onImported(r) } : { ok: false, text: r.error });
     } catch {
-      setMessage({ ok: false, text: "読み取りに失敗しました。時間をおいてもう一度お試しください" });
+      setMessage({ ok: false, text: "解析に失敗しました。時間をおいてもう一度お試しください" });
     } finally {
+      running.current = false;
       setBusy(false);
     }
   };
 
   return (
-    <SectionCard icon={<SparkIcon />} title="物件資料から入力" note="物件資料のテキストを貼ると、空の欄に下書きを入れます。" required={false} collapsible open={open} onToggle={() => setOpen(!open)}>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={5}
-        maxLength={IMPORT_MAX_CHARS}
-        aria-label="物件資料のテキスト"
-        placeholder="販売図面・マイソク・物件概要などのテキストを貼ってください（価格、所在地、交通、間取り、面積、築年月など）"
-        className={`${field} h-auto! py-2.5 leading-relaxed`}
-      />
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={run}
-          disabled={busy || text.trim() === ""}
-          className="flex items-center gap-1.5 rounded-lg border border-primary bg-white px-4 py-2 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          <SparkIcon className="size-4" />
-          {busy ? "読み取り中…" : "読み取って入力"}
-        </button>
-        <span className="text-[11px] text-muted">入れた欄は黄色になります。登録の前に資料と見比べてください。貼ったテキストは保存しません。</span>
-      </div>
-      {message && (
-        <p role="status" className={`rounded-md border px-3 py-2 text-xs leading-relaxed ${message.ok ? "border-[#f0dca0] bg-[#fff8e1] text-[#6b4e00]" : "border-[#f3c4c4] bg-[#fdecec] text-[#b91c1c]"}`}>
-          {message.text}
-        </p>
-      )}
-    </SectionCard>
-  );
-}
+    <section aria-labelledby="ai-assist-title" className="rounded-xl border border-[#b9cdf0] bg-gradient-to-br from-white to-[#f3f7fe] shadow-[0_1px_3px_rgba(22,35,63,0.04)]">
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)]">
+        <div className="grid gap-3 p-5">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2 id="ai-assist-title" className="flex items-center gap-2 text-[18px] font-bold text-ink">
+              <SparkIcon className="size-6 text-primary" />
+              AI入力アシスト
+            </h2>
+            <p className="text-xs text-muted">物件の紹介文を貼り付けると、AIが自動で情報を抽出して各項目に反映します。</p>
+          </div>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            readOnly={busy}
+            rows={4}
+            maxLength={IMPORT_MAX_CHARS}
+            aria-label="物件の紹介文"
+            placeholder="例：JR越後線「寺尾」駅 徒歩8分、4LDK+S、建物面積105.98㎡、土地面積165.30㎡、2015年築の2階建て。販売価格は2,480万円…"
+            className={`${field} h-auto! py-2.5 leading-relaxed read-only:bg-subtle`}
+          />
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <button
+              type="button"
+              onClick={() => setText(SAMPLE_TEXT)}
+              disabled={busy}
+              className="flex items-center gap-1.5 rounded-lg border border-line bg-white px-3.5 py-2 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <DocIcon className="size-4" />
+              サンプルを入力
+            </button>
+            <p className="text-[11px] leading-relaxed text-muted">
+              SUUMO・アットホームなどの物件ページの文章をコピーして、そのまま貼り付けてもかまいません。
+              <br />
+              すでに入力した欄は上書きしません。貼り付けた文章は保存しません。
+            </p>
+          </div>
+        </div>
 
-function SparkIcon({ className = "size-5" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
-      <path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z" />
-      <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />
-    </svg>
+        <div className="grid content-start gap-4 border-t border-line p-5 lg:border-t-0 lg:border-l">
+          <div className="text-[14px] font-bold text-ink">抽出できる主な項目</div>
+          <ul className="grid grid-cols-3 gap-2">
+            {IMPORT_TARGETS.map(({ label: name, icon: Icon }) => (
+              <li key={name} className="flex items-center justify-center gap-1.5 rounded-full border border-line bg-white px-2 py-1.5 text-[13px] text-ink">
+                <Icon className="size-4 text-primary" />
+                {name}
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={run}
+            disabled={busy || text.trim() === ""}
+            aria-busy={busy}
+            className="flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-[14px] font-bold text-white shadow-sm cursor-pointer hover:bg-[#2459b0] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy ? <SpinnerIcon className="size-4.5 animate-spin" /> : <SparkIcon className="size-4.5" />}
+            {busy ? "解析中…" : "内容を解析して反映"}
+          </button>
+          {message && (
+            <p role="status" className={`rounded-md border px-3 py-2 text-xs leading-relaxed ${message.ok ? "border-[#f0dca0] bg-[#fff8e1] text-[#6b4e00]" : "border-[#f3c4c4] bg-[#fdecec] text-[#b91c1c]"}`}>
+              {message.text}
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -504,10 +572,10 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
       for (const b of boxes) if (r.renovationParts.includes(b.value)) b.checked = true;
     }
     recount();
-    const parts = [`${r.filled.length > 0 ? r.filled.join("、") : "なし"}を読み取り、空の欄${count}か所に入れました（黄色の欄）。`];
+    const parts = [`${r.filled.length > 0 ? r.filled.join("、") : "なし"}を読み取り、空の欄${count}か所に反映しました（黄色の欄）。まだ保存していません。`];
     if (skipped.length > 0) parts.push(`すでに入力のある欄${skipped.length}か所は、そのままにしています。`);
     if (r.missing.length > 0) parts.push(`資料から読み取れなかった項目：${r.missing.join("、")}。手で入れてください。`);
-    parts.push("登録の前に、資料と見比べてください。");
+    parts.push("内容を確かめてから登録してください。");
     return parts.join("");
   };
 
@@ -563,7 +631,7 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
         >
           {v.id && <input type="hidden" name="id" value={v.id} />}
 
-          {!v.id && <ImportPanel onImported={applyImport} />}
+          {!v.id && <AiAssistPanel onImported={applyImport} />}
 
           <SectionCard icon={<HomeIcon />} title="基本情報" note="物件の基本的な情報を入力してください。" required count={`${progress.basic} / ${TOTALS.basic} 項目`}>
             <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] gap-4 items-start">

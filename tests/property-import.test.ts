@@ -151,3 +151,24 @@ describe("toFormFields", () => {
     expect(() => importSchema.toJSONSchema()).not.toThrow();
   });
 });
+
+describe("資料の受け取り（property-import-source）", async () => {
+  const { readImportSource, toSourceText } = await import("../lib/property-import-source");
+
+  it("テキストを受け取り、前後の空白を除く", async () => {
+    const fd = new FormData();
+    fd.set("kind", "text");
+    fd.set("text", "  価格 2,480万円 \n");
+    const source = readImportSource(fd);
+    expect(source).toEqual({ kind: "text", text: "  価格 2,480万円 \n" });
+    expect(await toSourceText(source as { kind: "text"; text: string })).toEqual({ text: "価格 2,480万円" });
+  });
+
+  it("まだ対応していない種類・空・長すぎるものは理由を返す", async () => {
+    const fd = new FormData();
+    fd.set("kind", "pdf");
+    expect(readImportSource(fd)).toHaveProperty("error");
+    expect(await toSourceText({ kind: "text", text: "  " })).toHaveProperty("error");
+    expect(await toSourceText({ kind: "text", text: "あ".repeat(20001) })).toHaveProperty("error");
+  });
+});
