@@ -23,8 +23,8 @@ interface PropertyRow {
   parking: number;
   building_age: number;
   floors: string;
-  has_garden: boolean;
-  renovated: boolean;
+  has_garden: boolean | null;
+  renovated: boolean | null;
   renovation_year: number | null;
   renovation_parts: string[] | null;
   features: string | null;

@@ -414,6 +414,20 @@ describe("事実シートの組み立て", () => {
     expect(find(facts, "広告予算の総額").値).toBe("入力なし");
   });
 
+  it("物件（P）：庭・リフォーム・交通が不明（入力なし）でも組み立て、推測で埋めない", () => {
+    const base = sample();
+    const unknown = buildFacts({
+      ...base,
+      property: { ...base.property, has_garden: null, renovated: null, renovation_year: null, renovation_parts: null },
+      transports: [],
+    });
+    expect(find(unknown, "庭").値).toBe("不明（入力なし）");
+    expect(find(unknown, "リフォーム").値).toBe("不明（入力なし）");
+    expect(unknown.some((f) => /物件資料の徒歩分/.test(f.項目))).toBe(false);
+    const partial = buildFacts({ ...base, property: { ...base.property, renovated: true, renovation_year: null, renovation_parts: null } });
+    expect(find(partial, "リフォーム").値).toBe("年は不明：箇所は不明");
+  });
+
   it("相場（M）：物件の値を「値」、区×築年数の中央値を「比較」に入れ、相場比を出す", () => {
     expect(find(facts, /^延床の坪単価（西区・築20〜29年の戸建の相場と比べる）/)).toMatchObject({
       id: "M-01",

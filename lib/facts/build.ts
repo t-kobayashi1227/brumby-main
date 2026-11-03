@@ -39,8 +39,9 @@ export interface PropertyInput {
   parking: number;
   building_age: number;
   floors: string;
-  has_garden: boolean;
-  renovated: boolean;
+  /** null は不明（入力なし） */
+  has_garden: boolean | null;
+  renovated: boolean | null;
   renovation_year: number | null;
   renovation_parts: string[] | null;
   features: string | null;
@@ -283,9 +284,13 @@ function propertyFacts(c: Collected): FactDraft[] {
   const src = { 出典: "入力", 時点: c.today.slice(0, 7) };
   const layout =
     p.rooms !== null && p.storerooms !== null ? `居室${p.rooms}・納戸${p.storerooms}（${p.layout}）` : `${p.layout}（居室と納戸に分けられない書き方）`;
-  const renovation = p.renovated
-    ? `${p.renovation_year ?? "年は不明"}年：${(p.renovation_parts ?? []).join("・") || "箇所は不明"}`
-    : "なし";
+  // 庭・リフォームは任意。入力が無ければ「不明」とし、推測で埋めない
+  const renovation =
+    p.renovated === null
+      ? "不明（入力なし）"
+      : p.renovated
+        ? `${p.renovation_year !== null ? `${p.renovation_year}年` : "年は不明"}：${(p.renovation_parts ?? []).join("・") || "箇所は不明"}`
+        : "なし";
   return [
     fact("P", "物件区分", p.property_class, src),
     fact("P", "価格", formatManYen(p.price_man_yen * 10_000), src),
@@ -295,7 +300,7 @@ function propertyFacts(c: Collected): FactDraft[] {
     fact("P", "駐車台数", `${p.parking}台`, src),
     fact("P", "築年数", p.building_age === 0 ? "新築（築0年）" : `築${p.building_age}年`, src),
     fact("P", "階数", p.floors, src),
-    fact("P", "庭", p.has_garden ? "あり" : "なし", src),
+    fact("P", "庭", p.has_garden === null ? "不明（入力なし）" : p.has_garden ? "あり" : "なし", src),
     fact("P", "リフォーム", renovation, src),
     fact("P", "特徴ピックアップ（物件資料のまま）", p.features ?? "入力なし", src),
     fact("P", "所在地", p.address, src),
