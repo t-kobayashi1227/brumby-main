@@ -4,7 +4,7 @@ import type { StrategyResult } from "../../../../lib/agents/run";
 import type { AreaMapData } from "../../../../lib/area-map";
 import type { AreaPriceResult } from "../../../../lib/area-price";
 import type { Fact } from "../../../../lib/facts/types";
-import { nextCheck, shortLabel } from "../../../../lib/report";
+import { factsToCheck, nextCheck, shortLabel, usedFactIds } from "../../../../lib/report";
 import { AlertIcon, ClipboardIcon, MegaphoneIcon, SearchIcon, SparkIcon, TargetIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, HypothesisBadge, Num, useReportNav } from "./parts";
 import AreaMap from "./AreaMap";
@@ -40,7 +40,8 @@ export default function SummaryTab({
   const appeal = [...m.appeals].sort((a, b) => a.rank - b.rank)[0];
   const topConcerns = m.concerns.slice(0, MAX_CONCERNS);
   const restConcerns = m.concerns.slice(MAX_CONCERNS);
-  const missingFacts = factList.filter((f) => f.状態 !== "取得");
+  // 取れなかった事実を全部は出さない。災害・学区と、根拠に使った要確認の事実だけ（lib/report.ts の factsToCheck）
+  const missingFacts = factsToCheck(factList, usedFactIds(r.戦略, r.媒体));
 
   return (
     <div className="grid gap-4">
@@ -110,9 +111,10 @@ export default function SummaryTab({
         {missingFacts.length === 0 && m.unknown.length === 0 ? (
           <div className="text-[13px] text-sub">確かめることはありません。</div>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          <div className={`grid gap-4 ${missingFacts.length > 0 && m.unknown.length > 0 ? "lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]" : ""}`}>
+            {missingFacts.length > 0 && (
             <div className="min-w-0">
-              <div className="mb-2 text-[12px] text-sub">データが取れなかった・要確認の事実です。物件の入力で補えるものは、物件情報に入れて戦略を作り直すと反映されます。</div>
+              <div className="mb-2 text-[12px] text-sub">販売の前に確かめたい事実です（災害・学区で取れなかったものと、戦略の根拠にした要確認の事実）。ほかに取れなかったデータは、根拠データタブで見られます。</div>
               <ul className="grid gap-2">
                 {missingFacts.map((f) => {
                   const n = nextCheck(f);
@@ -124,7 +126,7 @@ export default function SummaryTab({
                         <div className="text-[12px] text-sub">
                           確認先：{n.who}・
                           <button type="button" onClick={() => openFact(f.id)} className="text-primary underline underline-offset-2 cursor-pointer">
-                            {f.id} {shortLabel(f.項目)}（{f.状態}）
+                            {shortLabel(f.項目)}（{f.状態}）
                           </button>
                         </div>
                       </div>
@@ -133,6 +135,7 @@ export default function SummaryTab({
                 })}
               </ul>
             </div>
+            )}
             {m.unknown.length > 0 && (
               <div className="min-w-0">
                 <div className="mb-2 text-[12px] text-sub">AIが「事実シートから分からない」と挙げたこと</div>

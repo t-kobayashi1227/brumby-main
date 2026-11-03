@@ -240,3 +240,66 @@ export function unitPriceOf(text: string | null | undefined): number | null {
   const m = text?.match(/([\d,]+(?:\.\d+)?)万円\/坪/);
   return m ? Number(m[1].replace(/,/g, "")) : null;
 }
+
+/**
+ * 「次に確かめること」に出す事実（2026-11-04 浩平さん指摘：重要でない項目まで出すと大げさ）。
+ * 取得できず・要確認の事実のうち、販売の前に確かめる意味があるものだけを出す
+ * - 災害（H）と学区（S）：買い手への説明に要るので、取れなかったときは必ず確かめる
+ * - それ以外：戦略の根拠に使った「要確認」の事実だけ（根拠にした以上、確かめないと見立てが崩れる）
+ * 統計・施設の件数・乗降客数などが取れなかったことや、任意の入力が空なことは出さない（根拠データタブには残る）
+ */
+export function factsToCheck(facts: Fact[], usedIds: Iterable<string>): Fact[] {
+  const used = new Set(usedIds);
+  return facts.filter((f) => {
+    if (f.状態 === "取得") return false;
+    const c = categoryOf(f.id);
+    if (c === "H" || c === "S") return true;
+    return f.状態 === "要確認" && used.has(f.id);
+  });
+}
+
+/** 事実ID（P-10 など）。分類は事実シートの分類だけ */
+const FACT_ID = /(?<![A-Za-z0-9])[PMRASLTHBKC]-\d{2}(?![0-9])/g;
+/** 事実IDだけが入ったかっこ（「（P-10）」「［P-10、L-04］」など） */
+const ID_BRACKETS = /\s*[（(［[【]\s*(?:事実ID[:：]\s*)?[PMRASLTHBKC]-\d{2}(?:\s*[、,・／/]\s*[PMRASLTHBKC]-\d{2})*\s*[）)］\]】]/g;
+
+/**
+ * AIの文に入った事実IDを、利用者に分かる形にする（2026-11-04 浩平さん指摘：［P-10］は利用者向けではない）。
+ * かっこで添えたIDは外し（根拠は文の下のチップで見える）、文の中のIDは事実の名前に置き換える。知らないIDは外す
+ */
+export function plainIds(text: string, facts: Map<string, Fact>): string {
+  return text
+    .replace(ID_BRACKETS, "")
+    .replace(FACT_ID, (id) => {
+      const f = facts.get(id);
+      return f ? shortLabel(f.項目) : "";
+    })
+    .replace(/[ 　]{2,}/g, " ")
+    .trim();
+}
+
+/** 答えの文の中の事実IDを全部 plainIds で直す。evidence・id は事実IDそのものなので触らない */
+export function withPlainIds<T>(value: T, facts: Map<string, Fact>): T {
+  const walk = (v: unknown, key?: string): unknown => {
+    if (key === "evidence" || key === "id") return v;
+    if (typeof v === "string") return plainIds(v, facts);
+    if (Array.isArray(v)) return v.map((x) => walk(x));
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));
+    return v;
+  };
+  return walk(value) as T;
+}
+
+/**
+ * AIが「事実シートから分からない」と挙げたこと（unknown）のうち、画面に出すもの。
+ * 挙げた事実IDが、どれも「次に確かめること」に出さない取得できず・要確認の事実（統計・乗降客数・古い施設データなど）なら出さない。
+ * IDが無い項目や、取れている事実を挙げた項目（例：店名に「仮称」が入る）は出す。文の中のIDで判断するので、plainIds の前に使う
+ */
+export function unknownToShow(unknown: string[], facts: Fact[], usedIds: Iterable<string>): string[] {
+  const shown = new Set(factsToCheck(facts, usedIds).map((f) => f.id));
+  const minor = new Set(facts.filter((f) => f.状態 !== "取得" && !shown.has(f.id)).map((f) => f.id));
+  return unknown.filter((u) => {
+    const ids = u.match(FACT_ID) ?? [];
+    return ids.length === 0 || ids.some((id) => !minor.has(id));
+  });
+}

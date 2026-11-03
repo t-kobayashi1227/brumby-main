@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { StrategyResult } from "../../../../lib/agents/run";
 import type { Fact } from "../../../../lib/facts/types";
-import { factUsage, FIXED_CREDITS, REPORT_TABS, type ReportTab, type SourceRow } from "../../../../lib/report";
+import { factUsage, FIXED_CREDITS, REPORT_TABS, unknownToShow, usedFactIds, withPlainIds, type ReportTab, type SourceRow } from "../../../../lib/report";
 import UnderlineTabs from "../../../_components/UnderlineTabs";
 import type { AreaMapData } from "../../../../lib/area-map";
 import type { AreaPriceResult } from "../../../../lib/area-price";
@@ -22,7 +22,7 @@ import TargetTab from "./TargetTab";
 // 金額は lib/calc/budget.ts で計算済み。合わない層（not_fit）と懸念点の対策案（action）は画面に出さない（DBには残る）
 
 export default function Report({
-  result,
+  result: saved,
   facts,
   sources,
   credits,
@@ -50,6 +50,12 @@ export default function Report({
   const [tab, setTab] = useState<ReportTab>("summary");
   const [selectedFact, setSelectedFact] = useState<string | null>(null);
   const byId = useMemo(() => new Map(facts.map((f) => [f.id, f])), [facts]);
+  // AIの文に入った事実ID（［P-10］など）は、名前に置き換えるか外して出す（2026-11-04 浩平さん指摘）。DBの答えはそのまま
+  // 「分からないこと」は、重要でない取れなかった事実（統計・乗降客数など）だけを挙げた項目を外す（lib/report.ts の unknownToShow）
+  const result = useMemo(() => {
+    const unknown = unknownToShow(saved.戦略.unknown, facts, usedFactIds(saved.戦略, saved.媒体));
+    return { ...saved, 戦略: withPlainIds({ ...saved.戦略, unknown }, byId), 媒体: withPlainIds(saved.媒体, byId) };
+  }, [saved, facts, byId]);
   const usage = useMemo(() => factUsage(result.戦略, result.媒体, (id, f) => mediaInfo[id]?.name ?? f), [result, mediaInfo]);
 
   // 画面のスクロールは main の中で起きるので、window ではなくタブの位置へ戻す
