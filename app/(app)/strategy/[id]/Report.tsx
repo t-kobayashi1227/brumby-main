@@ -27,6 +27,7 @@ export default function Report({
   mediaInfo,
   sheetCreatedAt,
   propertyId,
+  runId,
 }: {
   result: StrategyResult;
   facts: Fact[];
@@ -35,6 +36,8 @@ export default function Report({
   mediaInfo: Record<string, MediaInfo>;
   sheetCreatedAt: string;
   propertyId: number;
+  /** このレポートを作った実行（AIに送った内容を読むのに使う） */
+  runId: number;
 }) {
   const [tab, setTab] = useState<ReportTab>("summary");
   const [selectedFact, setSelectedFact] = useState<string | null>(null);
@@ -66,7 +69,7 @@ export default function Report({
         <UnderlineTabs tabs={[...REPORT_TABS]} active={tab} onChange={(k) => setTab(k as ReportTab)} />
       </div>
       <Legend />
-      {tab === "summary" && <SummaryTab r={result} facts={byId} factList={facts} />}
+      {tab === "summary" && <SummaryTab r={result} facts={byId} factList={facts} propertyId={propertyId} runId={runId} />}
       {tab === "target" && <TargetTab r={result} facts={byId} />}
       {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} />}
       {tab === "price" && <PriceTab r={result} facts={byId} factList={facts} />}

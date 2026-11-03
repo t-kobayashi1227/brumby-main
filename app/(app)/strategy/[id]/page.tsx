@@ -55,8 +55,8 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
   const [latestSheet] = await sql<{ id: string; content: FactSheet }[]>`
     select id, content from fact_sheets where property_id = ${propertyId} order by created_at desc limit 1
   `;
-  const [done] = await sql<{ result: StrategyResult; finished_at: Date; content: FactSheet; cost_usd: string; fact_sheet_id: string }[]>`
-    select r.result, r.finished_at, r.cost_usd, f.content, r.fact_sheet_id
+  const [done] = await sql<{ result: StrategyResult; finished_at: Date; content: FactSheet; cost_usd: string; fact_sheet_id: string; run_id: string }[]>`
+    select r.id as run_id, r.result, r.finished_at, r.cost_usd, f.content, r.fact_sheet_id
     from strategy_runs r join fact_sheets f on f.id = r.fact_sheet_id
     where r.property_id = ${propertyId} and r.status = 'succeeded' and r.form = '3回'
     order by r.finished_at desc limit 1
@@ -90,6 +90,7 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
           mediaInfo={Object.fromEntries(media.map((m) => [m.id, { name: m.name, category: m.category }]))}
           sheetCreatedAt={formatJstDateTime(done.content.作成日時)}
           propertyId={propertyId}
+          runId={Number(done.run_id)}
         />
       </>
     );
