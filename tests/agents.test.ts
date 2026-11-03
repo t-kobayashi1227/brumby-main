@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { bannedWords, checkProgram, removeSentences, splitWhere } from "../lib/agents/checks";
-import { costUsd } from "../lib/agents/cost";
+import { z } from "zod/v4";
+import { costUsd, providerOf, resolveModels } from "../lib/agents/cost";
+import { parseJson } from "../lib/agents/llm";
 import { agentPrompt, PROMPT_FILES, readPrompt } from "../lib/agents/prompts";
 import { mainPart, type MediaOutput, type StrategyOutput } from "../lib/agents/schemas";
 import { allocate, simulate } from "../lib/calc/budget";
@@ -201,15 +203,15 @@ describe("配分から金額（予算シミュレーション）", () => {
 
 describe("費用（claude-haiku-5-5）", () => {
   it("100K トークン以下は入力 $0.10・出力 $0.50（1M トークンあたり）", () => {
-    expect(costUsd({ input_tokens: 20_000, output_tokens: 2_000 })).toBeCloseTo(0.003, 9);
+    expect(costUsd({ input_tokens: 20_000, output_tokens: 2_000 }, "claude-haiku-5-5")).toBeCloseTo(0.003, 9);
   });
 
   it("キャッシュの書き込みは1.25倍、読み込みは0.1倍", () => {
-    expect(costUsd({ input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 10_000, cache_read_input_tokens: 10_000 })).toBeCloseTo(0.00135, 9);
+    expect(costUsd({ input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 10_000, cache_read_input_tokens: 10_000 }, "claude-haiku-5-5")).toBeCloseTo(0.00135, 9);
   });
 
   it("100K トークンを超えると高い料金表", () => {
-    expect(costUsd({ input_tokens: 200_000, output_tokens: 1_000 })).toBeCloseTo(0.1025, 9);
+    expect(costUsd({ input_tokens: 200_000, output_tokens: 1_000 }, "claude-haiku-5-5")).toBeCloseTo(0.1025, 9);
   });
 });
 
@@ -221,5 +223,55 @@ describe("費用（claude-sonnet-5-5）", () => {
 
   it("キャッシュの書き込みは1.25倍、読み込みは0.1倍", () => {
     expect(costUsd({ input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 10_000, cache_read_input_tokens: 10_000 }, "claude-sonnet-5-5")).toBeCloseTo(0.027, 9);
+  });
+});
+
+describe("費用（OpenAI）", () => {
+  it("gpt-6.1-sol は入力 $2.00・キャッシュ読み込み $0.10・出力 $10.00（1M トークンあたり）", () => {
+    expect(costUsd({ input_tokens: 20_000, output_tokens: 10_000, cache_read_input_tokens: 10_000 }, "gpt-6.1-sol")).toBeCloseTo(0.141, 9);
+  });
+
+  it("gpt-6-luna は入力 $0.10・キャッシュ読み込み $0.01・出力 $0.50。長いプロンプトでも同じ料金表", () => {
+    expect(costUsd({ input_tokens: 200_000, output_tokens: 2_000, cache_read_input_tokens: 100_000 }, "gpt-6-luna")).toBeCloseTo(0.022, 9);
+  });
+});
+
+describe("提供元とモデルの選び方（環境変数）", () => {
+  it("何も設定しなければ Anthropic の Sonnet と Haiku", () => {
+    expect(resolveModels({})).toEqual({ provider: "anthropic", strategy: "claude-sonnet-5-5", media: "claude-haiku-5-5" });
+  });
+
+  it("AI_PROVIDER=openai だけで OpenAI の既定のモデルになる（大文字・空白も受ける）", () => {
+    expect(resolveModels({ AI_PROVIDER: " OpenAI " })).toEqual({ provider: "openai", strategy: "gpt-6.1-sol", media: "gpt-6-luna" });
+  });
+
+  it("担当ごとのモデルを変えられる", () => {
+    expect(resolveModels({ AI_PROVIDER: "openai", AI_MODEL_STRATEGY: "gpt-6.1-terra" }).strategy).toBe("gpt-6.1-terra");
+    expect(resolveModels({ AI_MODEL_STRATEGY: "", AI_MODEL_MEDIA: "claude-sonnet-5-5" })).toEqual({ provider: "anthropic", strategy: "claude-sonnet-5-5", media: "claude-sonnet-5-5" });
+  });
+
+  it("知らない提供元・料金表にないモデル・提供元と合わないモデルは例外", () => {
+    expect(() => resolveModels({ AI_PROVIDER: "chatgpt" })).toThrow(/AI_PROVIDER/);
+    expect(() => resolveModels({ AI_MODEL_MEDIA: "gpt-4o" })).toThrow(/料金表/);
+    expect(() => resolveModels({ AI_PROVIDER: "openai", AI_MODEL_STRATEGY: "claude-sonnet-5-5" })).toThrow(/AI_PROVIDER/);
+  });
+
+  it("モデル名から提供元がわかる", () => {
+    expect(providerOf("claude-haiku-5-5")).toBe("anthropic");
+    expect(providerOf("gpt-6-luna")).toBe("openai");
+  });
+});
+
+describe("OpenAI の答えの読み取り", () => {
+  const schema = z.object({ ok: z.boolean(), n: z.number().int() });
+
+  it("形に合う JSON は読む", () => {
+    expect(parseJson('{"ok":true,"n":3}', schema)).toEqual({ ok: true, n: 3 });
+  });
+
+  it("壊れた JSON・形に合わない JSON は null（例外にしない）", () => {
+    expect(parseJson('{"ok":true,', schema)).toBeNull();
+    expect(parseJson('{"ok":"yes","n":3}', schema)).toBeNull();
+    expect(parseJson("", schema)).toBeNull();
   });
 });

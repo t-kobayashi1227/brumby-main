@@ -1,11 +1,11 @@
 // ④戦略の作成（docs/設計まとめ.md「処理の流れ」）
+// モデルは cost.ts の STRATEGY_MODEL（戦略・確認）と MODEL（媒体）。既定は Anthropic の Sonnet 5.5・Haiku 5.5 で、環境変数で OpenAI に切り替えられる
 // 1. 戦略（Sonnet 5.5）：事実シート全体から、分析（事実 → 買い手にとっての意味 → 販売での使い方）と戦略を1回で作る
 // 2. 媒体（Haiku 5.5）：戦略のターゲットと P・B・C の事実から媒体と配分を決める
 // 3. 点検：プログラムで形を見て（IDのない文はここで外す）、確認（Sonnet 5.5）が中身を見る
 //    PoC では作り直さない。点検が求める扱い（作り直し・外す・記録だけ）のまま check_results に残す
 // 4. 配分から金額を計算する。入力・出力・費用・点検の結果は、すべて DB（strategy_runs・agent_calls・check_results）に残す
 
-import type Anthropic from "@anthropic-ai/sdk";
 import type { z } from "zod/v4";
 import { simulate } from "../calc/budget";
 import { serial, type Sql } from "../db";
@@ -13,14 +13,14 @@ import { createFactSheet } from "../facts";
 import type { Fact, FactCategory, FactSheet } from "../facts/types";
 import { checkProgram, removeSentences, splitWhere, type CheckIssue } from "./checks";
 import { STRATEGY_MODEL, type Model } from "./cost";
-import { callModel, DEFAULT_CALL, type CallOptions, type Effort } from "./llm";
+import { callModel, DEFAULT_CALL, type CallOptions, type ChatMessage, type Effort } from "./llm";
 import { agentPrompt } from "./prompts";
 import { checkSchema, mainPart, mediaSchema, strategySchema, type AgentName, type CheckOutput, type MediaOutput, type StrategyOutput } from "./schemas";
 
 type RunStage = "戦略" | "媒体" | "確認" | "金額の計算";
 
 export interface RunOptions {
-  /** 戦略担当のモデルと考える量（比べるときに Haiku や high を試す） */
+  /** 戦略担当のモデルと考える量（比べるときに媒体担当のモデルや high を試す） */
   strategy: { model: Model; effort: Effort };
 }
 
@@ -36,7 +36,7 @@ export interface StrategyResult {
 
 const DEFAULT_RUN: RunOptions = { strategy: { model: STRATEGY_MODEL, effort: "medium" } };
 
-/** 確認担当。点検する側が見立てを読み違えないよう、戦略担当と同じ Sonnet 5.5 にする（docs/履歴/戦略の質を上げる修正案.md 4.1） */
+/** 確認担当。点検する側が見立てを読み違えないよう、戦略担当と同じモデル（既定は Sonnet 5.5）にする（docs/履歴/戦略の質を上げる修正案.md 4.1） */
 const CHECK_CALL: CallOptions = { model: STRATEGY_MODEL, effort: "medium", maxTokens: 16000 };
 /** 戦略担当は分析と戦略を1回で作るので出力が大きい（修正案 4.2） */
 const STRATEGY_MAX_TOKENS = 64000;
@@ -112,7 +112,7 @@ export async function runStrategy(
   /** エージェントを1回呼び、agent_calls に入力・出力・トークン数・費用を残す。失敗したら例外 */
   const call = async <S extends z.ZodType>(agent: AgentName, input: unknown, schema: S, callOptions: CallOptions = DEFAULT_CALL) => {
     const prompt = agentPrompt(agent);
-    const messages: Anthropic.MessageParam[] = [{ role: "user", content: JSON.stringify(input) }];
+    const messages: ChatMessage[] = [{ role: "user", content: JSON.stringify(input) }];
     const [row] = await db(
       () => sql<{ id: string }[]>`
         insert into agent_calls (run_id, agent, attempt, model, effort, prompt_file, prompt_sha256, input)

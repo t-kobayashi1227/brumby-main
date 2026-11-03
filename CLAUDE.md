@@ -15,8 +15,8 @@
 
 - 流れは ①入力 → ②収集 → ③事実シート → ④エージェント → ⑤画面 です。AIを使うのは④だけです。距離・件数・相場比・返済額・金額の計算は、すべてプログラム（SQLまたはTypeScript）で行います。
 - エージェントの指示文は、`docs/設計まとめ.md` の「エージェントの指示文」を一字一句そのまま `prompts/` に置いて使います。指示文を変えるときは、利用者の了承を得てから変えます。
-- AIモデルは、戦略担当と確認担当が `claude-sonnet-5-5`、媒体担当が `claude-haiku-5-5` です。Anthropic公式の TypeScript SDK（`@anthropic-ai/sdk`）を使います。各呼び出しのトークン数と費用を記録します。
-- APIキーは `.env.local` に置き、gitに入れません。Anthropic・不動産情報ライブラリのキーと Supabase の service role キーは、サーバー側のコードだけで使い、ブラウザに渡しません（`NEXT_PUBLIC_` を付けない）。コード、ログ、画面、チャットにキーを出しません。
+- AIモデルは、戦略担当と確認担当が `claude-sonnet-5-5`、媒体担当が `claude-haiku-5-5` です。Anthropic公式の TypeScript SDK（`@anthropic-ai/sdk`）を使います。環境変数 `AI_PROVIDER=openai` で OpenAI（公式SDK `openai` の Responses API、既定は `gpt-6.1-sol`・`gpt-6-luna`）に切り替えられます。AIの呼び出しは `lib/agents/llm.ts` の `callModel` だけを通し、提供元ごとの書き方をほかのファイルに持ち込みません。使えるモデルは `lib/agents/cost.ts` の料金表にあるものだけです。各呼び出しのトークン数と費用を記録します。
+- APIキーは `.env.local` に置き、gitに入れません。Anthropic・OpenAI・不動産情報ライブラリのキーと Supabase の service role キーは、サーバー側のコードだけで使い、ブラウザに渡しません（`NEXT_PUBLIC_` を付けない）。コード、ログ、画面、チャットにキーを出しません。
 - 不動産情報ライブラリAPIは、利用規約によりアクセスログを保存します。また、サービス名に「不動産情報ライブラリ」を使いません。
 - 公的データは事前にDBへ取り込みます。物件ごとに外部と通信するのは、住所から緯度経度を出すとき（国土地理院 住所検索API）と、AIを呼ぶときだけです。
 - 距離はすべて直線距離です。画面と事実に「直線」と書き、徒歩分には直しません。
