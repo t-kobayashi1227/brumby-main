@@ -528,7 +528,7 @@ describe("事実シートの組み立て", () => {
         buildFacts({ ...base, datasets: { ...base.datasets, D21: ds("D21", "放課後児童クラブ", "新潟市オープンデータ", asOf) }, facilities: [...base.facilities, club] }),
         "放課後児童クラブ（1km以内）",
       );
-    expect(withAsOf("2017-03")).toMatchObject({ 状態: "要確認", 比較: "データは2017-03時点。今もあるかを市の一覧で確かめる" });
+    expect(withAsOf("2017-03")).toMatchObject({ 状態: "要確認", 比較: "データは2017-03時点。その後の閉所・新設を市の最新の一覧で確かめる" });
     expect(withAsOf("2025-04").状態).toBe("取得");
   });
 

@@ -228,7 +228,7 @@ export function nextCheck(f: Fact): { who: string; what: string } {
   if (factOrigin(f) === "入力" || c === "P" || c === "K") return { who: "売主・物件資料", what: `${name}を確認し、物件情報に入力する` };
   if (c === "H" || c === "R") return { who: "ハザードマップ・都市計画図", what: `物件の位置で${name}を確かめる` };
   if (c === "S") return { who: "市の通学区域", what: `住所から${name}を確かめる` };
-  if (f.状態 === "要確認" && /^データは.+時点/.test(f.比較 ?? "")) return { who: "市の一覧・現地", what: `${name}が今もあるかを、最新の一覧か現地で確かめる` };
+  if (f.状態 === "要確認" && /^データは.+時点/.test(f.比較 ?? "")) return { who: "市の一覧・現地", what: `近くの${name}を、最新の一覧か現地で確かめる（データの時点より後の閉所・新設は入っていない）` };
   if (f.状態 === "要確認") return { who: "元の資料", what: `${name}は値に確かめる点があるので、元の資料で確かめる` };
   if (c === "M") return { who: "取引事例・査定資料", what: `${name}は公的データで出せなかったので、近い条件の取引を確かめる` };
   if (c === "L" || c === "T") return { who: "地図・現地", what: `${name}を地図か現地で確かめる` };

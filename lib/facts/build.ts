@@ -670,7 +670,7 @@ function nearbyFact(c: Collected, f: NearbyKindInput): FactDraft {
   const year = Number(src.時点.slice(0, 4));
   const old = f.datasetIds.some((id) => OLD_DATA_DATASETS.has(id)) && Number.isFinite(year) && Number(c.today.slice(0, 4)) - year >= OLD_DATA_YEARS;
   return fact("L", `${f.label}（1km以内）`, formatNearby(f.within1km, f.nearest3km), src, {
-    比較: old ? `データは${src.時点}時点。今もあるかを市の一覧で確かめる` : compare ? `${ward}の町の平均 ${f.wardAverage!.toFixed(1)}件` : undefined,
+    比較: old ? `データは${src.時点}時点。その後の閉所・新設を市の最新の一覧で確かめる` : compare ? `${ward}の町の平均 ${f.wardAverage!.toFixed(1)}件` : undefined,
     状態: old ? "要確認" : undefined,
   });
 }
