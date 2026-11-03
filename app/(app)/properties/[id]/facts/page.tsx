@@ -5,11 +5,11 @@ import { formatJstDateTime } from "../../../../../lib/facts/format";
 import type { FactSheet } from "../../../../../lib/facts/types";
 import { parsePropertyId } from "../../../../../lib/property";
 import { btnPrimary, card, emptyState } from "../../../../_lib/ui";
-import FactSheetTable from "../../../../_components/FactSheetTable";
 import FactSheetRunner from "./FactSheetRunner";
 
-// 事実シートの画面：段階3で、作った事実の値を利用者が確かめるための表（docs/実装の進め方.md「3. 事実シートの作成」）
-// 表示するのは保存した最新のシート。エージェントにはこれと同じ JSON を渡す
+// 事実シートの画面：周辺情報を取得して事実シートを作る（docs/実装の進め方.md「3. 事実シートの作成」）
+// 事実の表は販売戦略の画面で見せる（2026-11-03 利用者の判断）。ここは取得の進み具合と、最新のシートの概要だけ
+// 作り終えると、FactSheetRunner が販売戦略の画面へ自動で移る
 // 地図で「この位置で確定」を押すと ?auto=1 で開き、周辺情報の取得を自動で始める（FactSheetRunner）
 
 export const dynamic = "force-dynamic";
@@ -43,16 +43,14 @@ export default async function FactSheetPage({ params, searchParams }: PageProps<
         )}
       </div>
       <FactSheetRunner propertyId={propertyId} autoStart={sp.auto === "1"} hasSheet={!!latest} />
-      {!latest ? (
-        <div className={emptyState}>まだ事実シートがありません。「取得を始める」を押してください。</div>
-      ) : (
-        // 表はレポートの「根拠データ」と同じもの（FactSheetTable）。収まらないときは横スクロール
-        <section className={`${card} p-5 min-w-0`}>
-          <div className="text-[13px] text-sub mb-4">
-            事実シート作成：{formatJstDateTime(latest.content.作成日時)}（距離はすべて{latest.content.距離の種類}）・事実 {facts.length}件・取得できず／要確認 {missing.length}件
-            {missing.length > 0 && `（${missing.map((f) => f.id).join("、")}）`}
-          </div>
-          <FactSheetTable facts={facts} />
+      {latest && (
+        <section className={`${card} p-5 text-[13px] text-sub`}>
+          最新の事実シート：{formatJstDateTime(latest.content.作成日時)}（距離はすべて{latest.content.距離の種類}）・事実 {facts.length}件・取得できず／要確認 {missing.length}件
+          {missing.length > 0 && `（${missing.map((f) => f.id).join("、")}）`}。内容は
+          <Link href={`/strategy/${propertyId}`} className="text-brand underline mx-1">
+            販売戦略の画面
+          </Link>
+          で確認できます。
         </section>
       )}
     </div>
