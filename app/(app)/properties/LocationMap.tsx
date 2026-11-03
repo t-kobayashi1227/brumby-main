@@ -27,6 +27,9 @@ export default function LocationMap({ propertyId, lon, lat, source, geocodeTitle
     (async () => {
       const maplibregl = await import("maplibre-gl");
       if (disposed || !box.current) return;
+      // MapLibre v6 は本体ファイルの隣にある worker を探すが、Turbopack が本体をまとめるため見つからない（Worker failed to load）
+      // worker のファイルを静的ファイルとして出させ、その URL を渡す
+      maplibregl.setWorkerUrl(new URL("../../../node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs", import.meta.url).href);
       const center: [number, number] = lon !== null && lat !== null ? [lon, lat] : NIIGATA;
       const m = new maplibregl.Map({
         container: box.current,
