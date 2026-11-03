@@ -82,7 +82,7 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
           <LatestFactSheet
             sheet={latestSheet.content}
             collapsed
-            note="物件の情報を直したため、事実シートを作り直しました。下のレポートは前回の事実シートで作っています。新しい事実シートは「戦略を作り直す」で反映されます。"
+            note="レポートを作ったあとに、新しい事実シートを作りました。下のレポートは前回の事実シートで作っています。新しい事実シートは、戦略を作り直し終えると反映されます。"
           />
         )}
         <Report result={done.result} facts={facts} sources={rows} credits={credits} mediaNames={Object.fromEntries(media.map((m) => [m.id, m.name]))} />
