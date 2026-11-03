@@ -2,15 +2,18 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { FACT_STEPS, type FactStepKey } from "../../../../lib/facts/steps";
 import { btnAction, btnSecondary, card } from "../../../_lib/ui";
 
 // 「戦略を作る」→ 進み具合を表示 → 完了したらレポートを読み直す（CLAUDE.md「エージェントの実行」）
 // 実行はサーバーで動き続けるので、画面を閉じても止まらない。開き直すと、実行中なら進み具合の表示に戻る
 // 物件の見出しカード（children）の右側にボタンを置き、進み具合や失敗はカードの下側に出す（提案資料の画面イメージに合わせる）
+// 始めるときは、まず周辺情報を集めて事実シートを作り（/api/properties/[id]/facts、段階ごとの知らせを受けて、集めているデータを一覧で出す）、
+// 作り終えてから戦略の実行を始める（runStrategy は、いま作った事実シートをそのまま使う）
 
 const STAGES = [
   // 事実シートは、実行の行を作る前に作る（サーバーの stage には出ない。始める合図を待つあいだ、ここを進行中にする）
-  { key: "事実", label: "周辺情報を集め、事実シートを作る" },
+  { key: "事実", label: "周辺情報を集め、事実シートを作る" },  // 下に FACT_STEPS の段階を出す
   { key: "戦略", label: "事実を分析し、販売戦略を決める" },
   { key: "媒体", label: "媒体と配分を決める" },
   { key: "確認", label: "点検する（プログラムと確認）" },
@@ -52,6 +55,8 @@ export default function StrategyRunner({
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  // 事実シートを作っている段階。null は「この画面では作っていない」（開き直したときなど。戦略の実行中なら全部済みとして出す）
+  const [factStep, setFactStep] = useState<{ index: number; failed: boolean } | null>(null);
   const wasRunning = useRef(false);
   const running = starting || run?.status === "running" || run?.status === "queued";
 
@@ -79,10 +84,47 @@ export default function StrategyRunner({
     }
   }, [run?.status, router]);
 
+  /** 事実シートを作る。段階の知らせを受けて factStep を進める。失敗したら例外を投げる */
+  const collectFacts = async () => {
+    setFactStep({ index: 0, failed: false });
+    const res = await fetch(`/api/properties/${propertyId}/facts`, { method: "POST" });
+    if (!res.ok) {
+      // 物件の番号が正しくないときなどは、1行の JSON（改行なし）で返る
+      setFactStep({ index: 0, failed: true });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(`周辺情報を集められませんでした：${body.error ?? `HTTP ${res.status}`}`);
+    }
+    if (!res.body) throw new Error(`サーバーから返事がありません（HTTP ${res.status}）`);
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = "";
+    let finished = false;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines.filter(Boolean)) {
+        const e = JSON.parse(line) as { step: FactStepKey } | { done: true } | { error: string };
+        if ("step" in e) setFactStep({ index: FACT_STEPS.findIndex((x) => x.key === e.step), failed: false });
+        else if ("error" in e) {
+          setFactStep((f) => ({ index: f?.index ?? 0, failed: true }));
+          throw new Error(`周辺情報を集められませんでした：${e.error}`);
+        } else finished = true;
+      }
+    }
+    if (!finished) {
+      setFactStep((f) => ({ index: f?.index ?? 0, failed: true }));
+      throw new Error("周辺情報の取得が途中で止まりました");
+    }
+    setFactStep({ index: FACT_STEPS.length, failed: false });
+  };
+
   const start = async () => {
     setError(null);
     setStarting(true);
     try {
+      await collectFacts();
       const res = await fetch(`/api/properties/${propertyId}/strategy`, { method: "POST" });
       const body = (await res.json()) as { runId?: number; error?: string };
       if (!res.ok || !body.runId) throw new Error(body.error ?? `始められませんでした（HTTP ${res.status}）`);
@@ -107,6 +149,8 @@ export default function StrategyRunner({
   }, [autoStart]);
 
   const currentIndex = run?.status === "running" ? STAGES.findIndex((s) => s.key === run.stage) : -1;
+  // 事実シートの段階の番号。この画面で作っていなければ、戦略の実行中は全部済みとして出す
+  const factIndex = factStep?.index ?? FACT_STEPS.length;
   const seconds = run?.startedAt ? Math.max(0, Math.round((now - new Date(run.startedAt).getTime()) / 1000)) : null;
 
   return (
@@ -132,22 +176,46 @@ export default function StrategyRunner({
       )}
       {!hasLocation && <div className="print:hidden text-xs text-[#b91c1c]">物件の位置がありません。物件の画面の地図でピンを置いてから作ってください。</div>}
 
-      {running && (
+      {(running || factStep?.failed) && (
         <ol className="grid gap-1.5 text-[15px] border-t border-divider pt-3 print:hidden">
           {STAGES.map((s, i) => {
-            const status = starting ? (i === 0 ? "now" : "todo") : i < currentIndex ? "done" : i === currentIndex ? "now" : "todo";
+            // 始める合図を待つあいだ：事実シートを作り終えていれば、次の「戦略」を進行中にする
+            const startingAt = factIndex >= FACT_STEPS.length ? 1 : 0;
+            const status: StepStatus = factStep?.failed
+              ? i === 0
+                ? "failed"
+                : "todo"
+              : starting
+                ? i < startingAt
+                  ? "done"
+                  : i === startingAt
+                    ? "now"
+                    : "todo"
+                : i < currentIndex
+                  ? "done"
+                  : i === currentIndex
+                    ? "now"
+                    : "todo";
             return (
-              <li key={s.key} className={`flex items-center gap-2 ${status === "todo" ? "text-muted" : "text-ink"}`}>
-                <span className="w-4 text-center" aria-hidden>
-                  {status === "done" ? (
-                    <span className="text-[#157347]">✓</span>
-                  ) : status === "now" ? (
-                    <span className="inline-block w-3 h-3 rounded-full border-2 border-brand border-t-transparent animate-spin align-middle" />
-                  ) : (
-                    "・"
-                  )}
-                </span>
-                <span className={status === "now" ? "font-bold" : ""}>{s.label}</span>
+              <li key={s.key} className={status === "todo" ? "text-muted" : "text-ink"}>
+                <div className="flex items-center gap-2">
+                  <StepMark status={status} />
+                  <span className={status === "now" ? "font-bold" : ""}>{s.label}</span>
+                </div>
+                {/* 集めているデータを段階ごとに出す（事実シートの画面にあった一覧と同じ） */}
+                {i === 0 && (
+                  <ol className="grid gap-1 text-[13px] mt-1.5 ml-6">
+                    {FACT_STEPS.map((f, j) => {
+                      const fs: StepStatus = j < factIndex ? "done" : j === factIndex ? (factStep?.failed ? "failed" : "now") : "todo";
+                      return (
+                        <li key={f.key} className={`flex items-center gap-2 ${fs === "todo" ? "text-muted" : "text-ink"}`}>
+                          <StepMark status={fs} />
+                          <span className={fs === "now" ? "font-bold" : ""}>{f.label}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
               </li>
             );
           })}
@@ -159,5 +227,23 @@ export default function StrategyRunner({
       )}
       {error && <div className="print:hidden rounded-md border border-[#f3c4c4] bg-[#fdecec] px-3 py-2 text-xs text-[#b91c1c]">{error}</div>}
     </div>
+  );
+}
+
+type StepStatus = "done" | "now" | "todo" | "failed";
+
+function StepMark({ status }: { status: StepStatus }) {
+  return (
+    <span className="w-4 text-center shrink-0" aria-hidden>
+      {status === "done" ? (
+        <span className="text-[#157347]">✓</span>
+      ) : status === "failed" ? (
+        <span className="text-[#b91c1c]">✗</span>
+      ) : status === "now" ? (
+        <span className="inline-block w-3 h-3 rounded-full border-2 border-brand border-t-transparent animate-spin align-middle" />
+      ) : (
+        "・"
+      )}
+    </span>
   );
 }
