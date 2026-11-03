@@ -7,6 +7,7 @@ import { btnPrimary, card } from "../../../../_lib/ui";
 
 // 事実シートを作る（/api/properties/[id]/facts）。段階ごとの知らせを受けて、進み具合を一覧で出す
 // 地図で「この位置で確定」を押すと ?auto=1 でこの画面に来て、自動で始まる。終わったあとも、段階の一覧は ✓ を付けたまま残す
+// 作り終えたら販売戦略の画面へ自動で移る（「取得できず／要確認」があっても移る。分からない事実はエージェントが「分からないこと」として扱う）。失敗したときは移らずに、ここで知らせる
 
 type Event = { step: FactStepKey } | { done: true; id: number; count: number; missing: string[] } | { error: string };
 
@@ -24,6 +25,7 @@ export default function FactSheetRunner({ propertyId, autoStart, hasSheet }: { p
   const run = async () => {
     if (state.phase === "running") return;
     const startedAt = Date.now();
+    let finished = false;
     setState({ phase: "running", current: "property", startedAt });
     try {
       const res = await fetch(`/api/properties/${propertyId}/facts`, { method: "POST" });
@@ -40,10 +42,18 @@ export default function FactSheetRunner({ propertyId, autoStart, hasSheet }: { p
           const e = JSON.parse(line) as Event;
           if ("step" in e) setState({ phase: "running", current: e.step, startedAt });
           else if ("error" in e) setState((s) => ({ phase: "error", message: e.error, current: s.phase === "running" ? s.current : null }));
-          else setState({ phase: "done", count: e.count, missing: e.missing, seconds: Math.round((Date.now() - startedAt) / 1000) });
+          else {
+            finished = true;
+            setState({ phase: "done", count: e.count, missing: e.missing, seconds: Math.round((Date.now() - startedAt) / 1000) });
+          }
         }
       }
-      // 保存した最新のシートを表に出す。?auto=1 は外す（読み込み直しで、もう一度作らないため）
+      // 作り終えたら販売戦略の画面へ移る。replace にするのは、戻るで ?auto=1 の画面に戻って、もう一度作らないため
+      if (finished) {
+        router.replace(`/strategy/${propertyId}`);
+        return;
+      }
+      // 完了の知らせが来ずに終わったとき（途中で失敗など）は、この画面に残す。?auto=1 は外す
       router.replace(`/properties/${propertyId}/facts`);
       router.refresh();
     } catch (e) {
@@ -98,7 +108,7 @@ export default function FactSheetRunner({ propertyId, autoStart, hasSheet }: { p
       {state.phase === "done" && (
         <div className="rounded-md border border-[#bfe5c6] bg-[#e9f8ec] px-3 py-2 text-xs text-[#157347]">
           事実シートを作りました（{state.seconds}秒）。事実 {state.count}件・取得できず／要確認 {state.missing.length}件
-          {state.missing.length > 0 && `（${state.missing.join("、")}）`}
+          {state.missing.length > 0 && `（${state.missing.join("、")}）`}。販売戦略の画面へ移ります…
         </div>
       )}
       {state.phase === "error" && <div className="rounded-md border border-[#f3c4c4] bg-[#fdecec] px-3 py-2 text-xs text-[#b91c1c]">作れませんでした：{state.message}</div>}
