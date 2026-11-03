@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { StrategyResult } from "../../../../lib/agents/run";
 import type { Fact } from "../../../../lib/facts/types";
 import { placeOfAnalysis } from "../../../../lib/report";
-import { AlertIcon, ChartIcon, ChatIcon, ClipboardIcon, DocIcon, MegaphoneIcon, PencilIcon, YenIcon } from "../../../_components/icons";
+import { AlertIcon, ChartIcon, ChatIcon, ClipboardIcon, DocIcon, MegaphoneIcon, PencilIcon, SparkIcon, YenIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, Num, useReportNav } from "./parts";
 import MediaDonut, { MEDIA_COLORS } from "./MediaDonut";
 
@@ -40,8 +40,9 @@ export default function SalesTab({ r, facts, mediaInfo, propertyId }: { r: Strat
           <div className="text-[12px] text-sub mb-1">訴求を掲載文と写真の軸にする</div>
           <ul className="grid gap-0.5 text-[13px] text-ink">
             {appeals.map((a, i) => (
-              <li key={i} className="truncate" title={a.text}>
-                ・{a.text}
+              <li key={i} className="flex min-w-0 items-center gap-1" title={a.text}>
+                <SparkIcon className="size-3 shrink-0 text-[#6b4fc0]" />
+                <span className="truncate">{a.text}</span>
               </li>
             ))}
           </ul>
@@ -65,7 +66,9 @@ export default function SalesTab({ r, facts, mediaInfo, propertyId }: { r: Strat
         <>
           <div className="text-[12px] text-sub mb-1">顧客への伝え方</div>
           {combo ? (
-            <div className="text-[13px] text-ink line-clamp-3">{combo.use}</div>
+            <div className="line-clamp-3">
+              <Ai size="sm">{combo.use}</Ai>
+            </div>
           ) : (
             <button type="button" onClick={() => goTab("target")} className="text-[13px] text-primary underline cursor-pointer">
               ターゲット・訴求タブを見る
@@ -122,7 +125,8 @@ export default function SalesTab({ r, facts, mediaInfo, propertyId }: { r: Strat
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span className="text-[15px] font-bold text-ink">{nameOf(x.id, x.name)}</span>
                     <span className="rounded bg-subtle px-1.5 py-0.5 text-[11px] text-sub">{mediaInfo[x.id]?.category ?? "その他"}</span>
-                    <span className="text-[12px] text-sub">
+                    <span className="flex items-center gap-1 text-[12px] text-sub">
+                      <SparkIcon className="size-3 shrink-0 text-[#6b4fc0]" />
                       {x.purpose}・{x.target}
                     </span>
                     <span className="ml-auto text-[12px] text-sub" title="配分はAIの見立て（費用・反響の実績には基づかない）">

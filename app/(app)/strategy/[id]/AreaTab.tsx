@@ -17,7 +17,7 @@ const CARD_ICON: Record<AreaCard, (p: { className?: string }) => React.ReactElem
 };
 
 const CARD_NOTE: Partial<Record<AreaCard, string>> = {
-  living: "距離はすべて直線距離です（道のりではありません）。",
+  living: "システムが出した距離は直線距離です（道のりではありません）。徒歩分は物件資料の値です。",
   land: "物件の位置（1点）を公的データの区域に重ねた結果です。区域の境界に近いときは、ハザードマップで位置を確かめてください。",
 };
 

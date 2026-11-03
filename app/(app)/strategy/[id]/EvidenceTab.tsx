@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { FACT_CATEGORIES, type Fact, type FactCategory, type FactStatus } from "../../../../lib/facts/types";
 import { categoryOf, factOrigin, TAB_LABEL, type FactUse, type SourceRow } from "../../../../lib/report";
 import { SearchIcon, SparkIcon } from "../../../_components/icons";
@@ -8,7 +8,8 @@ import { Card, useReportNav } from "./parts";
 
 // ⑥ 根拠データ：事実シートを、検索・分類・状態・使用の有無で絞り込んで見る。行を押すと右に詳細と、その事実を引いている文を出す
 // 状態は事実シートの「取得／取得できず／要確認」（システムが付けたもの）。「取得済み」は値を取れたことで、内容を人が確かめたことではない
-// そのため「検証済み」の印は使わず、取得の状態・出どころ（入力・公的データ・システム計算）・使用の有無を別の列に分ける
+// そのため「検証済み」の印は使わず、取得の状態・出どころ（入力・公的データ・地図データ・システム計算・設定値）・使用の有無を別の列に分ける
+// 2列にするのは 1440px 以上。それより狭いときは詳細を一覧の上に出し、行を選ぶと詳細まで戻す
 // 事実は1物件で数十件なので、ページ分けはせず絞り込みで探す
 
 const STATUSES: FactStatus[] = ["取得", "要確認", "取得できず"];
@@ -47,6 +48,11 @@ export default function EvidenceTab({
   onSelect: (id: string) => void;
 }) {
   const { goTab } = useReportNav();
+  const detail = useRef<HTMLDivElement>(null);
+  const select = (id: string) => {
+    onSelect(id);
+    if (window.matchMedia("(max-width: 1439px)").matches) detail.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<FactCategory | "">("");
   const [status, setStatus] = useState<FactStatus | "">("");
@@ -74,7 +80,7 @@ export default function EvidenceTab({
           <div>
             戦略の各文は、ここにある事実のIDを根拠にしています。事実シート作成：{sheetCreatedAt}（距離はすべて直線距離）。
           </div>
-          <div>「取得済み」はデータから値を取れたという意味で、内容を人が確かめたものではありません。入力の値は入力のまま、計算は入力と公的データの値から行っています。</div>
+          <div>「取得済み」はデータから値を取れたという意味で、内容を人が確かめたものではありません。計算は入力・公的データと、システムの前提（ローンの頭金・返済負担率、建物の単価など）から行っています。前提は各事実の出典に書いています。</div>
           <div className="flex flex-wrap gap-2 pt-1">
             <span className="rounded bg-subtle px-2 py-0.5">登録 {facts.length}件</span>
             {STATUSES.map((st) => (
@@ -121,7 +127,7 @@ export default function EvidenceTab({
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px] items-start">
+      <div className="grid gap-4 min-[1440px]:grid-cols-[minmax(0,1fr)_380px] items-start">
         <Card title="根拠一覧" className="overflow-hidden">
           <div className="overflow-x-auto -mx-5 -mb-5">
             <table className="w-full min-w-[760px] table-fixed text-[13px] text-ink border-collapse">
@@ -149,7 +155,7 @@ export default function EvidenceTab({
                   return (
                     <tr
                       key={f.id}
-                      onClick={() => onSelect(f.id)}
+                      onClick={() => select(f.id)}
                       className={`cursor-pointer align-top border-b border-line ${active ? "bg-primary-soft/60" : "hover:bg-primary-soft/30"}`}
                     >
                       <td className="px-3 py-2.5 whitespace-nowrap">
@@ -157,7 +163,17 @@ export default function EvidenceTab({
                         <div className="text-[11px] text-muted">{FACT_CATEGORIES[categoryOf(f.id)!]?.name}</div>
                       </td>
                       <td className="px-3 py-2.5 leading-relaxed">
-                        <div className="font-bold">{f.項目}</div>
+                        <button
+                          type="button"
+                          aria-pressed={active}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            select(f.id);
+                          }}
+                          className="text-left font-bold cursor-pointer focus-visible:outline-2 focus-visible:outline-primary"
+                        >
+                          {f.項目}
+                        </button>
                         <div className={`text-[12px] ${f.値 === null ? "text-sub" : "text-body"} line-clamp-2`}>{f.値 ?? "不明"}</div>
                       </td>
                       <td className="px-3 py-2.5 text-body leading-relaxed">
@@ -198,7 +214,8 @@ export default function EvidenceTab({
           </div>
         </Card>
 
-        <Card title="根拠の詳細" className="xl:sticky xl:top-4">
+        <div ref={detail} className="order-first scroll-mt-16 min-w-0 min-[1440px]:order-none min-[1440px]:sticky min-[1440px]:top-4">
+        <Card title="根拠の詳細">
           {!current ? (
             <div className="text-[13px] text-sub">一覧の行を押すと、詳細が出ます。</div>
           ) : (
@@ -254,6 +271,7 @@ export default function EvidenceTab({
             </div>
           )}
         </Card>
+        </div>
       </div>
 
       <Card title="出典一覧">

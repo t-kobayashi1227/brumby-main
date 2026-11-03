@@ -26,7 +26,6 @@ export default function Report({
   credits,
   mediaInfo,
   sheetCreatedAt,
-  priceManYen,
   propertyId,
 }: {
   result: StrategyResult;
@@ -35,7 +34,6 @@ export default function Report({
   credits: string[];
   mediaInfo: Record<string, MediaInfo>;
   sheetCreatedAt: string;
-  priceManYen: number;
   propertyId: number;
 }) {
   const [tab, setTab] = useState<ReportTab>("summary");
@@ -71,7 +69,7 @@ export default function Report({
       {tab === "summary" && <SummaryTab r={result} facts={byId} factList={facts} />}
       {tab === "target" && <TargetTab r={result} facts={byId} />}
       {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} />}
-      {tab === "price" && <PriceTab r={result} facts={byId} factList={facts} priceManYen={priceManYen} />}
+      {tab === "price" && <PriceTab r={result} facts={byId} factList={facts} />}
       {tab === "area" && <AreaTab r={result} facts={byId} factList={facts} />}
       {tab === "evidence" && <EvidenceTab facts={facts} usage={usage} sources={sources} sheetCreatedAt={sheetCreatedAt} selected={selectedFact} onSelect={setSelectedFact} />}
       {/* ライセンス・利用規約で表示が要る文言だけを、短い段落にまとめて出す。地図のクレジットは地図を出す物件の画面に出しているので、ここでは出さない（2026-10-31） */}

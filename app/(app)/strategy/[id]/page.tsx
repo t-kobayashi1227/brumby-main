@@ -92,7 +92,6 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
           credits={credits}
           mediaInfo={Object.fromEntries(media.map((m) => [m.id, { name: m.name, category: m.category }]))}
           sheetCreatedAt={formatJstDateTime(done.content.作成日時)}
-          priceManYen={p.price_man_yen}
           propertyId={propertyId}
         />
       </>

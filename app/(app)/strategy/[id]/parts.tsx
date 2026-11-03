@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState } from "react";
 import type { Fact } from "../../../../lib/facts/types";
-import { categoryOf, evidenceText, factOrigin, shortLabel, splitValue, type ReportTab } from "../../../../lib/report";
+import { categoryOf, compactValue, evidenceText, factOrigin, shortLabel, splitValue, type ReportTab } from "../../../../lib/report";
 import { card } from "../../../_lib/ui";
 import {
   AlertIcon,
@@ -36,7 +36,7 @@ import {
 } from "../../../_components/icons";
 
 // 6タブのレポートで共通に使う部品（2026-11-03 第2版）
-// 見分け方を3つにそろえる：事実（入力・公的データ・システム計算）／AIの見立て（✦）／要確認（▲）
+// 見分け方を3つにそろえる：事実（入力・公的データ・地図データ・システム計算・設定値）／AIの見立て（✦）／要確認（▲）
 // カードごとに「AIの見立て」の札を付けるのはやめ、AIの文の頭に ✦ を付ける。「検証済み」の印は使わない
 
 /** 他のタブから、根拠データタブの事実を開く */
@@ -99,7 +99,7 @@ export function Legend() {
     <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-sub">
       <span className="flex items-center gap-1">
         <DatabaseIcon className="size-3.5 text-primary" />
-        事実（入力・公的データ・システム計算）
+        事実（入力・公的データ・地図データ・システム計算・設定値）
       </span>
       <span className="flex items-center gap-1">
         <SparkIcon className="size-3.5 text-[#6b4fc0]" />
@@ -150,7 +150,6 @@ export function HypothesisBadge() {
 export function FactChip({ f, id }: { f: Fact | undefined; id: string }) {
   const { openFact } = useReportNav();
   if (!f) return <span className="rounded border border-line px-1.5 py-0.5 font-mono text-[11px] text-muted">{id}</span>;
-  const v = splitValue(f.値);
   const caution = isCaution(f);
   return (
     <button
@@ -162,10 +161,10 @@ export function FactChip({ f, id }: { f: Fact | undefined; id: string }) {
       }`}
     >
       {caution ? <AlertIcon className="size-3.5 shrink-0" /> : factIcon(f, "size-3.5 shrink-0 text-primary")}
-      <span className="truncate">
-        {shortLabel(f.項目).slice(0, 14)}
+      <span className="max-w-[26em] truncate">
+        {shortLabel(f.項目).slice(0, 20)}
         <span className="mx-1 text-muted">|</span>
-        <span className="font-bold">{v.main}</span>
+        <span className="font-bold">{compactValue(f.値)}</span>
       </span>
     </button>
   );
@@ -210,8 +209,8 @@ export function FactTile({ f }: { f: Fact }) {
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[12px] text-sub">{shortLabel(f.項目)}</span>
         <span className={`block truncate text-[16px] font-bold leading-snug ${caution ? "text-accent" : "text-ink"}`}>{f.状態 === "取得" || v.main.startsWith(f.状態) ? v.main : `${v.main}（${f.状態}）`}</span>
-        {v.sub && <span className="block truncate text-[12px] text-body">{v.sub}</span>}
-        {f.比較 && <span className="block truncate text-[11px] text-sub">比較：{f.比較}</span>}
+        {v.sub && <span className="block line-clamp-2 break-words text-[12px] text-body">{v.sub}</span>}
+        {f.比較 && <span className="block line-clamp-2 break-words text-[11px] text-sub">比較：{f.比較}</span>}
         <span className="block truncate text-[11px] text-muted">
           {factOrigin(f)}・{f.時点}
         </span>

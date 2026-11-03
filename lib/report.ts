@@ -1,26 +1,15 @@
 // ⑤レポート画面の組み立て（docs/設計まとめ.md「根拠と出典」）。表示だけを行い、AI は動かさない
 
-import type { MainOutput, MediaOutput, StrategyOutput } from "./agents/schemas";
+import type { MediaOutput, StrategyOutput } from "./agents/schemas";
 import { sourceOf, type DatasetInfo } from "./facts/build";
 import { FACT_CATEGORIES, type Fact, type FactCategory } from "./facts/types";
 
 /** 地図・ライブラリなど、事実とは別に常に出すクレジット */
 export const FIXED_CREDITS = ["地図：国土地理院 淡色地図（地理院タイル）", "住所検索：国土地理院 地理院地図の住所検索"];
 
-/** 画面に出す戦略と媒体の文に付いた事実ID（出た順、重なりなし） */
-export function usedFactIds(main: MainOutput, media: MediaOutput): string[] {
-  const all = [
-    main.summary,
-    ...main.targets,
-    ...main.not_fit,
-    ...main.appeals,
-    main.price_view,
-    ...main.concerns,
-    main.direction,
-    ...media.media,
-    ...media.cautions,
-  ].flatMap((s) => s.evidence);
-  return [...new Set(all.map((id) => id.trim()).filter(Boolean))];
+/** 画面に出す文に付いた事実ID（重なりなし）。根拠データタブの「使用箇所」と同じ集め方（factUsage）にそろえる。画面に出さない合わない層は含めない */
+export function usedFactIds(main: StrategyOutput, media: MediaOutput): string[] {
+  return [...factUsage(main, media).keys()];
 }
 
 /** 根拠の1件の書き方：「0〜14歳の割合 15.8%（西区 11.9%）」。取れなかった事実は「不明」 */
@@ -144,46 +133,92 @@ export function factUsage(main: StrategyOutput, media: MediaOutput, mediaName: (
 // ---- 見せ方の補助（2026-11-03 第2版：数字とアイコンで見せる、取得状態と出どころを分ける） ----
 
 /** 事実の出どころ。「取得」は値を取れたことで、内容を人が確かめたことではないため、状態とは別に出す */
-export type FactOrigin = "入力" | "公的・調査データ" | "システム計算" | "設定値";
+export type FactOrigin = "入力" | "公的・調査データ" | "地図データ（OSM）" | "システム計算" | "設定値";
+/** 相場（M）のうち、公示地・基準地の値をそのまま出す事実（計算していない） */
+const RAW_LAND_PRICE = /^近くの(公示地|基準地)/;
 export function factOrigin(f: Fact): FactOrigin {
   if (f.出典.startsWith("入力")) return "入力";
-  if (f.出典.includes("計算") || (categoryOf(f.id) === "M" && !f.項目.startsWith("公示地"))) return "システム計算";
+  if (f.出典.includes("計算") || (categoryOf(f.id) === "M" && !RAW_LAND_PRICE.test(f.項目))) return "システム計算";
   if (f.出典.includes("一覧（")) return "設定値";
+  if (f.出典.includes("OpenStreetMap")) return "地図データ（OSM）";
   return "公的・調査データ";
 }
 
-/** 項目の末尾の（…）を外した短い名前。「洪水の想定浸水深（想定最大規模）」→「洪水の想定浸水深」 */
+/**
+ * 項目の短い名前。末尾の（…）は、見分けに要るものだけ短くして残す
+ * 「洪水の想定浸水深（想定最大規模）」→「洪水の想定浸水深」
+ * 「月々の返済額（変動0.9%・35年）」→「月々の返済額（変動0.9%）」（変動と固定を見分ける）
+ * 「延床の坪単価（広さの近い取引の相場と比べる：…）」→「延床の坪単価（広さの近い取引）」
+ * 「交通1（物件資料の徒歩分）」はそのまま（直線距離ではないことを示す）
+ */
 export function shortLabel(項目: string): string {
-  const s = 項目.replace(/（[^（）]*）$/, "").replace(/^【(.+?)】/, "$1 ");
-  return s || 項目;
+  const named = 項目.replace(/^【(.+?)】/, "$1 ");
+  const m = named.match(/^(.*?)（([^（）]*)）$/);
+  if (!m) return named;
+  const [, head, inner] = m;
+  if (!head) return named;
+  if (inner.includes("物件資料")) return named;
+  if (/^(変動|固定)/.test(inner) || /^[^、・]*(変動|固定)/.test(inner)) return `${head}（${inner.split(/[、・]/)[0]}）`;
+  if (inner.startsWith("広さの近い取引")) return `${head}（広さの近い取引）`;
+  return head;
+}
+
+/** 「代表年齢35歳。変動0.9%：…」の頭の年齢を外す（返済の目安の主は年齢ではなく返済のため） */
+const AGE_HEAD = /^(代表年齢[^。]*)。([\s\S]+)$/;
+
+/** チップに出す値：（…）の補足を外し、返済の目安は年齢を外す。長さは画面（CSS）で切る */
+export function compactValue(値: string | null): string {
+  if (値 === null) return "不明";
+  const age = 値.match(AGE_HEAD);
+  const v = age ? age[2] : 値;
+  return v.replace(/（[^（）]*）/g, "").replace(/\s+/g, " ").trim() || v;
 }
 
 /**
  * 値を、大きく出す部分（main）と補足（sub）に分ける。表示だけに使い、値そのものは変えない
- * 「3件：A 直線240m、B 直線400m」→ main「3件」sub「A 直線240m ほか」。「0件。3km以内の最寄り：…」→ main「0件」
+ * 「3件：A 直線240m、B 直線400m」→ main「3件」sub「A 直線240m、B 直線400m」
+ * 「候補：A小学校、B小学校」→ main「候補2件」sub「A小学校、B小学校」（1つ目を答えのように見せない）
+ * 「新潟駅（信越本線・白新線） 直線2.4km」→ main「新潟駅 直線2.4km」sub「（信越本線・白新線）」（距離を落とさない）
+ * 並びの値（「A、B」）は main に1つ目、sub に残りを出す。タイルは sub も見せる
  */
 export function splitValue(値: string | null): { main: string; sub: string | null } {
   if (値 === null) return { main: "不明", sub: null };
-  const count = 値.match(/^(\d+件)[：。](.*)$/);
+  const count = 値.match(/^(\d+件)[：。]([\s\S]*)$/);
   if (count) {
     const rest = count[2].trim();
     return { main: count[1], sub: rest ? rest : null };
   }
-  const i = 値.search(/[（。、]/);
-  if (i > 0 && i <= 24) return { main: 値.slice(0, i), sub: 値.slice(値[i] === "（" ? i : i + 1).trim() || null };
-  if (値.length > 24) return { main: `${値.slice(0, 22)}…`, sub: null };
-  return { main: 値, sub: null };
+  const cand = 値.match(/^候補：([\s\S]+)$/);
+  if (cand) return { main: `候補${cand[1].split("、").length}件`, sub: cand[1] };
+  const age = 値.match(AGE_HEAD);
+  const body = age ? age[2] : 値;
+  const head = compactValue(body).split(/[。、]/)[0].trim();
+  const main = head.length > 24 ? `${head.slice(0, 22)}…` : head;
+  let sub: string | null;
+  if (body.startsWith(head)) sub = body.slice(head.length).replace(/^[、。\s]+/, "").trim() || null;
+  else sub = (body.match(/（[^（）]*）/g) ?? []).join("") || null;
+  if (age) sub = [age[1], sub].filter(Boolean).join("。");
+  return { main, sub };
 }
 
-/** ターゲットの根拠を3つの観点に分ける（事実の分類で機械的に分ける。AIの答えの形は変えない） */
-export const TARGET_ASPECTS: { key: string; title: string; categories: FactCategory[] }[] = [
-  { key: "area", title: "地域の特性", categories: ["A", "S", "L", "T", "H", "R"] },
-  { key: "fit", title: "物件との合い方", categories: ["P", "M", "K"] },
-  { key: "afford", title: "買える見込み", categories: ["B"] },
+/** ターゲットの根拠を観点で分ける（事実の分類と項目で機械的に分ける。AIの答えの形は変えない） */
+const AFFORD = /^(月々の返済額|必要年収|【.+】の返済の目安)/;
+export const TARGET_ASPECTS: { key: string; title: string; test: (id: string, f: Fact | undefined) => boolean }[] = [
+  { key: "area", title: "地域の特性", test: (id) => ["A", "S", "L", "T", "H", "R"].includes(categoryOf(id) ?? "") },
+  { key: "fit", title: "物件との合い方", test: (id) => ["P", "M", "K"].includes(categoryOf(id) ?? "") },
+  { key: "afford", title: "買える見込み", test: (id, f) => categoryOf(id) === "B" && !!f && AFFORD.test(f.項目) },
 ];
-export function groupByAspect(evidence: string[]): { key: string; title: string; ids: string[] }[] {
+/** 3つの観点（根拠が無くても出す）と、どれにも当たらない根拠（「買い手の傾向」「その他」。あるときだけ） */
+export function groupByAspect(evidence: string[], facts: Map<string, Fact>): { key: string; title: string; ids: string[]; optional: boolean }[] {
   const ids = [...new Set(evidence.map((e) => e.trim()).filter(Boolean))];
-  return TARGET_ASPECTS.map((a) => ({ key: a.key, title: a.title, ids: ids.filter((id) => a.categories.includes(categoryOf(id)!)) }));
+  const groups = TARGET_ASPECTS.map((a) => ({ key: a.key, title: a.title, ids: ids.filter((id) => a.test(id, facts.get(id))), optional: false }));
+  const placed = new Set(groups.flatMap((g) => g.ids));
+  const rest = ids.filter((id) => !placed.has(id));
+  const buyer = rest.filter((id) => categoryOf(id) === "B");
+  const other = rest.filter((id) => categoryOf(id) !== "B");
+  if (buyer.length) groups.push({ key: "buyer", title: "買い手の傾向", ids: buyer, optional: true });
+  if (other.length) groups.push({ key: "other", title: "その他", ids: other, optional: true });
+  return groups;
 }
 
 /** 取得できず・要確認の事実ごとの、次に確かめること（決まった文。AIは使わない） */
@@ -193,6 +228,7 @@ export function nextCheck(f: Fact): { who: string; what: string } {
   if (factOrigin(f) === "入力" || c === "P" || c === "K") return { who: "売主・物件資料", what: `${name}を確認し、物件情報に入力する` };
   if (c === "H" || c === "R") return { who: "ハザードマップ・都市計画図", what: `物件の位置で${name}を確かめる` };
   if (c === "S") return { who: "市の通学区域", what: `住所から${name}を確かめる` };
+  if (f.状態 === "要確認") return { who: "元の資料", what: `${name}は値に確かめる点があるので、元の資料で確かめる` };
   if (c === "M") return { who: "取引事例・査定資料", what: `${name}は公的データで出せなかったので、近い条件の取引を確かめる` };
   if (c === "L" || c === "T") return { who: "地図・現地", what: `${name}を地図か現地で確かめる` };
   return { who: "資料", what: `${name}は公的データで取れなかったので、必要なら資料で確かめる` };

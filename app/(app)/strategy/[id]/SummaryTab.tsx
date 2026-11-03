@@ -36,8 +36,8 @@ export default function SummaryTab({ r, facts, factList }: { r: StrategyResult; 
             <Evidence ids={m.summary.evidence} facts={facts} />
           </div>
           <div className="grid gap-2 content-start">
-            <KeyRow icon={<TargetIcon className="size-5" />} label="第一ターゲット" value={target?.name} badge={<HypothesisBadge />} />
-            <KeyRow icon={<MegaphoneIcon className="size-5" />} label="最大の訴求" value={appeal?.text} />
+            <KeyRow icon={<TargetIcon className="size-5" />} label="第一ターゲット" value={target?.name} badge={<HypothesisBadge />} ai />
+            <KeyRow icon={<MegaphoneIcon className="size-5" />} label="最大の訴求" value={appeal?.text} ai />
             <KeyRow
               icon={<SearchIcon className="size-5" />}
               label="確かめる事実"
@@ -125,12 +125,15 @@ export default function SummaryTab({ r, facts, factList }: { r: StrategyResult; 
   );
 }
 
-function KeyRow({ icon, label, value, badge, tone }: { icon: React.ReactNode; label: string; value: string | undefined; badge?: React.ReactNode; tone?: "warn" }) {
+function KeyRow({ icon, label, value, badge, tone, ai = false }: { icon: React.ReactNode; label: string; value: string | undefined; badge?: React.ReactNode; tone?: "warn"; ai?: boolean }) {
   return (
     <div className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${tone === "warn" ? "bg-[#fdf1e7]" : "bg-primary-soft/60"}`}>
       <span className={tone === "warn" ? "text-accent" : "text-primary"}>{icon}</span>
       <div className="min-w-0">
-        <div className="text-[12px] text-sub">{label}</div>
+        <div className="flex items-center gap-1 text-[12px] text-sub">
+          {label}
+          {ai && <SparkIcon className="size-3 text-[#6b4fc0]" />}
+        </div>
         <div className={`text-[14px] font-bold leading-snug ${tone === "warn" ? "text-accent" : "text-ink"}`}>
           {value ?? "なし"}
           {badge && <span className="ml-1.5 align-middle">{badge}</span>}

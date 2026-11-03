@@ -3,7 +3,7 @@
 import type { StrategyResult } from "../../../../lib/agents/run";
 import type { Fact } from "../../../../lib/facts/types";
 import { groupByAspect, placeOfAnalysis } from "../../../../lib/report";
-import { ChatIcon, HomeIcon, MegaphoneIcon, PinIcon, TargetIcon, YenIcon } from "../../../_components/icons";
+import { ChatIcon, DatabaseIcon, HomeIcon, MegaphoneIcon, PinIcon, TargetIcon, UsersIcon, YenIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, FactChip, HypothesisBadge, Num } from "./parts";
 
 // ② ターゲット・訴求：狙う層（第一〜第三候補）、訴求ポイント、顧客への伝え方（組み合わせた見立て）
@@ -12,7 +12,7 @@ import { Ai, Card, Evidence, FactChip, HypothesisBadge, Num } from "./parts";
 // 根拠のない観点は「根拠なし」と出し、理由の偏りが見えるようにする
 
 const RANK_LABEL = ["第一候補", "第二候補", "第三候補", "第四候補", "第五候補"];
-const ASPECT_ICON = { area: PinIcon, fit: HomeIcon, afford: YenIcon } as const;
+const ASPECT_ICON = { area: PinIcon, fit: HomeIcon, afford: YenIcon, buyer: UsersIcon, other: DatabaseIcon } as const;
 
 export default function TargetTab({ r, facts }: { r: StrategyResult; facts: Map<string, Fact> }) {
   const m = r.戦略;
@@ -37,8 +37,10 @@ export default function TargetTab({ r, facts }: { r: StrategyResult; facts: Map<
                   <Ai size="sm">{t.reason}</Ai>
                 </div>
                 <dl className="mt-2 grid gap-1.5">
-                  {groupByAspect(t.evidence).map((g) => {
-                    const Icon = ASPECT_ICON[g.key as keyof typeof ASPECT_ICON];
+                  {groupByAspect(t.evidence, facts)
+                    .filter((g) => !g.optional || g.ids.length > 0)
+                    .map((g) => {
+                    const Icon = ASPECT_ICON[g.key as keyof typeof ASPECT_ICON] ?? DatabaseIcon;
                     return (
                       <div key={g.key} className="grid items-start gap-1.5 sm:grid-cols-[8.5em_minmax(0,1fr)]">
                         <dt className="flex items-center gap-1 pt-0.5 text-[12px] text-sub">
