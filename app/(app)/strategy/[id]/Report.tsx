@@ -5,6 +5,7 @@ import type { StrategyResult } from "../../../../lib/agents/run";
 import type { Fact } from "../../../../lib/facts/types";
 import { factUsage, FIXED_CREDITS, REPORT_TABS, type ReportTab, type SourceRow } from "../../../../lib/report";
 import UnderlineTabs from "../../../_components/UnderlineTabs";
+import type { AreaMapData } from "../../../../lib/area-map";
 import AreaTab from "./AreaTab";
 import EvidenceTab from "./EvidenceTab";
 import { Legend, ReportNav } from "./parts";
@@ -28,6 +29,7 @@ export default function Report({
   sheetCreatedAt,
   propertyId,
   runId,
+  areaMap,
 }: {
   result: StrategyResult;
   facts: Fact[];
@@ -38,6 +40,8 @@ export default function Report({
   propertyId: number;
   /** このレポートを作った実行（AIに送った内容を読むのに使う） */
   runId: number;
+  /** エリア分析の地図に出す点（位置が無い物件は null） */
+  areaMap: AreaMapData | null;
 }) {
   const [tab, setTab] = useState<ReportTab>("summary");
   const [selectedFact, setSelectedFact] = useState<string | null>(null);
@@ -73,11 +77,11 @@ export default function Report({
       {tab === "target" && <TargetTab r={result} facts={byId} />}
       {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} />}
       {tab === "price" && <PriceTab r={result} facts={byId} factList={facts} />}
-      {tab === "area" && <AreaTab r={result} facts={byId} factList={facts} />}
+      {tab === "area" && <AreaTab r={result} facts={byId} factList={facts} areaMap={areaMap} />}
       {tab === "evidence" && <EvidenceTab facts={facts} usage={usage} sources={sources} sheetCreatedAt={sheetCreatedAt} selected={selectedFact} onSelect={setSelectedFact} />}
-      {/* ライセンス・利用規約で表示が要る文言だけを、短い段落にまとめて出す。地図のクレジットは地図を出す物件の画面に出しているので、ここでは出さない（2026-10-31） */}
+      {/* ライセンス・利用規約で表示が要る文言だけを、短い段落にまとめて出す。地図のクレジットは、エリア分析に地図を出すとき（2026-11-03）だけ載せる */}
       <footer className="mt-6 grid gap-1.5 text-[12px] text-sub leading-relaxed">
-        <p>{[...credits, ...FIXED_CREDITS.filter((c) => !c.startsWith("地図："))].join("／")}</p>
+        <p>{[...credits, ...FIXED_CREDITS.filter((c) => areaMap || !c.startsWith("地図："))].join("／")}</p>
         <p>このレポートは公開データと物件情報をもとにAIが作成した販売戦略の参考です。</p>
       </footer>
     </ReportNav.Provider>

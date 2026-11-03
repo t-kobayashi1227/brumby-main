@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { StrategyResult } from "../../../../lib/agents/run";
+import { loadAreaMap } from "../../../../lib/area-map-load";
 import { getSql, inOrder } from "../../../../lib/db";
 import type { DatasetInfo } from "../../../../lib/facts/build";
 import { formatJstDateTime, formatNumber } from "../../../../lib/facts/format";
@@ -66,9 +67,10 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
   // 以前はここに「まだ販売戦略がありません。上の『戦略を作る』を押してください」を出していたが、登録後の自動作成中にも出て進み具合と食い違うため外した
   let report: React.ReactNode = latestSheet ? <LatestFactSheet sheet={latestSheet.content} /> : null;
   if (done) {
-    const [datasets, media] = await inOrder(
+    const [datasets, media, areaMap] = await inOrder(
       () => sql<(DatasetInfo & { attribution: string | null })[]>`select id, name, provider, as_of, row_count, attribution from datasets`,
       () => sql<{ id: string; name: string; category: string }[]>`select id, name, category from media`,
+      () => loadAreaMap(sql, propertyId),
     );
     const facts = done.content.事実;
     const { rows, credits } = sourceList(facts, usedFactIds(done.result.戦略, done.result.媒体), [...datasets]);
@@ -91,6 +93,7 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
           sheetCreatedAt={formatJstDateTime(done.content.作成日時)}
           propertyId={propertyId}
           runId={Number(done.run_id)}
+          areaMap={areaMap}
         />
       </>
     );
