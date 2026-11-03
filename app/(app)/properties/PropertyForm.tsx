@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useRef, useState, useTransition } from "react";
+import { flushSync } from "react-dom";
 import { FLOORS, PROPERTY_CLASSES, RENOVATION_PARTS, TRANSPORT_MODES } from "../../../lib/property";
 import {
   ArrowRightIcon,
@@ -20,6 +21,8 @@ import {
   UsersIcon,
 } from "../../_components/icons";
 import { previewAddress, saveProperty, type PropertyFormState } from "./actions";
+import { importFromText } from "./import-actions";
+import { IMPORT_MAX_CHARS, type ImportResult } from "../../../lib/property-import";
 
 // ①物件情報の入力フォーム（docs/設計まとめ.md「①物件情報の入力」の15項目）
 // 見た目は 2026-10-26 のデザイン（物件情報入力ダッシュボード①〜③）に合わせた
@@ -29,6 +32,8 @@ import { previewAddress, saveProperty, type PropertyFormState } from "./actions"
 // - リフォーム：「あり」を選ぶと、年と箇所の欄が出る
 // - 競合物件・広告予算は開閉できる。閉じても入力は消えずに送られる（hidden で隠すだけ）
 // - 欄の name は保存の処理（actions.ts）が読む名前のまま変えない
+// - 「物件資料から入力」：貼った資料から AI が書かれたままの文字を抜き出し、システムが数字に直して、空の欄にだけ入れる（import-actions.ts）。
+//   入れた欄は黄色にし、担当者が直すと色を消す。登録は担当者が見比べてから押す
 
 export interface TransportValues {
   mode: string;
@@ -160,7 +165,7 @@ function valuesToFormData(v: PropertyValues): FormData {
 // ---- 見た目の部品 ----
 
 const label = "block text-[13px] font-medium text-ink";
-const field = `w-full mt-1 h-10 px-3 bg-white rounded-lg border border-field text-[13px] text-ink placeholder:text-[#a3abbb] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15`;
+const field = `w-full mt-1 h-10 px-3 bg-white rounded-lg border border-field text-[13px] text-ink placeholder:text-[#a3abbb] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 data-[ai-filled]:bg-[#fff8e1] data-[ai-filled]:border-[#e8b94a]`;
 const selectField = `${field} pr-8`;
 
 const Required = () => <span className="ml-0.5 text-[#e5484d]">*</span>;
@@ -363,6 +368,68 @@ function TransportRow({ position, values, onRemove }: { position: 1 | 2; values?
   );
 }
 
+/** 物件資料のテキストを貼って、入力欄の下書きを作る欄 */
+function ImportPanel({ onImported }: { onImported: (r: ImportResult) => string }) {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const run = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const r = await importFromText(text);
+      if (!r.ok) setMessage({ ok: false, text: r.error });
+      else setMessage({ ok: true, text: onImported(r) });
+    } catch {
+      setMessage({ ok: false, text: "読み取りに失敗しました。時間をおいてもう一度お試しください" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SectionCard icon={<SparkIcon />} title="物件資料から入力" note="物件資料のテキストを貼ると、空の欄に下書きを入れます。" required={false} collapsible open={open} onToggle={() => setOpen(!open)}>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={5}
+        maxLength={IMPORT_MAX_CHARS}
+        aria-label="物件資料のテキスト"
+        placeholder="販売図面・マイソク・物件概要などのテキストを貼ってください（価格、所在地、交通、間取り、面積、築年月など）"
+        className={`${field} h-auto! py-2.5 leading-relaxed`}
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={run}
+          disabled={busy || text.trim() === ""}
+          className="flex items-center gap-1.5 rounded-lg border border-primary bg-white px-4 py-2 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <SparkIcon className="size-4" />
+          {busy ? "読み取り中…" : "読み取って入力"}
+        </button>
+        <span className="text-[11px] text-muted">入れた欄は黄色になります。登録の前に資料と見比べてください。貼ったテキストは保存しません。</span>
+      </div>
+      {message && (
+        <p role="status" className={`rounded-md border px-3 py-2 text-xs leading-relaxed ${message.ok ? "border-[#f0dca0] bg-[#fff8e1] text-[#6b4e00]" : "border-[#f3c4c4] bg-[#fdecec] text-[#b91c1c]"}`}>
+          {message.text}
+        </p>
+      )}
+    </SectionCard>
+  );
+}
+
+function SparkIcon({ className = "size-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+      <path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z" />
+      <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />
+    </svg>
+  );
+}
+
 export default function PropertyForm({ values = EMPTY, heading }: { values?: PropertyValues; heading?: React.ReactNode }) {
   const [state, formAction, pending] = useActionState<PropertyFormState, FormData>(saveProperty, {});
   const v = values;
@@ -398,6 +465,50 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
     el.value = cur === "" ? text : `${cur}、${text}`;
     el.focus();
     recount();
+  };
+
+  /** 読み取った値を、空の欄にだけ入れる。入れた欄には印（data-ai-filled）を付ける。案内の文を返す */
+  const applyImport = (r: ImportResult): string => {
+    const form = formRef.current;
+    if (!form) return "";
+    const current = (name: string) => {
+      const el = form.elements.namedItem(name);
+      return el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement ? el.value.trim() : "";
+    };
+    // 隠れている欄（2つ目の交通、リフォームの年と箇所）は、先に出してから入れる
+    const openRenovation = r.fields.renovated === "あり" && current("renovated") === "";
+    const openSecond = Object.keys(r.fields).some((k) => k.startsWith("t2_")) && !secondTransport;
+    flushSync(() => {
+      if (openRenovation) setRenovated(true);
+      if (openSecond) {
+        setSecondTransport({ key: nextKey });
+        setNextKey(nextKey + 1);
+      }
+    });
+    const skipped: string[] = [];
+    let count = 0;
+    for (const [name, value] of Object.entries(r.fields)) {
+      const el = form.elements.namedItem(name);
+      if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) continue;
+      if (el.value.trim() !== "") {
+        if (el.value.trim() !== value) skipped.push(name);
+        continue;
+      }
+      if (el instanceof HTMLSelectElement && ![...el.options].some((o) => o.value === value)) continue;
+      el.value = value;
+      el.dataset.aiFilled = "";
+      count++;
+    }
+    const boxes = [...form.querySelectorAll<HTMLInputElement>('input[name="renovation_parts"]')];
+    if (r.renovationParts.length > 0 && !boxes.some((b) => b.checked)) {
+      for (const b of boxes) if (r.renovationParts.includes(b.value)) b.checked = true;
+    }
+    recount();
+    const parts = [`${r.filled.length > 0 ? r.filled.join("、") : "なし"}を読み取り、空の欄${count}か所に入れました（黄色の欄）。`];
+    if (skipped.length > 0) parts.push(`すでに入力のある欄${skipped.length}か所は、そのままにしています。`);
+    if (r.missing.length > 0) parts.push(`資料から読み取れなかった項目：${r.missing.join("、")}。手で入れてください。`);
+    parts.push("登録の前に、資料と見比べてください。");
+    return parts.join("");
   };
 
   const checkAddress = () => {
@@ -443,10 +554,16 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
             const data = new FormData(e.currentTarget);
             startTransition(() => formAction(data));
           }}
-          onChange={recount}
+          onChange={(e) => {
+            // 担当者が直した欄は、読み取った値の印を消す
+            if (e.target instanceof HTMLElement) delete e.target.dataset.aiFilled;
+            recount();
+          }}
           className="grid gap-4 min-w-0"
         >
           {v.id && <input type="hidden" name="id" value={v.id} />}
+
+          {!v.id && <ImportPanel onImported={applyImport} />}
 
           <SectionCard icon={<HomeIcon />} title="基本情報" note="物件の基本的な情報を入力してください。" required count={`${progress.basic} / ${TOTALS.basic} 項目`}>
             <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] gap-4 items-start">
