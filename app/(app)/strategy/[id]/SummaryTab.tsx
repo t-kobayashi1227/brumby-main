@@ -76,9 +76,9 @@ export default function SummaryTab({
         <AreaPrice result={areaPrice} />
       </div>
 
-      <Card title="懸念点" icon={AlertIcon}>
+      <Card title="買い手が気にしそうな点" icon={AlertIcon}>
         {topConcerns.length === 0 ? (
-          <div className="text-[13px] text-sub">懸念点はありません。</div>
+          <div className="text-[13px] text-sub">特にありません。</div>
         ) : (
           <ol className="grid gap-3 md:grid-cols-3">
             {topConcerns.map((c, i) => (
@@ -95,7 +95,7 @@ export default function SummaryTab({
         )}
         {restConcerns.length > 0 && (
           <details className="mt-3 text-[13px]">
-            <summary className="cursor-pointer text-primary">ほかの懸念点 {restConcerns.length}件</summary>
+            <summary className="cursor-pointer text-primary">ほか {restConcerns.length}件</summary>
             <ul className="mt-2 grid gap-2">
               {restConcerns.map((c, i) => (
                 <li key={i}>

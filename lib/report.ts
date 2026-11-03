@@ -115,7 +115,7 @@ export function factUsage(main: StrategyOutput, media: MediaOutput, mediaName: (
     }
   };
   add(main.summary.evidence, { tab: "summary", where: "推奨方針（総合評価）", text: main.summary.text });
-  main.concerns.forEach((c, i) => add(c.evidence, { tab: "summary", where: `懸念点${i + 1}`, text: c.text }));
+  main.concerns.forEach((c, i) => add(c.evidence, { tab: "summary", where: `買い手が気にしそうな点${i + 1}`, text: c.text }));
   [...main.targets].sort((a, b) => a.rank - b.rank).forEach((t) => add(t.evidence, { tab: "target", where: `第${t.rank}候補 ${t.name}`, text: t.reason }));
   [...main.appeals].sort((a, b) => a.rank - b.rank).slice(0, 3).forEach((a, i) => add(a.evidence, { tab: "target", where: `訴求${i + 1}`, text: a.text }));
   add(main.direction.evidence, { tab: "sales", where: "販売の方向性", text: main.direction.text });
