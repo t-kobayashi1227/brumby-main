@@ -1,19 +1,39 @@
 "use client";
 
 import type { StrategyResult } from "../../../../lib/agents/run";
+import type { AreaMapData } from "../../../../lib/area-map";
+import type { AreaPriceData } from "../../../../lib/area-price";
 import type { Fact } from "../../../../lib/facts/types";
 import { nextCheck, shortLabel } from "../../../../lib/report";
 import { AlertIcon, ClipboardIcon, MegaphoneIcon, SearchIcon, SparkIcon, TargetIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, HypothesisBadge, Num, useReportNav } from "./parts";
+import AreaMap from "./AreaMap";
+import AreaPrice from "./AreaPrice";
 import PromptLog from "./PromptLog";
 
-// ① サマリー：結論（推奨方針・第一ターゲット・最大の訴求）→ 懸念点 → 次に確かめること → AIに送った内容（最初は閉じておく）
+// ① サマリー：結論（推奨方針・第一ターゲット・最大の訴求）→ 地図と周辺の価格相場（2カラム、2026-11-03 追加）→ 懸念点 → 次に確かめること → AIに送った内容（最初は閉じておく）
 // 懸念点の対策案（concerns[].action）は出さない（10/26 決定を 2026-11-03 に浩平さんが再確認）。AIの答えとDBには残る
 // 「次に確かめること」は、取得できず・要確認の事実から決まった文で作る（AIは使わない。lib/report.ts の nextCheck）
 
 const MAX_CONCERNS = 3;
 
-export default function SummaryTab({ r, facts, factList, propertyId, runId }: { r: StrategyResult; facts: Map<string, Fact>; factList: Fact[]; propertyId: number; runId: number }) {
+export default function SummaryTab({
+  r,
+  facts,
+  factList,
+  propertyId,
+  runId,
+  areaMap,
+  areaPrice,
+}: {
+  r: StrategyResult;
+  facts: Map<string, Fact>;
+  factList: Fact[];
+  propertyId: number;
+  runId: number;
+  areaMap: AreaMapData | null;
+  areaPrice: AreaPriceData | null;
+}) {
   const { openFact } = useReportNav();
   const m = r.戦略;
   const target = [...m.targets].sort((a, b) => a.rank - b.rank)[0];
@@ -48,6 +68,12 @@ export default function SummaryTab({ r, facts, factList, propertyId, runId }: { 
           </div>
         </div>
       </section>
+
+      {/* 地図（左）と周辺の価格相場（右）。狭い画面では縦に並べる */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {areaMap && <AreaMap data={areaMap} compact />}
+        <AreaPrice data={areaPrice} />
+      </div>
 
       <Card title="懸念点" icon={AlertIcon}>
         {topConcerns.length === 0 ? (

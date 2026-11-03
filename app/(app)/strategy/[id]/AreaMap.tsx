@@ -44,7 +44,8 @@ function layerOf(p: MapPoint): Layer | null {
   return null;
 }
 
-export default function AreaMap({ data }: { data: AreaMapData }) {
+/** compact：サマリーの2カラムに置くとき。地図を低くし、説明を短くする */
+export default function AreaMap({ data, compact = false }: { data: AreaMapData; compact?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const markers = useRef<{ layer: Layer | null; marker: Marker }[]>([]);
   const [on, setOn] = useState<Set<Layer>>(() => new Set(DEFAULT_ON));
@@ -181,7 +182,7 @@ export default function AreaMap({ data }: { data: AreaMapData }) {
         })}
       </div>
       <div className="relative">
-        <div ref={box} className="h-[420px] max-md:h-[340px] overflow-hidden rounded-md border border-line bg-subtle" />
+        <div ref={box} className={`${compact ? "h-[360px]" : "h-[420px]"} max-md:h-[340px] overflow-hidden rounded-md border border-line bg-subtle`} />
         {failed && <div className="absolute inset-0 grid place-items-center text-[13px] text-sub">地図を読み込めませんでした。</div>}
         <ul className="pointer-events-none absolute bottom-2 left-2 grid max-md:hidden gap-1 rounded-md bg-white/95 px-3 py-2 text-[12px] text-ink shadow">
           {(["target", "competitor", "sold", "facility"] as MapPointKind[]).map((k) => (
@@ -194,11 +195,19 @@ export default function AreaMap({ data }: { data: AreaMapData }) {
       </div>
       <div className="mt-2 grid gap-0.5 text-[11px] text-muted">
         <div>円は対象物件からの直線距離（1km・3km）です。ピンを押すと名前と直線距離が出ます。</div>
-        <div>
-          競合物件は入力された住所の位置、成約事例は販売記録で「成約」にした自社の物件（3km以内）、生活施設は取り込み済みの公的データ（種類ごとに1km以内すべて、無ければ3km以内の最寄り）です。
+        {compact ? (
+          <div>
+            色分けの決め方と注意点は、エリア分析タブの地図の下に書いています。
+            {data.competitorsWithoutLocation > 0 && ` 住所から位置が出なかった競合物件 ${data.competitorsWithoutLocation}件は地図に出ていません。`}
+          </div>
+        ) : (
+          <div>
+            競合物件は入力された住所の位置、成約事例は販売記録で「成約」にした自社の物件（3km以内）、生活施設は取り込み済みの公的データ（種類ごとに1km以内すべて、無ければ3km以内の最寄り）です。
           {data.competitorsWithoutLocation > 0 && ` 住所から位置が出なかった競合物件 ${data.competitorsWithoutLocation}件は地図に出ていません。`}
-        </div>
-        <div>地図はいまの登録内容で描いています。レポートを作ったあとに競合や販売記録を直した場合は、レポートの数字と違うことがあります。地図：国土地理院 淡色地図</div>
+          </div>
+        )}
+        {!compact && <div>地図はいまの登録内容で描いています。レポートを作ったあとに競合や販売記録を直した場合は、レポートの数字と違うことがあります。地図：国土地理院 淡色地図</div>}
+        {compact && <div>地図：国土地理院 淡色地図</div>}
       </div>
     </Card>
   );

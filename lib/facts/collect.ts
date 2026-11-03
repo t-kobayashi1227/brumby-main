@@ -194,19 +194,7 @@ async function collectMarket(sql: Sql, town: TownInfo | null, property: Property
   // 「直近5年」は取り込んだ最新の年から数える
   const [latest] = await sql<{ year: number | null }[]>`select max(year) as year from transactions`;
   if (latest?.year == null) return null;
-  const rows = await sql<{ year: number; building_year: number; trade_price: string; floor_sqm: string; land_sqm: string | null }[]>`
-    select year, building_year, trade_price, floor_sqm, land_sqm from transactions
-    where municipality_code = ${town.city_code} and type = '宅地(土地と建物)'
-      and (
-        (string_to_array(raw->>'Use', '、') @> array['住宅']
-          and string_to_array(raw->>'Use', '、') <@ array['住宅', '駐車場', '倉庫', 'その他'])
-        or (coalesce(raw->>'Use', '') = '' and structure in ('木造', '軽量鉄骨造', '鉄骨造'))
-      )
-      and not (coalesce(raw->>'Remarks', '') like any (array['%調停%', '%競売%', '%関係者間%', '%瑕疵%', '%隣地%']))
-      and floor_sqm between 50 and 300
-      and building_year is not null and trade_price is not null
-      and year - building_year >= 0
-  `;
+  const rows = await houseTrades(sql, town.city_code);
   const trades: MarketTrade[] = rows.map((r) => ({
     year: r.year,
     building_year: r.building_year,
@@ -217,6 +205,26 @@ async function collectMarket(sql: Sql, town: TownInfo | null, property: Property
   const band = ageBandOf(property.building_age);
   // 広さの近い取引だけの相場も、同じ取引から出す（docs/履歴/相場の出し方変更.md 3.8）
   return { market: selectMarket(trades, band, latest.year), similar: selectSimilarMarket(trades, band, latest.year, property) };
+}
+
+/**
+ * 区（市区町村コード）の戸建ての取引（D01）。相場（collectMarket）と、サマリーの価格相場（lib/area-price-load.ts）で同じ条件を使う
+ * 戸建ての条件は docs/履歴/相場の出し方変更.md 3.3。用途が空（成約価格情報）なら構造で判断する
+ */
+export function houseTrades(sql: Sql, cityCode: string) {
+  return sql<{ year: number; quarter: number; building_year: number; trade_price: string; floor_sqm: string; land_sqm: string | null }[]>`
+    select year, quarter, building_year, trade_price, floor_sqm, land_sqm from transactions
+    where municipality_code = ${cityCode} and type = '宅地(土地と建物)'
+      and (
+        (string_to_array(raw->>'Use', '、') @> array['住宅']
+          and string_to_array(raw->>'Use', '、') <@ array['住宅', '駐車場', '倉庫', 'その他'])
+        or (coalesce(raw->>'Use', '') = '' and structure in ('木造', '軽量鉄骨造', '鉄骨造'))
+      )
+      and not (coalesce(raw->>'Remarks', '') like any (array['%調停%', '%競売%', '%関係者間%', '%瑕疵%', '%隣地%']))
+      and floor_sqm between 50 and 300
+      and building_year is not null and trade_price is not null
+      and year - building_year >= 0
+  `;
 }
 
 /**

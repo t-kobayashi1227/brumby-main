@@ -6,6 +6,7 @@ import type { Fact } from "../../../../lib/facts/types";
 import { factUsage, FIXED_CREDITS, REPORT_TABS, type ReportTab, type SourceRow } from "../../../../lib/report";
 import UnderlineTabs from "../../../_components/UnderlineTabs";
 import type { AreaMapData } from "../../../../lib/area-map";
+import type { AreaPriceData } from "../../../../lib/area-price";
 import AreaTab from "./AreaTab";
 import EvidenceTab from "./EvidenceTab";
 import { Legend, ReportNav } from "./parts";
@@ -30,6 +31,7 @@ export default function Report({
   propertyId,
   runId,
   areaMap,
+  areaPrice,
 }: {
   result: StrategyResult;
   facts: Fact[];
@@ -42,6 +44,8 @@ export default function Report({
   runId: number;
   /** エリア分析の地図に出す点（位置が無い物件は null） */
   areaMap: AreaMapData | null;
+  /** サマリーの周辺の価格相場（区×築年数帯の取引から計算） */
+  areaPrice: AreaPriceData | null;
 }) {
   const [tab, setTab] = useState<ReportTab>("summary");
   const [selectedFact, setSelectedFact] = useState<string | null>(null);
@@ -73,7 +77,7 @@ export default function Report({
         <UnderlineTabs tabs={[...REPORT_TABS]} active={tab} onChange={(k) => setTab(k as ReportTab)} />
       </div>
       <Legend />
-      {tab === "summary" && <SummaryTab r={result} facts={byId} factList={facts} propertyId={propertyId} runId={runId} />}
+      {tab === "summary" && <SummaryTab r={result} facts={byId} factList={facts} propertyId={propertyId} runId={runId} areaMap={areaMap} areaPrice={areaPrice} />}
       {tab === "target" && <TargetTab r={result} facts={byId} />}
       {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} />}
       {tab === "price" && <PriceTab r={result} facts={byId} factList={facts} />}
