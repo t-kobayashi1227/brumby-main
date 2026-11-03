@@ -4,8 +4,8 @@ import { formatNumber } from "../../../lib/facts/format";
 import { daysOnMarket, salesStage, type SalesStage } from "../../../lib/records";
 import { card, emptyState, tableHead } from "../../_lib/ui";
 
-// 販売実績の一覧（docs/設計まとめ.md「販売実績」）。登録した物件ごとに、ステータスと媒体の実績の合計を出す
-// ステータスは販売実績の入力と販売戦略の作成状況から決め、色分けのバッジで出す（lib/records.ts の salesStage）
+// 販売記録の一覧（docs/設計まとめ.md「販売記録」）。登録した物件ごとに、ステータスと媒体の実績の合計を出す
+// ステータスは販売記録の入力と販売戦略の作成状況から決め、色分けのバッジで出す（lib/records.ts の salesStage）
 // 行を押すと、その物件の記録の画面（/records/[id]）を開く
 
 export const dynamic = "force-dynamic";

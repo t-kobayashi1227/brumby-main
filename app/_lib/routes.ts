@@ -13,7 +13,7 @@ interface PageDef {
 export const pages: PageDef[] = [
   { href: "/properties", title: "物件一覧" },
   { href: "/properties/new", title: "物件情報の入力", ownHeading: true },
-  { href: "/records", title: "販売実績" },
+  { href: "/records", title: "販売記録" },
   { href: "/settings", title: "設定" },
 ];
 
@@ -23,7 +23,7 @@ export function findPage(pathname: string): PageDef | undefined {
   if (exact) return exact;
   if (/^\/strategy\/\d+$/.test(pathname)) return { href: pathname, title: "販売戦略の詳細" };
   if (/^\/properties\/\d+$/.test(pathname)) return { href: pathname, title: "物件情報の入力（登録した物件）" };
-  if (/^\/records\/\d+$/.test(pathname)) return { href: pathname, title: "販売実績（物件ごと）" };
+  if (/^\/records\/\d+$/.test(pathname)) return { href: pathname, title: "販売記録（物件ごと）" };
   return undefined;
 }
 
@@ -38,7 +38,7 @@ interface NavItem {
 // 販売戦略のレポート（/strategy/[id]）は物件ごとの画面なので、「物件一覧」を選択中にする
 export const navItems: NavItem[] = [
   { label: "物件一覧", href: "/properties", icon: ListIcon, alsoActive: ["/strategy"] },
-  { label: "販売実績", href: "/records", icon: PencilIcon },
+  { label: "販売記録", href: "/records", icon: PencilIcon },
   { label: "設定", href: "/settings", icon: GearIcon },
 ];
 

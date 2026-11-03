@@ -10,7 +10,7 @@ describe("readSalesRecord", () => {
     expect(r).toMatchObject({ status: "販売中", listed_on: null, price_cut_count: 0, buyer_age_band: null, buyer_first_media_id: null });
   });
 
-  it("成約のときは成約日と成約価格が要る", () => {
+  it("販売済み（成約）のときは成約日と成約価格が要る", () => {
     expect(() => readSalesRecord(form({ status: "成約", contracted_on: "2026-12-01" }), OPTS)).toThrow("成約日と成約価格");
     const r = readSalesRecord(form({ status: "成約", listed_on: "2026-11-01", contracted_on: "2026-12-01", contract_price_man_yen: "2,380" }), OPTS);
     expect(r.contract_price_man_yen).toBe(2380);
