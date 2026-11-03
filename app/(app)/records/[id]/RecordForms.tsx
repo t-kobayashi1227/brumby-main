@@ -6,7 +6,7 @@ import { ChartIcon, PencilIcon, PlusIcon, TrashIcon, UsersIcon } from "../../../
 import { btnAction } from "../../../_lib/ui";
 import { deleteMediaResult, saveMediaResult, saveSalesRecord, type RecordFormState } from "../actions";
 
-// 販売の記録の入力（docs/設計まとめ.md「販売の記録」）
+// 販売実績の入力（docs/設計まとめ.md「販売実績」）
 // 送るときは onSubmit から action を呼ぶ（form の action に渡すと、誤りがあったときも入力が消えるため）
 // 欄の name は保存の処理（lib/records.ts）が読む名前のまま変えない
 

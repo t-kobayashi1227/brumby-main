@@ -1,4 +1,4 @@
-// 販売の記録（docs/設計まとめ.md「販売の記録」）の選択肢と、入力欄の読み取り
+// 販売実績（docs/設計まとめ.md「販売実績」）の選択肢と、入力欄の読み取り
 // 値は supabase/migrations/20261031120000_sales_records.sql の check 制約と合わせる
 
 export const SALE_STATUSES = ["販売前", "販売中", "成約", "販売中止"] as const;
@@ -104,4 +104,21 @@ export function readMediaResult(f: Form, opts: { mediaIds: readonly string[] }) 
 export function daysOnMarket(listedOn: string | null, contractedOn: string | null): number | null {
   if (!listedOn || !contractedOn) return null;
   return Math.round((Date.parse(contractedOn) - Date.parse(listedOn)) / 86_400_000);
+}
+
+/** 販売実績の一覧に出すステータス（色分けのバッジ） */
+export type SalesStage = "未着手" | "戦略作成中" | "戦略作成済み" | "販売中" | "販売済み" | "販売中止";
+
+/**
+ * 販売実績の入力（sales_records.status）と販売戦略の作成状況（strategy_runs）から、物件がいまどの段階にあるかを決める
+ * - 販売の入力があれば、それを優先する（成約は「販売済み」と表示する）
+ * - 入力が無い、または「販売前」のときは、販売戦略の有無で決める（一度でも完了していれば「戦略作成済み」）
+ */
+export function salesStage(saleStatus: string | null, strategy: { hasSucceeded: boolean; latest: string | null }): SalesStage {
+  if (saleStatus === "成約") return "販売済み";
+  if (saleStatus === "販売中") return "販売中";
+  if (saleStatus === "販売中止") return "販売中止";
+  if (strategy.hasSucceeded) return "戦略作成済み";
+  if (strategy.latest === "queued" || strategy.latest === "running") return "戦略作成中";
+  return "未着手";
 }

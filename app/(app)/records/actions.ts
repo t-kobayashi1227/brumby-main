@@ -5,7 +5,7 @@ import { getSql, inOrder } from "../../../lib/db";
 import { parsePropertyId } from "../../../lib/property";
 import { readMediaResult, readSalesRecord } from "../../../lib/records";
 
-// 販売の記録の保存（docs/設計まとめ.md「販売の記録」）。物件の中身をログに出さない
+// 販売実績の保存（docs/設計まとめ.md「販売実績」）。物件の中身をログに出さない
 
 export interface RecordFormState {
   ok?: string;

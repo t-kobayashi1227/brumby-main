@@ -6,7 +6,7 @@ import { parsePropertyId } from "../../../../lib/property";
 import { emptyState } from "../../../_lib/ui";
 import { MediaResults, SalesRecordForm, type MediaResultRow, type SalesRecordValues } from "./RecordForms";
 
-// 物件ごとの販売の記録（docs/設計まとめ.md「販売の記録」）
+// 物件ごとの販売実績（docs/設計まとめ.md「販売実績」）
 // 上：販売の結果（1物件1件、何度でも書き直せる）。下：媒体ごとの実績（期間ごとに何行でも。行ごとに修正・削除ができる）
 
 export const dynamic = "force-dynamic";
@@ -58,7 +58,7 @@ export default async function RecordPage({ params }: PageProps<"/records/[id]">)
     <div className="grid gap-4">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px]">
         <Link href="/records" className="text-primary underline underline-offset-2">
-          販売の記録の一覧
+          販売実績の一覧
         </Link>
         <span className="text-muted">／</span>
         <span className="font-bold text-ink">{p.code}</span>
