@@ -62,12 +62,9 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
     order by r.finished_at desc limit 1
   `;
 
-  let report: React.ReactNode = (
-    <>
-      <div className={emptyState}>まだ販売戦略がありません。上の「戦略を作る」を押してください。</div>
-      {latestSheet && <LatestFactSheet sheet={latestSheet.content} />}
-    </>
-  );
+  // 戦略がまだ無いときの案内は、上のカード（StrategyRunner）の説明・進み具合・失敗の表示に任せる（2026-11-03）
+  // 以前はここに「まだ販売戦略がありません。上の『戦略を作る』を押してください」を出していたが、登録後の自動作成中にも出て進み具合と食い違うため外した
+  let report: React.ReactNode = latestSheet ? <LatestFactSheet sheet={latestSheet.content} /> : null;
   if (done) {
     const [datasets, media] = await inOrder(
       () => sql<(DatasetInfo & { attribution: string | null })[]>`select id, name, provider, as_of, row_count, attribution from datasets`,
