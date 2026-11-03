@@ -303,3 +303,20 @@ export function unknownToShow(unknown: string[], facts: Fact[], usedIds: Iterabl
     return ids.length === 0 || ids.some((id) => !minor.has(id));
   });
 }
+
+/**
+ * 懸念点の札（価格・災害・物件など）。根拠の事実の分類からプログラムで決める（AIには振り分けさせない。2026-11-04 浩平さん指摘：何の話か一目で分からない）
+ * 先に当たったものを使う：災害 → 価格（相場、または物件の価格）→ 物件 → 立地（学区・施設・交通）→ エリア → 買い手 → 競合
+ */
+export function concernTopic(evidence: string[], facts: Map<string, Fact>): string | null {
+  const cats = new Set(evidence.map((id) => categoryOf(id)).filter(Boolean));
+  const price = evidence.some((id) => facts.get(id.trim())?.項目 === "価格");
+  if (cats.has("H")) return "災害";
+  if (cats.has("M") || price) return "価格";
+  if (cats.has("P") || cats.has("R")) return "物件";
+  if (cats.has("S") || cats.has("L") || cats.has("T")) return "立地";
+  if (cats.has("A")) return "エリア";
+  if (cats.has("B")) return "買い手";
+  if (cats.has("K")) return "競合";
+  return null;
+}

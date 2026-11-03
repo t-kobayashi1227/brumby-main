@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MediaOutput } from "../lib/agents/schemas";
-import { compactValue, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds } from "../lib/report";
+import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds } from "../lib/report";
 import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -201,5 +201,16 @@ describe("AIが分からないと挙げたことのうち出すもの", () => {
     ];
     expect(unknownToShow(unknown, facts, [])).toEqual([unknown[3], unknown[4], unknown[5]]);
     expect(unknownToShow(unknown, facts, ["P-10"])).toContain(unknown[1]);
+  });
+});
+
+describe("懸念点の札", () => {
+  const byId = new Map<string, Fact>([["P-02", { id: "P-02", 項目: "価格", 値: "x", 出典: "入力", 時点: "x", 状態: "取得" }]]);
+  it("根拠の分類から決める", () => {
+    expect(concernTopic(["P-02", "M-05", "P-10"], byId)).toBe("価格");
+    expect(concernTopic(["H-01", "H-04"], byId)).toBe("災害");
+    expect(concernTopic(["P-10"], byId)).toBe("物件");
+    expect(concernTopic(["L-04", "A-03"], byId)).toBe("立地");
+    expect(concernTopic([], byId)).toBeNull();
   });
 });

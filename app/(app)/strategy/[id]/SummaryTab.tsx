@@ -4,7 +4,7 @@ import type { StrategyResult } from "../../../../lib/agents/run";
 import type { AreaMapData } from "../../../../lib/area-map";
 import type { AreaPriceResult } from "../../../../lib/area-price";
 import type { Fact } from "../../../../lib/facts/types";
-import { factsToCheck, nextCheck, shortLabel, usedFactIds } from "../../../../lib/report";
+import { concernTopic, factsToCheck, nextCheck, shortLabel, usedFactIds } from "../../../../lib/report";
 import { AlertIcon, ClipboardIcon, MegaphoneIcon, SearchIcon, SparkIcon, TargetIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, HypothesisBadge, Num, useReportNav } from "./parts";
 import AreaMap from "./AreaMap";
@@ -85,6 +85,7 @@ export default function SummaryTab({
               <li key={i} className="flex gap-2.5 rounded-lg border border-line bg-[#fffaf5] p-3">
                 <Num n={i + 1} />
                 <div className="min-w-0">
+                  <TopicTag topic={concernTopic(c.evidence, facts)} />
                   <Ai>{c.text}</Ai>
                   <Evidence ids={c.evidence} facts={facts} max={2} />
                 </div>
@@ -98,6 +99,7 @@ export default function SummaryTab({
             <ul className="mt-2 grid gap-2">
               {restConcerns.map((c, i) => (
                 <li key={i}>
+                  <TopicTag topic={concernTopic(c.evidence, facts)} />
                   <Ai size="sm">{c.text}</Ai>
                   <Evidence ids={c.evidence} facts={facts} max={2} />
                 </li>
@@ -173,4 +175,10 @@ function KeyRow({ icon, label, value, badge, tone, ai = false }: { icon: React.R
       </div>
     </div>
   );
+}
+
+/** 懸念点の札（根拠の分類から決める。lib/report.ts の concernTopic） */
+function TopicTag({ topic }: { topic: string | null }) {
+  if (!topic) return null;
+  return <span className="mb-1 inline-block rounded bg-[#fdebd9] px-1.5 py-0.5 text-[11px] font-bold text-[#9a4a12]">{topic}</span>;
 }
