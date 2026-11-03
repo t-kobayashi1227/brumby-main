@@ -102,7 +102,8 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
   const access = transports.map((t) => `${t.line ? `${t.line} ` : ""}${t.mode === "バス" ? `「${t.stop_name}」停` : t.stop_name} 徒歩${t.walk_min}分`);
 
   return (
-    <div className="grid gap-4">
+    // 事実シートの表（最小幅1110px）が画面幅を押し広げず、カードの中で横スクロールになるよう minmax(0,1fr) にする
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <div className="flex flex-wrap items-center gap-3 print:hidden">
         <Link href="/properties" className="text-xs text-brand underline">
           ← 物件一覧に戻る
