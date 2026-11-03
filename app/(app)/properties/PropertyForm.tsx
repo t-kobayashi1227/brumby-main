@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useRef, useState, useTransition } from "react";
+import { flushSync } from "react-dom";
 import { FLOORS, PROPERTY_CLASSES, RENOVATION_PARTS, TRANSPORT_MODES } from "../../../lib/property";
 import {
   ArrowRightIcon,
@@ -18,17 +19,29 @@ import {
   TrainIcon,
   TrashIcon,
   UsersIcon,
+  SparkIcon,
+  YenIcon,
+  FloorPlanIcon,
+  AreaIcon,
+  CalendarIcon,
+  CarIcon,
+  DocIcon,
+  SpinnerIcon,
 } from "../../_components/icons";
 import { previewAddress, saveProperty, type PropertyFormState } from "./actions";
+import { importDraft } from "./import-actions";
+import { IMPORT_MAX_CHARS, type ImportResult } from "../../../lib/property-import";
 
 // ①物件情報の入力フォーム（docs/設計まとめ.md「①物件情報の入力」の15項目）
 // 見た目は 2026-10-26 のデザイン（物件情報入力ダッシュボード①〜③）に合わせた
 // - 手順は「基本情報 → 詳細条件 → 分析情報」の3つ。PoCでは基本情報だけを使い、詳細条件と分析情報は鍵つきで操作できない
-// - 右の「入力状況」は必須12項目（基本情報3・交通アクセス1・物件詳細8）の入力数を数える
+// - 必須12項目（基本情報3・交通アクセス1・物件詳細8）の入力数を数え、各欄の見出しと下の登録ボタンの横に出す（右の「入力状況」の枠は 2026-11-03 浩平さん指示で外した）
 // - 交通：「交通手段を追加」で2つ目の欄が出る（最大2つ）
 // - リフォーム：「あり」を選ぶと、年と箇所の欄が出る
 // - 競合物件・広告予算は開閉できる。閉じても入力は消えずに送られる（hidden で隠すだけ）
 // - 欄の name は保存の処理（actions.ts）が読む名前のまま変えない
+// - 「AI入力アシスト」：貼った紹介文から AI が書かれたままの文字を抜き出し、システムが数字に直して、空の欄にだけ入れる（import-actions.ts）。
+//   入れた欄は黄色にし、担当者が直すと色を消す。保存はしない。登録は担当者が見比べてから押す（必須項目の確かめは従来どおり）
 
 export interface TransportValues {
   mode: string;
@@ -160,7 +173,7 @@ function valuesToFormData(v: PropertyValues): FormData {
 // ---- 見た目の部品 ----
 
 const label = "block text-[13px] font-medium text-ink";
-const field = `w-full mt-1 h-10 px-3 bg-white rounded-lg border border-field text-[13px] text-ink placeholder:text-[#a3abbb] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15`;
+const field = `w-full mt-1 h-10 px-3 bg-white rounded-lg border border-field text-[13px] text-ink placeholder:text-[#a3abbb] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 data-[ai-filled]:bg-[#fff8e1] data-[ai-filled]:border-[#e8b94a]`;
 const selectField = `${field} pr-8`;
 
 const Required = () => <span className="ml-0.5 text-[#e5484d]">*</span>;
@@ -250,84 +263,6 @@ function Stepper() {
   );
 }
 
-function ProgressRing({ done, total }: { done: number; total: number }) {
-  const r = 52;
-  const c = 2 * Math.PI * r;
-  return (
-    <div className="relative mx-auto size-36">
-      <svg viewBox="0 0 120 120" className="size-full -rotate-90" aria-hidden="true">
-        <circle cx="60" cy="60" r={r} fill="none" stroke="#e8edf5" strokeWidth="10" />
-        <circle cx="60" cy="60" r={r} fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - done / total)} className="text-primary transition-[stroke-dashoffset] duration-300" />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <div className="tabular-nums">
-          <span className="text-3xl font-bold text-ink">{done}</span>
-          <span className="text-sm text-sub"> / {total}</span>
-        </div>
-        <div className="text-[11px] text-muted">項目完了</div>
-      </div>
-    </div>
-  );
-}
-
-function StatusIcon({ done, total }: { done: number; total: number }) {
-  if (done === total)
-    return (
-      <span className="flex size-4.5 items-center justify-center rounded-full bg-[#22a35a] text-white">
-        <CheckIcon className="size-3" />
-      </span>
-    );
-  return <span className={`size-4.5 rounded-full border-[3px] ${done > 0 ? "border-primary" : "border-field"}`} />;
-}
-
-function ProgressPanel({ progress }: { progress: Progress }) {
-  const done = progress.basic + progress.transport + progress.detail;
-  const rows = [
-    { label: "基本情報", done: progress.basic, total: TOTALS.basic },
-    { label: "交通アクセス", done: progress.transport, total: TOTALS.transport },
-    { label: "物件詳細", done: progress.detail, total: TOTALS.detail },
-  ];
-  return (
-    <aside className="grid gap-4 content-start xl:sticky xl:top-0">
-      <div className="bg-white border border-line rounded-xl p-5 grid gap-5">
-        <div className="text-[15px] font-bold text-ink">入力状況</div>
-        <ProgressRing done={done} total={REQUIRED_TOTAL} />
-        <dl className="grid gap-2.5 text-[13px]">
-          {[
-            { label: "入力済み", value: done, dot: "bg-primary" },
-            { label: "未入力", value: REQUIRED_TOTAL - done, dot: "bg-field" },
-            { label: "任意項目", value: progress.optional, dot: "bg-divider border border-field" },
-          ].map((r) => (
-            <div key={r.label} className="flex items-center gap-2.5">
-              <span className={`size-2.5 rounded-full ${r.dot}`} />
-              <dt className="text-body">{r.label}</dt>
-              <dd className="ml-auto font-bold text-ink tabular-nums">{r.value}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="border-t border-line pt-4 grid gap-2.5">
-          <div className="text-[13px] font-bold text-ink">必須項目の内訳</div>
-          {rows.map((r) => (
-            <div key={r.label} className="flex items-center gap-2.5 text-[13px]">
-              <StatusIcon done={r.done} total={r.total} />
-              <span className="text-body">{r.label}</span>
-              <span className="ml-auto text-sub tabular-nums">
-                {r.done} / {r.total}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-      {done === REQUIRED_TOTAL && (
-        <div className="rounded-xl border border-[#cfe0fa] bg-primary-soft p-4">
-          <div className="text-[13px] font-bold text-primary">必須項目がそろいました</div>
-          <div className="mt-1 text-xs text-body leading-relaxed">このまま登録できます。任意の項目は、あとから追加・編集できます。</div>
-        </div>
-      )}
-    </aside>
-  );
-}
-
 function TransportRow({ position, values, onRemove }: { position: 1 | 2; values?: TransportValues; onRemove?: () => void }) {
   const name = (k: string) => `t${position}_${k}`;
   const req = position === 1;
@@ -360,6 +295,128 @@ function TransportRow({ position, values, onRemove }: { position: 1 | 2; values?
         <span className="hidden lg:block" />
       )}
     </div>
+  );
+}
+
+/** 「サンプルを入力」で入れる例文（架空の物件） */
+const SAMPLE_TEXT = `【中古戸建】新潟市西区寺尾東3丁目
+価格　2,480万円
+所在地　新潟市西区寺尾東3丁目12-5
+交通　JR越後線「寺尾」駅 徒歩8分／新潟交通バス「寺尾小学校前」停 徒歩3分
+間取り　4LDK+S
+建物面積　105.98㎡（32.05坪）　土地面積　165.30㎡（50.00坪）
+駐車　並列2台
+築年月　2015年3月　木造2階建
+2023年にキッチン・浴室をリフォーム済み
+南向きリビング、シャッター車庫あり、小学校まで徒歩5分`;
+
+/** 抽出できる主な項目（見せるだけ） */
+const IMPORT_TARGETS = [
+  { label: "価格", icon: YenIcon },
+  { label: "間取り", icon: FloorPlanIcon },
+  { label: "面積", icon: AreaIcon },
+  { label: "築年数", icon: CalendarIcon },
+  { label: "駐車台数", icon: CarIcon },
+  { label: "アクセス", icon: TrainIcon },
+];
+
+/**
+ * AI入力アシスト：物件の紹介文を貼って解析し、空の欄に値を入れる
+ * - 解析中はボタンを読み込み中にし、二重に実行しない（ボタンを止めるだけでなく、ref でも弾く）
+ * - 値はフォームに入れるだけで保存しない。登録は従来どおり「登録して位置を確認」で、必須項目の確かめもそのまま
+ */
+function AiAssistPanel({ onImported }: { onImported: (r: ImportResult) => string }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const running = useRef(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const run = async () => {
+    if (running.current || text.trim() === "") return;
+    running.current = true;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const fd = new FormData();
+      fd.set("kind", "text");
+      fd.set("text", text);
+      const r = await importDraft(fd);
+      setMessage(r.ok ? { ok: true, text: onImported(r) } : { ok: false, text: r.error });
+    } catch {
+      setMessage({ ok: false, text: "解析に失敗しました。時間をおいてもう一度お試しください" });
+    } finally {
+      running.current = false;
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="ai-assist-title" className="rounded-xl border border-[#b9cdf0] bg-gradient-to-br from-white to-[#f3f7fe] shadow-[0_1px_3px_rgba(22,35,63,0.04)]">
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)]">
+        <div className="grid gap-3 p-5">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2 id="ai-assist-title" className="flex items-center gap-2 text-[18px] font-bold text-ink">
+              <SparkIcon className="size-6 text-primary" />
+              AI入力アシスト
+            </h2>
+            <p className="text-xs text-muted">物件の紹介文を貼り付けると、AIが自動で情報を抽出して各項目に反映します。</p>
+          </div>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            readOnly={busy}
+            rows={4}
+            maxLength={IMPORT_MAX_CHARS}
+            aria-label="物件の紹介文"
+            placeholder="例：JR越後線「寺尾」駅 徒歩8分、4LDK+S、建物面積105.98㎡、土地面積165.30㎡、2015年築の2階建て。販売価格は2,480万円…"
+            className={`${field} h-auto! py-2.5 leading-relaxed read-only:bg-subtle`}
+          />
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <button
+              type="button"
+              onClick={() => setText(SAMPLE_TEXT)}
+              disabled={busy}
+              className="flex items-center gap-1.5 rounded-lg border border-line bg-white px-3.5 py-2 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <DocIcon className="size-4" />
+              サンプルを入力
+            </button>
+            <p className="text-[11px] leading-relaxed text-muted">
+              SUUMO・アットホームなどの物件ページの文章をコピーして、そのまま貼り付けてもかまいません。
+              <br />
+              すでに入力した欄は上書きしません。貼り付けた文章は保存しません。
+            </p>
+          </div>
+        </div>
+
+        <div className="grid content-start gap-4 border-t border-line p-5 lg:border-t-0 lg:border-l">
+          <div className="text-[14px] font-bold text-ink">抽出できる主な項目</div>
+          <ul className="grid grid-cols-3 gap-2">
+            {IMPORT_TARGETS.map(({ label: name, icon: Icon }) => (
+              <li key={name} className="flex items-center justify-center gap-1.5 rounded-full border border-line bg-white px-2 py-1.5 text-[13px] text-ink">
+                <Icon className="size-4 text-primary" />
+                {name}
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={run}
+            disabled={busy || text.trim() === ""}
+            aria-busy={busy}
+            className="flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-[14px] font-bold text-white shadow-sm cursor-pointer hover:bg-[#2459b0] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {busy ? <SpinnerIcon className="size-4.5 animate-spin" /> : <SparkIcon className="size-4.5" />}
+            {busy ? "解析中…" : "内容を解析して反映"}
+          </button>
+          {message && (
+            <p role="status" className={`rounded-md border px-3 py-2 text-xs leading-relaxed ${message.ok ? "border-[#f0dca0] bg-[#fff8e1] text-[#6b4e00]" : "border-[#f3c4c4] bg-[#fdecec] text-[#b91c1c]"}`}>
+              {message.text}
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -400,6 +457,50 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
     recount();
   };
 
+  /** 読み取った値を、空の欄にだけ入れる。入れた欄には印（data-ai-filled）を付ける。案内の文を返す */
+  const applyImport = (r: ImportResult): string => {
+    const form = formRef.current;
+    if (!form) return "";
+    const current = (name: string) => {
+      const el = form.elements.namedItem(name);
+      return el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement ? el.value.trim() : "";
+    };
+    // 隠れている欄（2つ目の交通、リフォームの年と箇所）は、先に出してから入れる
+    const openRenovation = r.fields.renovated === "あり" && current("renovated") === "";
+    const openSecond = Object.keys(r.fields).some((k) => k.startsWith("t2_")) && !secondTransport;
+    flushSync(() => {
+      if (openRenovation) setRenovated(true);
+      if (openSecond) {
+        setSecondTransport({ key: nextKey });
+        setNextKey(nextKey + 1);
+      }
+    });
+    const skipped: string[] = [];
+    let count = 0;
+    for (const [name, value] of Object.entries(r.fields)) {
+      const el = form.elements.namedItem(name);
+      if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) continue;
+      if (el.value.trim() !== "") {
+        if (el.value.trim() !== value) skipped.push(name);
+        continue;
+      }
+      if (el instanceof HTMLSelectElement && ![...el.options].some((o) => o.value === value)) continue;
+      el.value = value;
+      el.dataset.aiFilled = "";
+      count++;
+    }
+    const boxes = [...form.querySelectorAll<HTMLInputElement>('input[name="renovation_parts"]')];
+    if (r.renovationParts.length > 0 && !boxes.some((b) => b.checked)) {
+      for (const b of boxes) if (r.renovationParts.includes(b.value)) b.checked = true;
+    }
+    recount();
+    const parts = [`${r.filled.length > 0 ? r.filled.join("、") : "なし"}を読み取り、空の欄${count}か所に反映しました（黄色の欄）。まだ保存していません。`];
+    if (skipped.length > 0) parts.push(`すでに入力のある欄${skipped.length}か所は、そのままにしています。`);
+    if (r.missing.length > 0) parts.push(`資料から読み取れなかった項目：${r.missing.join("、")}。手で入れてください。`);
+    parts.push("内容を確かめてから登録してください。");
+    return parts.join("");
+  };
+
   const checkAddress = () => {
     const address = (addressRef.current?.value ?? "").trim();
     startAddressCheck(async () => {
@@ -434,7 +535,7 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
         )}
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_260px] items-start">
+      <div className="grid gap-6 items-start">
         {/* action={formAction} にすると、保存に失敗したときも入力が元に戻ってしまう（React の form の自動リセット）ため、送信を自分で行う */}
         <form
           ref={formRef}
@@ -443,10 +544,16 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
             const data = new FormData(e.currentTarget);
             startTransition(() => formAction(data));
           }}
-          onChange={recount}
+          onChange={(e) => {
+            // 担当者が直した欄は、読み取った値の印を消す
+            if (e.target instanceof HTMLElement) delete e.target.dataset.aiFilled;
+            recount();
+          }}
           className="grid gap-4 min-w-0"
         >
           {v.id && <input type="hidden" name="id" value={v.id} />}
+
+          {!v.id && <AiAssistPanel onImported={applyImport} />}
 
           <SectionCard icon={<HomeIcon />} title="基本情報" note="物件の基本的な情報を入力してください。" required count={`${progress.basic} / ${TOTALS.basic} 項目`}>
             <div className="grid grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] gap-4 items-start">
@@ -710,8 +817,6 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
             </button>
           </div>
         </form>
-
-        <ProgressPanel progress={progress} />
       </div>
     </div>
   );
