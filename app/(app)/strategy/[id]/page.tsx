@@ -7,12 +7,15 @@ import { formatJstDateTime, formatNumber } from "../../../../lib/facts/format";
 import type { FactSheet } from "../../../../lib/facts/types";
 import { parsePropertyId } from "../../../../lib/property";
 import { sourceList, usedFactIds } from "../../../../lib/report";
-import { emptyState } from "../../../_lib/ui";
+import { card, emptyState } from "../../../_lib/ui";
+import FactSheetTable from "../../../_components/FactSheetTable";
 import Report from "./Report";
 import StrategyRunner, { type RunStatus } from "./StrategyRunner";
 
 // ⑤販売戦略レポート（docs/設計まとめ.md「⑤画面の表示」）。[id] は物件の番号
 // 上に物件の見出しと「戦略を作る」、その下に最新の完了した戦略を3つのタブで出す。根拠は、その戦略に使った事実シートから引く
+// 事実シートの表はこの画面だけで見せる（事実シートの画面は取得の進み具合だけ）。戦略がまだ無いときは最新の事実シートを出し、
+// 戦略を作ったあとに周辺情報を取り直したときは、新しい事実シートを折りたたんで出す（レポートの「根拠データ」は、その戦略に使ったシートのまま）
 
 export const dynamic = "force-dynamic";
 
@@ -47,14 +50,22 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
   const [latestRun] = await sql<{ id: string; status: RunStatus["status"]; stage: string | null; error: string | null; cost_usd: string; started_at: Date | null }[]>`
     select id, status, stage, error, cost_usd, started_at from strategy_runs where property_id = ${propertyId} order by created_at desc limit 1
   `;
-  const [done] = await sql<{ result: StrategyResult; finished_at: Date; content: FactSheet; cost_usd: string }[]>`
-    select r.result, r.finished_at, r.cost_usd, f.content
+  const [latestSheet] = await sql<{ id: string; content: FactSheet }[]>`
+    select id, content from fact_sheets where property_id = ${propertyId} order by created_at desc limit 1
+  `;
+  const [done] = await sql<{ result: StrategyResult; finished_at: Date; content: FactSheet; cost_usd: string; fact_sheet_id: string }[]>`
+    select r.result, r.finished_at, r.cost_usd, f.content, r.fact_sheet_id
     from strategy_runs r join fact_sheets f on f.id = r.fact_sheet_id
     where r.property_id = ${propertyId} and r.status = 'succeeded' and r.form = '3回'
     order by r.finished_at desc limit 1
   `;
 
-  let report: React.ReactNode = <div className={emptyState}>まだ販売戦略がありません。上の「戦略を作る」を押してください。</div>;
+  let report: React.ReactNode = (
+    <>
+      <div className={emptyState}>まだ販売戦略がありません。上の「戦略を作る」を押してください。</div>
+      {latestSheet && <LatestFactSheet sheet={latestSheet.content} />}
+    </>
+  );
   if (done) {
     const [datasets, media] = await inOrder(
       () => sql<(DatasetInfo & { attribution: string | null })[]>`select id, name, provider, as_of, row_count, attribution from datasets`,
@@ -62,8 +73,18 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
     );
     const facts = done.content.事実;
     const { rows, credits } = sourceList(facts, usedFactIds(done.result.戦略, done.result.媒体), [...datasets]);
+    const refetched = latestSheet && String(latestSheet.id) !== String(done.fact_sheet_id);
     report = (
-      <Report result={done.result} facts={facts} sources={rows} credits={credits} mediaNames={Object.fromEntries(media.map((m) => [m.id, m.name]))} />
+      <>
+        {refetched && (
+          <LatestFactSheet
+            sheet={latestSheet.content}
+            collapsed
+            note="戦略を作ったあとに周辺情報を取り直しました。下のレポートは前回の事実シートで作っています。新しい事実シートは「戦略を作り直す」で反映されます。"
+          />
+        )}
+        <Report result={done.result} facts={facts} sources={rows} credits={credits} mediaNames={Object.fromEntries(media.map((m) => [m.id, m.name]))} />
+      </>
     );
   }
 
@@ -81,7 +102,8 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
   const access = transports.map((t) => `${t.line ? `${t.line} ` : ""}${t.mode === "バス" ? `「${t.stop_name}」停` : t.stop_name} 徒歩${t.walk_min}分`);
 
   return (
-    <div className="grid gap-4">
+    // 事実シートの表（最小幅1110px）が画面幅を押し広げず、カードの中で横スクロールになるよう minmax(0,1fr) にする
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
       <div className="flex flex-wrap items-center gap-3 print:hidden">
         <Link href="/properties" className="text-xs text-brand underline">
           ← 物件一覧に戻る
@@ -91,7 +113,7 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
           物件情報を直す
         </Link>
         <Link href={`/properties/${propertyId}/facts`} className="text-xs text-brand underline">
-          事実シートを見る
+          周辺情報を取り直す
         </Link>
       </div>
 
@@ -115,5 +137,37 @@ export default async function StrategyDetailPage({ params }: PageProps<"/strateg
       </StrategyRunner>
       {report}
     </div>
+  );
+}
+
+/** 最新の事実シート（戦略にまだ使っていないもの）。collapsed のときは、表を開いて見る形にする */
+function LatestFactSheet({ sheet, collapsed = false, note }: { sheet: FactSheet; collapsed?: boolean; note?: string }) {
+  const facts = sheet.事実;
+  const missing = facts.filter((f) => f.状態 !== "取得");
+  const summary = (
+    <>
+      事実シート作成：{formatJstDateTime(sheet.作成日時)}（距離はすべて{sheet.距離の種類}）・事実 {facts.length}件・取得できず／要確認 {missing.length}件
+      {missing.length > 0 && `（${missing.map((f) => f.id).join("、")}）`}
+    </>
+  );
+  if (collapsed) {
+    return (
+      <details className={`${card} p-5 min-w-0 print:hidden`}>
+        <summary className="cursor-pointer text-[13px] text-sub">
+          {note && <span className="block text-ink mb-1">{note}</span>}
+          新しい事実シートを見る（{summary}）
+        </summary>
+        <div className="mt-4">
+          <FactSheetTable facts={facts} />
+        </div>
+      </details>
+    );
+  }
+  return (
+    <section className={`${card} p-5 min-w-0`}>
+      <div className="text-[15px] font-bold text-ink mb-1">事実シート</div>
+      <div className="text-[13px] text-sub mb-4">{summary}</div>
+      <FactSheetTable facts={facts} />
+    </section>
   );
 }
