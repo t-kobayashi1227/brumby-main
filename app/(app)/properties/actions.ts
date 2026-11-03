@@ -93,7 +93,8 @@ function readTransports(formData: FormData) {
     if (empty) continue;
     const label = `交通（${position}つ目）`;
     rows.push({
-      position,
+      // 1つ目が空で2つ目だけ書いたときも、1つ目として保存する
+      position: rows.length + 1,
       mode: oneOf(p("mode"), TRANSPORT_MODES, `${label}の種類`),
       line: p("line"),
       stop_name: required(formData, `t${position}_stop_name`, `${label}の駅またはバス停の名前`),
