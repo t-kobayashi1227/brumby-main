@@ -88,6 +88,12 @@ export default function StrategyRunner({
   const collectFacts = async () => {
     setFactStep({ index: 0, failed: false });
     const res = await fetch(`/api/properties/${propertyId}/facts`, { method: "POST" });
+    if (!res.ok) {
+      // 物件の番号が正しくないときなどは、1行の JSON（改行なし）で返る
+      setFactStep({ index: 0, failed: true });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(`周辺情報を集められませんでした：${body.error ?? `HTTP ${res.status}`}`);
+    }
     if (!res.body) throw new Error(`サーバーから返事がありません（HTTP ${res.status}）`);
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
     let buffer = "";
