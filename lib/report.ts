@@ -331,7 +331,10 @@ export function concernTopic(evidence: string[], facts: Map<string, Fact>): stri
 
 // ---- サマリーの「販売の基本戦略」（2026-11-04 浩平さん依頼） ----
 
-/** 基本の6候補の絵（public/targets/）。AIが加えた候補には絵を出さない */
+/**
+ * 基本の6候補の絵（public/targets/）。AIが加えた候補には絵を出さない
+ * 2026-11-04 浩平さん提供の青い横長の絵（2:1）に6枚とも差し替え。50代の住み替えはダンボールなし、単身はポシェットなしの版。外側の白い縁は切り落として720x360にしている
+ */
 export const TARGET_IMAGES: Record<string, string> = {
   若い夫婦: "/targets/young-couple.webp",
   小中学生のいる家族: "/targets/school-family.webp",
