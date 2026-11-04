@@ -140,7 +140,7 @@ const RANK_NAME = ["メイン", "第二", "第三", "第四", "第五"];
 
 /**
  * 販売の基本戦略（2026-11-04 浩平さんの見本をもとに組み直し）
- * 左：メインの買い手（絵・名前・説明）とほかの候補／中：その買い手が重視しやすい点（事実。lib/report.ts の targetPoints）と訴求のポイント（AI）／右：推奨方針（AI）とデータの注意点
+ * 左：メインの買い手（絵・名前・説明）とほかの候補／中：物件のポイント＝その買い手が重視しやすい項目の、この物件の値（2026-11-04 見出しを浩平さん指示で「物件のポイント」に。事実。lib/report.ts の targetPoints）と訴求のポイント（AI）／右：推奨方針（AI）とデータの注意点
  * 見本から変えたところ：右の「メインターゲット」は左と同じなので出さない。代表年齢は返済の計算に使う仮の値で、単身の「年代は問わない」と食い違うので出さない。
  * 特徴に価格の割高・割安は入れない（価格の位置づけのラベルは6タブでは出さない決まり。価格は推奨方針の文と価格分析タブで見る）
  */
@@ -156,7 +156,6 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
   const points =
     fixed ??
     summaryFeatures({ ...m, targets: main ? [main] : [] }, facts).map((f) => ({ ...featureText(f), ids: [f.id] }));
-  const pointsTitle = fixed && main ? `${main.name}が重視しやすい点` : "この物件の特徴";
   const image = main && main.source !== "エージェント提案" ? TARGET_IMAGES[main.name] : undefined;
   const definition = main ? targetDefinition(main, factList) : null;
 
@@ -217,10 +216,10 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
           <div>
             <h3 className="mb-2 flex items-center gap-1.5 text-[15px] font-bold text-ink">
               <HomeIcon className="size-[18px] text-primary" />
-              {pointsTitle}
+              物件のポイント
             </h3>
             <div className="mb-2 text-[12px] text-sub">
-              {fixed ? "調査で重視される項目を、この物件の値で示しています。" : "AIが根拠にした物件・立地の事実です。"}
+              {fixed && main ? `${main.name}が重視しやすい項目（調査から）を、この物件の値で示しています。` : "AIが根拠にした物件・立地の事実です。"}
             </div>
             {points.length === 0 ? (
               <div className="text-[13px] text-sub">出せる事実がありません。</div>
