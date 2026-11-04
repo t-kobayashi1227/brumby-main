@@ -265,14 +265,18 @@ const ID_BRACKETS = /\s*[（(［[【]\s*(?:事実ID[:：]\s*)?[PMRASLTHBKC]-\d{2
 
 /**
  * AIの文に入った事実IDを、利用者に分かる形にする（2026-11-04 浩平さん指摘：［P-10］は利用者向けではない）。
- * かっこで添えたIDは外し（根拠は文の下のチップで見える）、文の中のIDは事実の名前に置き換える。知らないIDは外す
+ * かっこで添えたIDは外し（根拠は文の下のチップで見える）、文の中のIDは事実の名前に置き換える。事実にない番号はそのまま
  */
 export function plainIds(text: string, facts: Map<string, Fact>): string {
   return text
     .replace(ID_BRACKETS, "")
     .replace(FACT_ID, (id) => {
       const f = facts.get(id);
-      return f ? shortLabel(f.項目) : "";
+      if (!f) return id; // 事実にない番号は、IDではない文字（区画の番号など）かもしれないので触らない
+      // 「（直線）」「（1km以内）」は文の意味を変えるので残す（徒歩距離や「まったく無い」と読まれないように）
+      const scope = /（([^（）]*(直線|以内)[^（）]*)）$/.exec(f.項目);
+      const name = shortLabel(f.項目);
+      return scope && !name.includes(scope[1]) ? `${name}（${scope[1]}）` : name;
     })
     .replace(/[ 　]{2,}/g, " ")
     .trim();

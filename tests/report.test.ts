@@ -178,12 +178,13 @@ describe("AIの文の事実IDを利用者向けにする", () => {
     expect(plainIds("リフォームの有無が分からない［P-10］", byId)).toBe("リフォームの有無が分からない");
     expect(plainIds("近くに小児科がない（L-04、P-10）。", byId)).toBe("近くに小児科がない。");
     expect(plainIds("P-10が未入力のため確かめる", byId)).toBe("リフォームが未入力のため確かめる");
-    expect(plainIds("L-04は0件", byId)).toBe("小児科のある病院・診療所は0件");
+    expect(plainIds("L-04は0件", byId)).toBe("小児科のある病院・診療所（1km以内）は0件");
+    expect(plainIds("P-99が未入力、A-01区画", byId)).toBe("P-99が未入力、A-01区画");
     expect(plainIds("X-01 や claude-sonnet-5-5 はそのまま", byId)).toBe("X-01 や claude-sonnet-5-5 はそのまま");
   });
   it("evidence と id は変えない", () => {
     const out = withPlainIds({ text: "庭がある（P-10）", evidence: ["P-10"], items: [{ id: "C-01", reason: "L-04が0件" }] }, byId);
-    expect(out).toEqual({ text: "庭がある", evidence: ["P-10"], items: [{ id: "C-01", reason: "小児科のある病院・診療所が0件" }] });
+    expect(out).toEqual({ text: "庭がある", evidence: ["P-10"], items: [{ id: "C-01", reason: "小児科のある病院・診療所（1km以内）が0件" }] });
   });
 });
 

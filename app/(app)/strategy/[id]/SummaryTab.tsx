@@ -42,6 +42,8 @@ export default function SummaryTab({
   const restConcerns = m.concerns.slice(MAX_CONCERNS);
   // 取れなかった事実を全部は出さない。災害・学区と、根拠に使った要確認の事実だけ（lib/report.ts の factsToCheck）
   const missingFacts = factsToCheck(factList, usedFactIds(r.戦略, r.媒体));
+  // 上の件数は、下の「データの注意点」の項目数（事実とAIの「分からないこと」）とそろえる
+  const notes = missingFacts.length + m.unknown.length;
 
   return (
     <div className="grid gap-4">
@@ -63,8 +65,8 @@ export default function SummaryTab({
             <KeyRow
               icon={<SearchIcon className="size-5" />}
               label="データの注意点"
-              value={missingFacts.length ? `${missingFacts.length}件（下に一覧）` : "なし"}
-              tone={missingFacts.length ? "warn" : undefined}
+              value={notes ? `${notes}件（下に一覧）` : "なし"}
+              tone={notes ? "warn" : undefined}
             />
           </div>
         </div>
