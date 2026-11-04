@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Fact } from "../../../../lib/facts/types";
 import { categoryOf, compactValue, evidenceText, factOrigin, shortLabel, splitValue, type ReportTab } from "../../../../lib/report";
 import { card } from "../../../_lib/ui";
@@ -17,6 +17,7 @@ import {
   DatabaseIcon,
   FloorPlanIcon,
   HomeIcon,
+  InfoIcon,
   LayersIcon,
   MapIcon,
   MedicalIcon,
@@ -113,7 +114,22 @@ export function Legend() {
   );
 }
 
-export function Card({ title, icon: Icon, children, className = "", aside }: { title?: string; icon?: IconComp; children: React.ReactNode; className?: string; aside?: React.ReactNode }) {
+export function Card({
+  title,
+  icon: Icon,
+  children,
+  className = "",
+  aside,
+  help,
+}: {
+  title?: string;
+  icon?: IconComp;
+  children: React.ReactNode;
+  className?: string;
+  aside?: React.ReactNode;
+  /** 見出しの横の「i」で開く補足（InfoTip） */
+  help?: React.ReactNode;
+}) {
   return (
     <section className={`${card} p-5 break-inside-avoid min-w-0 ${className}`}>
       {title && (
@@ -124,6 +140,7 @@ export function Card({ title, icon: Icon, children, className = "", aside }: { t
             </span>
           )}
           <h2 className="text-[16px] font-bold text-ink">{title}</h2>
+          {help && <InfoTip label={`${title}の補足`}>{help}</InfoTip>}
           {aside && <div className="ml-auto">{aside}</div>}
         </div>
       )}
@@ -243,4 +260,63 @@ export function FactTiles({ facts, initial = 6, empty = "この分類の事実�
 /** 番号つきの丸 */
 export function Num({ n, strong = false }: { n: number; strong?: boolean }) {
   return <span className={`grid size-6 shrink-0 place-items-center rounded-full text-[12px] font-bold ${strong ? "bg-primary text-white" : "bg-primary-soft text-primary"}`}>{n}</span>;
+}
+
+/**
+ * 「i」の印で開く短い補足（ツールチップ）。マウスを重ねるか、押すと開く（スマホは押して開き、ほかの場所を押すと閉じる）
+ * 画面の端ではみ出さないよう、開くときに印の位置から画面内に収まる場所を決める（スクロールしたら閉じる）
+ * 中身は画面に固定で書いた説明やDBの値で、AIの文ではない。印刷には出さない
+ */
+export function InfoTip({ label, children }: { label: string; children: React.ReactNode }) {
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; above: number } | null>(null);
+  const tip = useRef<HTMLSpanElement>(null);
+  const show = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const width = Math.min(304, window.innerWidth - 24);
+    setPos({ top: r.bottom + 6, left: Math.max(12, Math.min(r.left - 8, window.innerWidth - width - 12)), width, above: r.top - 6 });
+  };
+  const hide = () => setPos(null);
+  // 下に収まらないときは、印の上に出す
+  useLayoutEffect(() => {
+    const el = tip.current;
+    if (!pos || !el) return;
+    const h = el.offsetHeight;
+    if (pos.top + h > window.innerHeight - 8 && pos.above - h >= 8) el.style.top = `${pos.above - h}px`;
+  }, [pos]);
+  useEffect(() => {
+    if (!pos) return;
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+    };
+  }, [pos]);
+  return (
+    // 重ねて開く・離して閉じるのはマウスだけ（スマホのタップでは押したあとに離れたことになり、すぐ閉じてしまうため）
+    <span className="relative inline-flex align-middle print:hidden" onPointerLeave={(e) => e.pointerType === "mouse" && hide()}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={pos !== null}
+        onPointerEnter={(e) => e.pointerType === "mouse" && show(e.currentTarget)}
+        onClick={(e) => show(e.currentTarget)}
+        onBlur={hide}
+        onKeyDown={(e) => e.key === "Escape" && hide()}
+        className="grid size-5 cursor-pointer place-items-center rounded-full text-muted hover:text-primary focus-visible:text-primary"
+      >
+        <InfoIcon className="size-4" />
+      </button>
+      {pos && (
+        <span
+          ref={tip}
+          role="tooltip"
+          style={{ top: pos.top, left: pos.left, width: pos.width }}
+          className="fixed z-50 block rounded-lg border border-line bg-white p-3 text-left text-[12px] font-normal leading-relaxed text-body shadow-lg"
+        >
+          {children}
+        </span>
+      )}
+    </span>
+  );
 }

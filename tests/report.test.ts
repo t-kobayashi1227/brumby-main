@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MediaOutput } from "../lib/agents/schemas";
-import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex, firstSentence, aspectLine, pickAspectFact } from "../lib/report";
+import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex, firstSentence, aspectLine, pickAspectFact, MEDIA_NOTES } from "../lib/report";
 import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -389,5 +389,17 @@ describe("pickAspectFact", () => {
   it("事実シートに無いIDは数えない", () => {
     expect(pickAspectFact(["A-99"], facts)).toBeNull();
     expect(pickAspectFact(["A-99", "T-04"], facts)?.count).toBe(1);
+  });
+});
+
+describe("媒体の補足", () => {
+  it("媒体一覧の16件すべてに短い説明がある（C-01〜C-16）", async () => {
+    const { readFileSync } = await import("node:fs");
+    const sql = readFileSync("supabase/migrations/20261025100200_assumptions.sql", "utf8");
+    const ids = [...sql.matchAll(/\('(C-\d{2})'/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(16);
+    expect(Object.keys(MEDIA_NOTES).sort()).toEqual(ids.sort());
+    // 強さを言い切る言葉（最大・No.1 など）は書かない
+    for (const t of Object.values(MEDIA_NOTES)) expect(t).not.toMatch(/最大|最多|No\.?1|一番|必ず/);
   });
 });
