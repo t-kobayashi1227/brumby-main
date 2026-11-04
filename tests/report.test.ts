@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MediaOutput } from "../lib/agents/schemas";
-import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex } from "../lib/report";
+import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex, firstSentence, aspectLine } from "../lib/report";
 import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -323,5 +323,31 @@ describe("defaultBudgetIndex", () => {
   it("20万円も無ければ最初の列", () => {
     expect(defaultBudgetIndex([{ totalManYen: 10, isInput: false }])).toBe(0);
     expect(defaultBudgetIndex([])).toBe(0);
+  });
+});
+
+describe("firstSentence", () => {
+  it("最初の「。」で分ける", () => {
+    expect(firstSentence("Aです。Bです。Cです。")).toEqual({ head: "Aです。", rest: "Bです。Cです。" });
+  });
+  it("1文だけ・「。」が無いときは rest が null", () => {
+    expect(firstSentence("Aです。")).toEqual({ head: "Aです。", rest: null });
+    expect(firstSentence(" A ")).toEqual({ head: "A", rest: null });
+  });
+});
+
+describe("aspectLine", () => {
+  const f = (項目: string, 値: string): Fact => ({ id: "X-01", 項目, 値, 出典: "s", 時点: "t", 状態: "取得" });
+  it("返済の目安は月々の返済額だけ", () => {
+    expect(aspectLine(f("【50代の住み替え】の返済の目安（返済期間25年）", "代表年齢55歳。変動1.3%：月々約5.4万円・必要年収約260万円。固定1.9%：月々約5.8万円"))).toEqual({ label: "返済の目安", value: "月々約5.4万円" });
+  });
+  it("施設の件数は最寄りと件数", () => {
+    expect(aspectLine(f("スーパー（1km以内）", "3件：Aストア 直線320m、B 直線500m"))).toEqual({ label: "スーパー", value: "Aストア 直線320m（1km以内3件）" });
+  });
+  it("末尾の補足を外す", () => {
+    expect(aspectLine(f("最寄りバス停（直線）", "草水 直線90m（系統数1：新潟交通観光バス）"))).toEqual({ label: "最寄りバス停", value: "草水 直線90m" });
+  });
+  it("ターゲット候補の定義は短い名前にする", () => {
+    expect(aspectLine(f("ターゲット候補「50代の住み替え」の定義", "世帯主が50代")).label).toBe("50代の住み替えの定義");
   });
 });
