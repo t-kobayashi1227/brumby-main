@@ -4,7 +4,7 @@ import type { StrategyResult } from "../../../../lib/agents/run";
 import type { AreaMapData } from "../../../../lib/area-map";
 import type { AreaPriceResult } from "../../../../lib/area-price";
 import type { Fact } from "../../../../lib/facts/types";
-import { concernTopic, factsToCheck, featureText, nextCheck, shortLabel, summaryFeatures, TARGET_IMAGES, WHOLE_TARGET_IMAGES, targetDefinition, targetPoints, usedFactIds } from "../../../../lib/report";
+import { concernTopic, factsToCheck, featureText, nextCheck, shortLabel, summaryFeatures, TARGET_IMAGES, targetDefinition, targetPoints, usedFactIds } from "../../../../lib/report";
 import { AlertIcon, ClipboardIcon, HomeIcon, MegaphoneIcon, SearchIcon, SparkIcon, UsersIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, factIcon, HypothesisBadge, Num, useReportNav } from "./parts";
 import AreaMap from "./AreaMap";
@@ -174,7 +174,7 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
         <div className="min-w-0">
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element -- public/ の絵をそのまま出す（next.config.ts で画像の最適化を止めている）
-            <img src={image} alt={`${main?.name}のイメージ`} className={`aspect-[6/5] w-full rounded-lg border border-line ${main && WHOLE_TARGET_IMAGES.has(main.name) ? "bg-[#fcf9f9] object-contain" : "object-cover object-[50%_75%]"}`} />
+            <img src={image} alt={`${main?.name}のイメージ`} className="aspect-[6/5] w-full rounded-lg border border-line bg-[#fbf8f8] object-contain" />
           ) : (
             <div className="grid aspect-[6/5] w-full place-items-center rounded-lg border border-line bg-primary-soft/50 text-primary">
               <UsersIcon className="size-12" />

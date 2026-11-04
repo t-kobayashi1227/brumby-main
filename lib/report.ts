@@ -331,7 +331,10 @@ export function concernTopic(evidence: string[], facts: Map<string, Fact>): stri
 
 // ---- サマリーの「販売の基本戦略」（2026-11-04 浩平さん依頼） ----
 
-/** 基本の6候補の絵（public/targets/）。AIが加えた候補には絵を出さない */
+/**
+ * 基本の6候補の絵（public/targets/）。AIが加えた候補には絵を出さない
+ * 2026-11-04 浩平さん提供のピクトグラム風の絵に6枚とも差し替え。人物が縦長なので、横長の枠でも切らずに全体を出す（object-contain、背景は絵の地の色）
+ */
 export const TARGET_IMAGES: Record<string, string> = {
   若い夫婦: "/targets/young-couple.webp",
   小中学生のいる家族: "/targets/school-family.webp",
@@ -340,12 +343,6 @@ export const TARGET_IMAGES: Record<string, string> = {
   単身: "/targets/single.webp",
   親と同居: "/targets/with-parents.webp",
 };
-
-/**
- * 人物を正面から描いたピクトグラム風の絵（2026-11-04 浩平さん提供で差し替え）。人物が縦に長いので、横長の枠では切らずに全体を出す
- * 残りの候補の絵も差し替えたら、ここに足す
- */
-export const WHOLE_TARGET_IMAGES = new Set(["若い夫婦", "単身"]);
 
 /**
  * ターゲットの説明。AIが加えた候補は AI の definition、基本の候補は事実 B「ターゲット候補「…」の定義」の値

@@ -2,7 +2,7 @@
 
 import type { StrategyResult } from "../../../../lib/agents/run";
 import type { Fact } from "../../../../lib/facts/types";
-import { firstSentence, groupByAspect, pickAspectFact, placeOfAnalysis, TARGET_IMAGES, WHOLE_TARGET_IMAGES } from "../../../../lib/report";
+import { firstSentence, groupByAspect, pickAspectFact, placeOfAnalysis, TARGET_IMAGES } from "../../../../lib/report";
 import { AlertIcon, ChatIcon, DatabaseIcon, HomeIcon, MegaphoneIcon, PinIcon, TargetIcon, UsersIcon, YenIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, FactChip, HypothesisBadge, Num, useReportNav } from "./parts";
 
@@ -104,7 +104,7 @@ function TargetCard({ t, position, facts }: { t: Target; position: number; facts
     <li className={`flex min-w-0 flex-col overflow-hidden rounded-lg border sm:flex-row lg:flex-col ${main ? "border-primary/50 bg-primary-soft/25" : "border-line"}`}>
       {image ? (
         // eslint-disable-next-line @next/next/no-img-element -- public/ の絵をそのまま出す（next.config.ts で画像の最適化を止めている）
-        <img src={image} alt={`${t.name}のイメージ`} className={`aspect-[2/1] w-full shrink-0 border-b border-line ${WHOLE_TARGET_IMAGES.has(t.name) ? "bg-[#fcf9f9] object-contain" : "object-cover object-[50%_70%]"} sm:aspect-auto sm:w-[34%] sm:border-b-0 sm:border-r lg:aspect-[2/1] lg:w-full lg:border-r-0 lg:border-b print:hidden`} />
+        <img src={image} alt={`${t.name}のイメージ`} className="aspect-[2/1] w-full shrink-0 border-b border-line bg-[#fbf8f8] object-contain sm:aspect-auto sm:w-[34%] sm:border-b-0 sm:border-r lg:aspect-[2/1] lg:w-full lg:border-r-0 lg:border-b print:hidden" />
       ) : (
         <div className="grid aspect-[2/1] w-full shrink-0 place-items-center border-b border-line bg-primary-soft/40 text-primary sm:aspect-auto sm:w-[34%] sm:border-b-0 sm:border-r lg:aspect-[2/1] lg:w-full lg:border-r-0 lg:border-b print:hidden">
           <UsersIcon className="size-10" />
