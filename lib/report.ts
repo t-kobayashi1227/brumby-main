@@ -163,8 +163,12 @@ export function shortLabel(項目: string): string {
   return head;
 }
 
-/** 「代表年齢35歳。変動0.9%：…」の頭の年齢を外す（返済の目安の主は年齢ではなく返済のため） */
-const AGE_HEAD = /^(代表年齢[^。]*)。([\s\S]+)$/;
+/**
+ * 返済の目安の値の頭にある年齢（返済の目安の主は年齢ではなく返済のため、チップや1行では外す）
+ * 今の形「50代半ばで借りる場合（55歳で計算）。変動0.9%：…」と、前の形「代表年齢55歳。変動0.9%：…」（保存済みの事実シート）の両方を読む
+ */
+const AGE_HEAD = /^(代表年齢[^。]*|[^。（]*で借りる場合（[^（）]*）)。([\s\S]+)$/;
+const dropAgeHead = (v: string) => v.match(AGE_HEAD)?.[2] ?? v;
 
 /** チップに出す値：（…）の補足を外し、返済の目安は年齢を外す。長さは画面（CSS）で切る */
 export function compactValue(値: string | null): string {
@@ -339,7 +343,7 @@ export const TARGET_IMAGES: Record<string, string> = {
 
 /**
  * ターゲットの説明。AIが加えた候補は AI の definition、基本の候補は事実 B「ターゲット候補「…」の定義」の値
- * 代表年齢（返済の計算に使う仮の年齢）は外す。単身の「年代は問わない」と食い違って見えるため
+ * 前の事実シートは末尾に「（代表年齢30歳）」（返済の計算に使う仮の年齢）が付いているので外す。単身の「年代は問わない」と食い違って見えるため
  */
 export function targetDefinition(t: { name: string; source: string; definition: string | null }, facts: Fact[]): string | null {
   if (t.source === "エージェント提案") return t.definition?.trim() || null;
@@ -405,7 +409,7 @@ function point(key: PointKey, target: string, facts: Fact[]): TargetPoint | null
       const term = f.項目.match(/返済期間(\d+)年/)?.[1];
       const down = f.項目.match(/頭金([\d.]+%|[\d,]+万円)/)?.[1];
       // 「変動0.95%：月々約6.2万円・必要年収約300万円（…）」→「月々約6.2万円」。1つ目（変動）の月々の返済だけ出す（2026-11-04 浩平さん指示：必要年収と金利は出さない）
-      const first = f.値!.replace(/^代表年齢[^。]*。/, "").split("。")[0];
+      const first = dropAgeHead(f.値!).split("。")[0];
       const monthly = first.match(/月々約[\d.,]+万円/)?.[0];
       if (!monthly) return null;
       return { label: `返済の目安（${down ? `住み替えで頭金${down}・` : ""}${term ?? "?"}年）`, value: monthly, ids: [f.id] };
@@ -531,7 +535,7 @@ export function firstSentence(text: string): { head: string; rest: string | null
 export function aspectLine(f: Fact): { label: string; value: string } | null {
   if (/^必要年収/.test(f.項目)) return null;
   if (/の返済の目安/.test(f.項目)) {
-    const monthly = (f.値 ?? "").replace(/^代表年齢[^。]*。/, "").split("。")[0].match(/月々約[\d.,]+万円/)?.[0];
+    const monthly = dropAgeHead(f.値 ?? "").split("。")[0].match(/月々約[\d.,]+万円/)?.[0];
     return monthly ? { label: "返済の目安", value: monthly } : null;
   }
   if (/^月々の返済額/.test(f.項目)) return f.値 ? { label: "月々の返済額", value: f.値 } : null;

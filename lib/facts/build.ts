@@ -4,6 +4,7 @@
 
 import { calcLoan, loanTerm, shareAboveIncome, type LoanAssumptions } from "../calc/loan";
 import {
+  ageBand,
   formatChange,
   formatDistance,
   formatManYen,
@@ -857,8 +858,10 @@ function buyerFacts(c: Collected): FactDraft[] {
       })
       .join("。");
   const termOf = (t: TargetInput) => loanTerm(la, t.representative_age);
+  // 値の頭は「50代半ばで借りる場合（55歳で計算）」。「代表年齢55歳」は意味が伝わりにくいので年代で書く（2026-11-04 浩平さん指摘）
+  const borrowerAge = (ages: number[]) => `${ages.map(ageBand).join("・")}で借りる場合（${ages.join("・")}歳で計算）`;
 
-  // ターゲット候補ごとの返済（代表年齢から返済期間を決める）。返済期間が同じ候補は数字も同じなので1行にまとめる
+  // ターゲット候補ごとの返済（候補の年齢から返済期間を決める）。返済期間が同じ候補は数字も同じなので1行にまとめる
   // （docs/履歴/事実シートの修正_実装案.md 2.3。指示文は候補名で答えるだけなので、行に候補名を並べれば足りる）
   const terms = [...new Set(c.targets.map(termOf))].sort((x, y) => y - x);
   for (const term of terms) {
@@ -867,7 +870,7 @@ function buyerFacts(c: Collected): FactDraft[] {
       fact(
         "B",
         `【${group.map((t) => t.name).join("・")}】の返済の目安（返済期間${term}年）`,
-        `代表年齢${group.map((t) => t.representative_age).join("・")}歳。${repayment(la, group[0].representative_age)}`,
+        `${borrowerAge(group.map((t) => t.representative_age))}。${repayment(la, group[0].representative_age)}`,
         { 出典: `ローン計算（頭金${la.downPaymentPct}%・完済${la.maxAgeAtPayoff}歳まで）・${shareSrc.出典}`, 時点: rates[0].row.as_of },
       ),
     );
@@ -886,7 +889,7 @@ function buyerFacts(c: Collected): FactDraft[] {
     const src = basis.includes("三大都市圏") ? basis : `${basis}（三大都市圏）`;
     for (const t of c.targets.filter((t) => t.uses_resale_down_payment)) {
       out.push(
-        fact("B", `【${t.name}】の返済の目安（${down.label}、返済期間${termOf(t)}年）`, `代表年齢${t.representative_age}歳。${repayment(lr, t.representative_age)}`, {
+        fact("B", `【${t.name}】の返済の目安（${down.label}、返済期間${termOf(t)}年）`, `${borrowerAge([t.representative_age])}。${repayment(lr, t.representative_age)}`, {
           出典: `ローン計算（頭金${down.text}：${src}・完済${la.maxAgeAtPayoff}歳まで）・${shareSrc.出典}`,
           時点: down.row.as_of,
         }),
@@ -909,7 +912,7 @@ function buyerFacts(c: Collected): FactDraft[] {
   }
   for (const t of c.targets) {
     out.push(
-      fact("B", `ターゲット候補「${t.name}」の定義`, `${t.definition ?? "定義は未設定"}（代表年齢${t.representative_age}歳）`, {
+      fact("B", `ターゲット候補「${t.name}」の定義`, t.definition ?? "定義は未設定", {
         出典: "ターゲット候補の一覧（設計まとめ）",
         時点: "2026-10",
       }),
