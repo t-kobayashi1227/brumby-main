@@ -174,9 +174,9 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
         <div className="min-w-0">
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element -- public/ の絵をそのまま出す（next.config.ts で画像の最適化を止めている）
-            <img src={image} alt={`${main?.name}のイメージ`} className="aspect-[6/5] w-full rounded-lg border border-line bg-[#fbf8f8] object-contain" />
+            <img src={image} alt={`${main?.name}のイメージ`} className="aspect-[2/1] w-full rounded-lg border border-line bg-[#e3f0fd] object-cover" />
           ) : (
-            <div className="grid aspect-[6/5] w-full place-items-center rounded-lg border border-line bg-primary-soft/50 text-primary">
+            <div className="grid aspect-[2/1] w-full place-items-center rounded-lg border border-line bg-primary-soft/50 text-primary">
               <UsersIcon className="size-12" />
             </div>
           )}

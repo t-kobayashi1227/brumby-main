@@ -333,7 +333,7 @@ export function concernTopic(evidence: string[], facts: Map<string, Fact>): stri
 
 /**
  * 基本の6候補の絵（public/targets/）。AIが加えた候補には絵を出さない
- * 2026-11-04 浩平さん提供のピクトグラム風の絵に6枚とも差し替え。人物が縦長なので、横長の枠でも切らずに全体を出す（object-contain、背景は絵の地の色）
+ * 2026-11-04 浩平さん提供の青い横長の絵（2:1）に6枚とも差し替え。50代の住み替えはダンボールなし、単身はポシェットなしの版。外側の白い縁は切り落として720x360にしている
  */
 export const TARGET_IMAGES: Record<string, string> = {
   若い夫婦: "/targets/young-couple.webp",

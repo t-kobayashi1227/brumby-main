@@ -100,13 +100,13 @@ function TargetCard({ t, position, facts }: { t: Target; position: number; facts
   const groups = groupByAspect(t.evidence, facts).filter((g) => !g.optional);
 
   return (
-    // 横幅が狭いあいだ（lg未満）は絵を左に置いた横長のカード、広いときは絵を上にして3つ並べる
+    // 横幅が狭いあいだ（lg未満）は絵を左上に小さく置いた横長のカード、広いときは絵を上にして3つ並べる（絵は2:1のまま切らない）
     <li className={`flex min-w-0 flex-col overflow-hidden rounded-lg border sm:flex-row lg:flex-col ${main ? "border-primary/50 bg-primary-soft/25" : "border-line"}`}>
       {image ? (
         // eslint-disable-next-line @next/next/no-img-element -- public/ の絵をそのまま出す（next.config.ts で画像の最適化を止めている）
-        <img src={image} alt={`${t.name}のイメージ`} className="aspect-[2/1] w-full shrink-0 border-b border-line bg-[#fbf8f8] object-contain sm:aspect-auto sm:w-[34%] sm:border-b-0 sm:border-r lg:aspect-[2/1] lg:w-full lg:border-r-0 lg:border-b print:hidden" />
+        <img src={image} alt={`${t.name}のイメージ`} className="aspect-[2/1] w-full shrink-0 border-b border-line bg-[#e3f0fd] object-cover sm:m-3 sm:mr-0 sm:w-[38%] sm:self-start sm:rounded-md sm:border lg:m-0 lg:w-full lg:rounded-none lg:border-0 lg:border-b print:hidden" />
       ) : (
-        <div className="grid aspect-[2/1] w-full shrink-0 place-items-center border-b border-line bg-primary-soft/40 text-primary sm:aspect-auto sm:w-[34%] sm:border-b-0 sm:border-r lg:aspect-[2/1] lg:w-full lg:border-r-0 lg:border-b print:hidden">
+        <div className="grid aspect-[2/1] w-full shrink-0 place-items-center border-b border-line bg-primary-soft/40 text-primary sm:m-3 sm:mr-0 sm:w-[38%] sm:self-start sm:rounded-md sm:border lg:m-0 lg:w-full lg:rounded-none lg:border-0 lg:border-b print:hidden">
           <UsersIcon className="size-10" />
         </div>
       )}
