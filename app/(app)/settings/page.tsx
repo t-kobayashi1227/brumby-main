@@ -83,12 +83,12 @@ export default async function SettingsPage() {
         </table>
       </Section>
 
-      <Section title="ターゲット候補" note="販売戦略で選ぶ買い手の層です。想定の年代は、返済の目安の計算に使います（かっこ内の年齢で返済期間を決めます）。">
+      <Section title="ターゲット候補" note="販売戦略で選ぶ買い手の層です。返済の目安は、この年齢で借りる場合として計算します（返済期間を決めるため）。買い手の年代を決めるものではありません。">
         <table className="w-full min-w-[640px] border-collapse">
           <thead>
             <tr>
               <th className={th}>名前</th>
-              <th className={th}>想定の年代</th>
+              <th className={th}>返済の計算に使う年齢</th>
               <th className={th}>定義</th>
             </tr>
           </thead>
@@ -97,7 +97,7 @@ export default async function SettingsPage() {
             {targets.map((t) => (
               <tr key={t.id}>
                 <td className={`${td} font-medium whitespace-nowrap`}>{t.name}</td>
-                <td className={`${td} tabular-nums whitespace-nowrap`}>{ageBand(t.representative_age)}（{t.representative_age}歳）</td>
+                <td className={`${td} tabular-nums whitespace-nowrap`}>{t.representative_age}歳（{ageBand(t.representative_age)}）</td>
                 <td className={`${td} text-body`}>{t.definition ?? "―"}</td>
               </tr>
             ))}
