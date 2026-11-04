@@ -182,6 +182,8 @@ function ewktPoint(lon: number, lat: number): string {
 export async function saveProperty(_prev: PropertyFormState, formData: FormData): Promise<PropertyFormState> {
   let createdId: number | null = null;
   let located = false;
+  // 「戦略を作り直す」から開いた画面で保存したときは、販売戦略の画面へ移って作り直しを始める（2026-11-04）
+  let rebuildId: number | null = null;
   try {
     const sql = getSql();
     // 先に全部の欄を確かめる（誤りがあれば何も保存しない）
@@ -201,8 +203,14 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
       const warning = before.address !== values.address ? await geocodeAndStore(sql, id, values.address) : null;
       revalidatePath(`/properties/${id}`);
       revalidatePath("/properties");
-      if (warning) return { error: `保存しました。${warning}` };
-      return { ok: before.address !== values.address ? "保存しました。住所が変わったので、位置を取り直しました。地図のピンを確かめてください。" : "保存しました。" };
+      const rebuild = text(formData, "after_save") === "strategy";
+      if (warning) {
+        return { error: rebuild ? `保存しました。${warning}「この位置で確定」を押すと、戦略の作り直しに進みます。` : `保存しました。${warning}` };
+      }
+      if (!rebuild) {
+        return { ok: before.address !== values.address ? "保存しました。住所が変わったので、位置を取り直しました。地図のピンを確かめてください。" : "保存しました。" };
+      }
+      rebuildId = id;
     }
 
     createdId = await sql.begin(async (tx) => {
@@ -215,6 +223,8 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
+  // redirect は例外で移るので、try の外で呼ぶ
+  if (rebuildId !== null) redirect(`/strategy/${rebuildId}?auto=1`);
   // 登録したら、そのまま販売戦略の画面で戦略づくりを始める（周辺情報の取得と事実シートの作成も、その中で行う）
   // 住所から位置を出せなかったときだけ、物件の画面（地図でピンを置く）へ
   redirect(located ? `/strategy/${createdId}?auto=1` : `/properties/${createdId}?created=1`);

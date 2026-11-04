@@ -7,6 +7,7 @@ import LocationMap from "../LocationMap";
 import PropertyForm, { type CompetitorValues, type PropertyValues, type TransportValues } from "../PropertyForm";
 
 // 物件の画面：登録した内容の変更と、地図での位置の確認（docs/設計まとめ.md「入力画面の動き」）
+// 販売戦略の画面の「物件情報を直す」（保存してもこの画面に残る）と「戦略を作り直す」（?rebuild=1、保存すると作り直しへ進む）から開く
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,8 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
   const sp = await searchParams;
   const propertyId = parsePropertyId(id);
   if (propertyId === null) notFound();
+  // 販売戦略の画面の「戦略を作り直す」から開いたとき（?rebuild=1）。保存すると戦略の作り直しへ進む
+  const rebuild = sp.rebuild === "1";
 
   const sql = getSql();
   const [p] = await sql<PropertyRow[]>`
@@ -91,13 +94,21 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
           販売戦略を見る →
         </Link>
       </div>
+      {rebuild && (
+        <div className="rounded-md border border-[#b9cdf0] bg-primary-soft px-4 py-3 text-xs text-ink">
+          登録した物件情報を入れてあります。変わったところを直して「保存して戦略を作り直す」を押すと、販売戦略の画面に移って作り直しを始めます。
+          <Link href={`/strategy/${propertyId}`} className="ml-2 text-brand underline">
+            作り直さずに戻る
+          </Link>
+        </div>
+      )}
       {sp.created === "1" && (
         <div className="rounded-md border border-[#bfe5c6] bg-[#e9f8ec] px-4 py-3 text-xs text-[#157347]">
           登録しました。住所から位置を出せなかったため、下の地図をクリックしてピンを置き、「この位置で確定」を押してください。販売戦略づくりに進みます。
         </div>
       )}
       <LocationMap propertyId={propertyId} lon={p.lon} lat={p.lat} source={p.location_source} geocodeTitle={p.geocode_title} />
-      <PropertyForm values={values} />
+      <PropertyForm values={values} rebuild={rebuild} />
     </div>
   );
 }
