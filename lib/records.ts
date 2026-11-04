@@ -125,6 +125,14 @@ export function salesStage(saleStatus: string | null, strategy: { hasSucceeded: 
   return "未着手";
 }
 
+/** 媒体ごとの実績の、1つの値の合計。入っていない行（不明）があれば partial を立て、0件とも完全な合計とも分ける */
+export interface PartialSum {
+  /** 入っている行だけの合計。どの行にも入っていなければ null（不明） */
+  sum: number | null;
+  /** 入っていない行があるか（合計は「一部不明」として出す） */
+  partial: boolean;
+}
+
 /** 販売施策タブの「販売記録の実績」に出す、媒体ごとの合計 */
 export interface MediaResultTotal {
   /** 媒体一覧の ID。「その他」の媒体は null */
@@ -134,19 +142,32 @@ export interface MediaResultTotal {
   periods: number;
   /** 一番早い開始日（YYYY-MM-DD） */
   firstStartedOn: string;
-  /** 合計。どの行にも入っていなければ null（0件と「記録なし」を分ける） */
-  costManYen: number | null;
-  inquiries: number | null;
-  viewings: number | null;
+  costManYen: PartialSum;
+  inquiries: PartialSum;
+  viewings: PartialSum;
 }
 
 type ResultRow = { media_id: string | null; name: string; started_on: string; cost_man_yen: number | null; inquiries: number | null; viewings: number | null };
 
-const addOrNull = (a: number | null, b: number | null) => (b === null ? a : (a ?? 0) + b);
+const EMPTY: PartialSum = { sum: null, partial: false };
+
+/** 合計に1つの値を足す。null は足さずに「一部不明」として残す（推測で0にしない） */
+function add(a: PartialSum, b: number | null, opts: { round?: boolean } = {}): PartialSum {
+  if (b === null) return { sum: a.sum, partial: true };
+  const sum = (a.sum ?? 0) + b;
+  return { sum: opts.round ? Math.round(sum * 10) / 10 : sum, partial: a.partial };
+}
+
+/** 合計どうしを足す（表の「合計」行） */
+function merge(a: PartialSum, b: PartialSum, opts: { round?: boolean } = {}): PartialSum {
+  const sum = a.sum === null ? b.sum : b.sum === null ? a.sum : a.sum + b.sum;
+  return { sum: sum !== null && opts.round ? Math.round(sum * 10) / 10 : sum, partial: a.partial || b.partial };
+}
 
 /**
  * 媒体ごとの実績（media_results の行）を媒体ごとに足し合わせる。数えるのはシステムで、AI は使わない
  * - 媒体一覧の媒体は ID で、「その他」は名前でまとめる
+ * - 入っていない値（不明）は0にせず、partial で「一部不明」と分かるようにする
  * - 費用は0.1万円単位で丸める（小数の足し算の誤差を出さない）
  * - 並びは最初に掲載した順（同じ日は記録の順）
  */
@@ -154,13 +175,12 @@ export function totalsByMedia(rows: ResultRow[]): MediaResultTotal[] {
   const byKey = new Map<string, MediaResultTotal>();
   for (const r of rows) {
     const key = r.media_id ? `id:${r.media_id}` : `other:${r.name}`;
-    const t = byKey.get(key) ?? { mediaId: r.media_id, name: r.name, periods: 0, firstStartedOn: r.started_on, costManYen: null, inquiries: null, viewings: null };
+    const t = byKey.get(key) ?? { mediaId: r.media_id, name: r.name, periods: 0, firstStartedOn: r.started_on, costManYen: EMPTY, inquiries: EMPTY, viewings: EMPTY };
     t.periods += 1;
     if (r.started_on < t.firstStartedOn) t.firstStartedOn = r.started_on;
-    t.costManYen = addOrNull(t.costManYen, r.cost_man_yen);
-    if (t.costManYen !== null) t.costManYen = Math.round(t.costManYen * 10) / 10;
-    t.inquiries = addOrNull(t.inquiries, r.inquiries);
-    t.viewings = addOrNull(t.viewings, r.viewings);
+    t.costManYen = add(t.costManYen, r.cost_man_yen, { round: true });
+    t.inquiries = add(t.inquiries, r.inquiries);
+    t.viewings = add(t.viewings, r.viewings);
     byKey.set(key, t);
   }
   return [...byKey.values()].sort((a, b) => (a.firstStartedOn < b.firstStartedOn ? -1 : a.firstStartedOn > b.firstStartedOn ? 1 : 0));
@@ -168,7 +188,9 @@ export function totalsByMedia(rows: ResultRow[]): MediaResultTotal[] {
 
 /** 媒体ごとの合計を、全媒体でもう一度足す（表の「合計」行） */
 export function grandTotal(totals: MediaResultTotal[]): Pick<MediaResultTotal, "costManYen" | "inquiries" | "viewings"> {
-  const sum = (k: "costManYen" | "inquiries" | "viewings") => totals.reduce<number | null>((a, t) => addOrNull(a, t[k]), null);
-  const cost = sum("costManYen");
-  return { costManYen: cost === null ? null : Math.round(cost * 10) / 10, inquiries: sum("inquiries"), viewings: sum("viewings") };
+  return {
+    costManYen: totals.reduce((a, t) => merge(a, t.costManYen, { round: true }), EMPTY),
+    inquiries: totals.reduce((a, t) => merge(a, t.inquiries), EMPTY),
+    viewings: totals.reduce((a, t) => merge(a, t.viewings), EMPTY),
+  };
 }

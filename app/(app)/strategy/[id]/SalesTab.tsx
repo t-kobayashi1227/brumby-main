@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { StrategyResult } from "../../../../lib/agents/run";
 import type { Fact } from "../../../../lib/facts/types";
-import { SALE_STATUS_LABEL, SALE_STATUSES, grandTotal, type MediaResultTotal } from "../../../../lib/records";
+import { SALE_STATUS_LABEL, SALE_STATUSES, grandTotal, type MediaResultTotal, type PartialSum } from "../../../../lib/records";
 import { defaultBudgetIndex, placeOfAnalysis } from "../../../../lib/report";
 import { AlertIcon, ChartIcon, ClipboardIcon, MegaphoneIcon, SparkIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, HypothesisBadge, Num, useReportNav } from "./parts";
@@ -51,12 +51,32 @@ export default function SalesTab({ r, facts, mediaInfo, propertyId, records }: {
 
   const tiles: { label: string; value: React.ReactNode; sub?: React.ReactNode }[] = [
     { label: "メインの買い手", value: main ? main.name : "未設定", sub: main ? <HypothesisBadge /> : undefined },
-    { label: "最初に出す媒体", value: first ? nameOf(first.id, first.name) : "未設定", sub: first ? <span className="text-[12px] text-sub">{first.purpose}</span> : undefined },
-    { label: "掲載の軸にする訴求", value: appeals[0] ? <span className="line-clamp-2 text-[14px]">{appeals[0].text}</span> : "未設定" },
+    // 媒体の目的と訴求はAIの文なので ✦ を付ける（事実と見分ける決まり）
+    {
+      label: "最初に出す媒体",
+      value: first ? nameOf(first.id, first.name) : "未設定",
+      sub: first ? (
+        <span className="flex gap-1 text-[12px] text-sub">
+          <SparkIcon className="mt-0.5 size-3 shrink-0 text-[#6b4fc0]" />
+          <span className="min-w-0">{first.purpose}</span>
+        </span>
+      ) : undefined,
+    },
+    {
+      label: "掲載の軸にする訴求",
+      value: appeals[0] ? (
+        <span className="flex gap-1 text-[14px]">
+          <SparkIcon className="mt-1 size-3 shrink-0 text-[#6b4fc0]" />
+          <span className="min-w-0">{appeals[0].text}</span>
+        </span>
+      ) : (
+        "未設定"
+      ),
+    },
     {
       label: "予算の前提",
       value: inputSim ? `${inputSim.totalManYen}万円` : "未入力",
-      sub: <span className="text-[12px] text-sub">{inputSim ? "物件情報で入れた総額" : "下の試算は20万円から表示"}</span>,
+      sub: <span className="text-[12px] text-sub">{inputSim ? "物件情報で入れた総額" : "下の試算は20万円で表示（切り替え可）"}</span>,
     },
   ];
 
@@ -106,7 +126,7 @@ export default function SalesTab({ r, facts, mediaInfo, propertyId, records }: {
 
       <Steps r={r} appeals={appeals} media={media} nameOf={nameOf} propertyId={propertyId} records={records} />
 
-      <MediaPlan media={media} sims={sims} nameOf={nameOf} mediaInfo={mediaInfo} facts={facts} />
+      <MediaPlan key={sims.map((s) => `${s.totalManYen}${s.isInput ? "i" : ""}`).join(",")} media={media} sims={sims} nameOf={nameOf} mediaInfo={mediaInfo} facts={facts} />
 
       <RecordResults records={records} propertyId={propertyId} />
     </div>
@@ -185,7 +205,8 @@ function Steps({
         <div className="grid gap-1 text-[13px]">
           {records.totals.length > 0 && (
             <div className="text-ink">
-              記録 {records.totals.length}媒体{recorded.inquiries !== null && `・問い合わせ ${recorded.inquiries}件`}
+              記録のある媒体 {records.totals.length}つ
+              {recorded.inquiries.sum !== null && `・問い合わせ ${recorded.inquiries.sum}件${recorded.inquiries.partial ? "（一部不明）" : ""}`}
             </div>
           )}
           <Link href={`/records/${propertyId}`} className="text-primary underline">
@@ -236,10 +257,13 @@ function MediaPlan({
   const sim = sims[picked] ?? null;
   const amountOf = (id: string) => sim?.rows.find((row) => row.id === id)?.amountManYen ?? 0;
 
+  // ①の総額が10万・20万・30万円と同じときは、同じ金額の切り替えを2つ出さない
+  const inputTotal = sims.find((s) => s.isInput)?.totalManYen;
+  const choices = sims.map((s, i) => ({ s, i })).filter(({ s }) => s.isInput || s.totalManYen !== inputTotal);
   const toggle =
     sims.length > 0 ? (
-      <div role="group" aria-label="予算の総額" className="flex flex-wrap gap-1">
-        {sims.map((s, i) => (
+      <div role="group" aria-label="予算の総額" className="flex flex-wrap gap-1 print:hidden">
+        {choices.map(({ s, i }) => (
           <button
             key={`${s.totalManYen}-${s.isInput}`}
             type="button"
@@ -247,17 +271,18 @@ function MediaPlan({
             aria-pressed={i === picked}
             className={`rounded-full border px-3 py-1 text-[12px] cursor-pointer ${i === picked ? "border-primary bg-primary text-white" : "border-line bg-white text-body hover:bg-subtle"}`}
           >
-            {s.isInput ? `入力の総額 ${s.totalManYen}万円` : `${s.totalManYen}万円`}
+            {s.isInput ? `物件情報の総額 ${s.totalManYen}万円` : `${s.totalManYen}万円`}
           </button>
         ))}
       </div>
     ) : undefined;
 
   return (
-    <Card title="媒体の順位と配分" icon={MegaphoneIcon} aside={toggle}>
+    <Card title="媒体の順位と配分" icon={MegaphoneIcon} aside={toggle} className="print:[print-color-adjust:exact]">
       <div className="mb-3 grid gap-0.5 rounded-lg bg-subtle px-3 py-2 text-[12px] text-body">
-        <div className="font-bold text-accent">配分はAIの暫定の見立てです。費用・反響の実績には基づきません。</div>
-        <div>金額は、配分（%）×総額をシステムが0.1万円単位で計算した参考の試算です。媒体の掲載料・最低料金、写真撮影などの制作費は入っていません。</div>
+        <div className="font-bold text-accent">参考の配分を示した試算です。正式な費用・見積もりではありません。</div>
+        <div>配分はAIの暫定の見立てで、費用・反響の実績には基づきません。金額は、配分（%）×総額をシステムが0.1万円単位で計算しています。媒体の掲載料・最低料金、写真撮影などの制作費は入っていません。</div>
+        {sim && <div className="hidden print:block">試算の総額：{sim.totalManYen}万円{sim.isInput ? "（物件情報の総額）" : ""}</div>}
       </div>
       <ol className="grid gap-2">
         {media.map((x, i) => (
@@ -282,14 +307,14 @@ function MediaPlan({
                   <span className="w-[3.2em] shrink-0 text-right text-[12px] text-sub">{x.share}%</span>
                   {sim && <span className="w-[5.5em] shrink-0 text-right text-[14px] font-bold text-ink">{manYen(amountOf(x.id))}</span>}
                 </div>
-                <details className="group mt-1.5">
+                <details className="mt-1.5 print:hidden">
                   <summary className="cursor-pointer text-[12px] text-primary underline">理由を見る</summary>
-                  <div className="mt-1.5 grid gap-1">
-                    <Ai size="sm">{x.reason}</Ai>
-                    <Ai size="sm">配分：{x.share_reason}</Ai>
-                    <Evidence ids={x.evidence} facts={facts} max={2} />
-                  </div>
+                  <Reasons x={x} facts={facts} />
                 </details>
+                {/* 閉じた details は印刷されないので、印刷では理由をそのまま出す */}
+                <div className="hidden print:block">
+                  <Reasons x={x} facts={facts} />
+                </div>
               </div>
             </div>
           </li>
@@ -304,11 +329,30 @@ function MediaPlan({
   );
 }
 
+function Reasons({ x, facts }: { x: MediaItem; facts: Map<string, Fact> }) {
+  return (
+    <div className="mt-1.5 grid gap-1">
+      <Ai size="sm">{x.reason}</Ai>
+      <Ai size="sm">配分：{x.share_reason}</Ai>
+      <Evidence ids={x.evidence} facts={facts} max={2} />
+    </div>
+  );
+}
+
 /** 販売記録の実績。記録が1件も無ければ出さない（4ステップ目の「販売記録を開く」から入れる） */
 function RecordResults({ records, propertyId }: { records: SalesRecords; propertyId: number }) {
   if (records.status === null && records.totals.length === 0) return null;
   const total = grandTotal(records.totals);
-  const cell = (n: number | null, unit: "件" | "万円") => (n === null ? <span className="text-muted">未記録</span> : unit === "万円" ? manYen(n) : `${n}件`);
+  // 入っていない値は推測で0にしない。一部の期間だけ入っているときは「一部不明」を添える
+  const cell = (v: PartialSum, unit: "件" | "万円") =>
+    v.sum === null ? (
+      <span className="text-muted">不明</span>
+    ) : (
+      <>
+        {unit === "万円" ? manYen(v.sum) : `${v.sum}件`}
+        {v.partial && <span className="ml-1 text-[11px] font-normal text-muted">（一部不明）</span>}
+      </>
+    );
   const statusLabel = records.status && (SALE_STATUSES as readonly string[]).includes(records.status) ? SALE_STATUS_LABEL[records.status as (typeof SALE_STATUSES)[number]] : records.status;
 
   return (
@@ -324,7 +368,7 @@ function RecordResults({ records, propertyId }: { records: SalesRecords; propert
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-body">
         {statusLabel && <span className={`rounded px-2 py-0.5 text-[12px] font-bold ${STATUS_BADGE[records.status ?? ""] ?? "bg-subtle text-sub"}`}>{statusLabel}</span>}
         {records.listedOn && <span>販売開始 {records.listedOn}</span>}
-        <span className="text-sub">販売記録の画面で入れた値を、媒体ごとに足しています。</span>
+        <span className="text-sub">販売記録の画面で入れた値を、媒体ごとに足しています。入っていない値は「不明」です。</span>
       </div>
       {records.totals.length === 0 ? (
         <div className="text-[13px] text-sub">媒体ごとの実績はまだありません。</div>
@@ -334,7 +378,7 @@ function RecordResults({ records, propertyId }: { records: SalesRecords; propert
             <thead>
               <tr className="border-b border-line text-sub">
                 <th className="py-2 pr-2 text-left font-normal">媒体</th>
-                <th className="py-2 pr-2 text-left font-normal whitespace-nowrap">掲載の記録</th>
+                <th className="py-2 pr-2 text-left font-normal whitespace-nowrap">掲載</th>
                 <th className="py-2 pr-2 text-right font-normal">費用</th>
                 <th className="py-2 pr-2 text-right font-normal whitespace-nowrap">問い合わせ</th>
                 <th className="py-2 pr-2 text-right font-normal">内見</th>
@@ -345,7 +389,7 @@ function RecordResults({ records, propertyId }: { records: SalesRecords; propert
                 <tr key={t.mediaId ?? `other:${t.name}`} className="border-b border-canvas">
                   <td className="py-2 pr-2">{t.name}</td>
                   <td className="py-2 pr-2 text-[13px] text-body whitespace-nowrap">
-                    {t.periods}件（{t.firstStartedOn}〜）
+                    {t.periods}回（初回 {t.firstStartedOn}）
                   </td>
                   <td className="py-2 pr-2 text-right whitespace-nowrap">{cell(t.costManYen, "万円")}</td>
                   <td className="py-2 pr-2 text-right whitespace-nowrap">{cell(t.inquiries, "件")}</td>

@@ -96,18 +96,31 @@ describe("totalsByMedia", () => {
   it("媒体ごとに足し、最初に掲載した順に並べる", () => {
     const t = totalsByMedia([
       row("M02", "SUUMO", "2026-10-10", 3.3, 2, 1),
-      row("M01", "自社HP", "2026-10-01", null, 1, 0),
-      row("M02", "SUUMO", "2026-09-20", 0.1, 3, null),
+      row("M01", "自社HP", "2026-10-01", 0, 1, 0),
+      row("M02", "SUUMO", "2026-09-20", 0.1, 3, 2),
     ]);
     expect(t.map((x) => x.mediaId)).toEqual(["M02", "M01"]);
-    expect(t[0]).toEqual({ mediaId: "M02", name: "SUUMO", periods: 2, firstStartedOn: "2026-09-20", costManYen: 3.4, inquiries: 5, viewings: 1 });
+    expect(t[0]).toEqual({
+      mediaId: "M02",
+      name: "SUUMO",
+      periods: 2,
+      firstStartedOn: "2026-09-20",
+      costManYen: { sum: 3.4, partial: false },
+      inquiries: { sum: 5, partial: false },
+      viewings: { sum: 3, partial: false },
+    });
   });
 
-  it("どの行にも入っていない値は null（0件と分ける）", () => {
-    const [t] = totalsByMedia([row("M01", "自社HP", "2026-10-01", null, null, 0)]);
-    expect(t.costManYen).toBeNull();
-    expect(t.inquiries).toBeNull();
-    expect(t.viewings).toBe(0);
+  it("入っていない行は0にせず「一部不明」にする。どの行にも無ければ不明（null）", () => {
+    const [t] = totalsByMedia([row("M01", "自社HP", "2026-10-01", null, null, 1), row("M01", "自社HP", "2026-10-02", null, null, null)]);
+    expect(t.costManYen).toEqual({ sum: null, partial: true });
+    expect(t.inquiries).toEqual({ sum: null, partial: true });
+    expect(t.viewings).toEqual({ sum: 1, partial: true });
+  });
+
+  it("0件は0件のまま（不明と分ける）", () => {
+    const [t] = totalsByMedia([row("M01", "自社HP", "2026-10-01", 0, 0, 0)]);
+    expect(t.inquiries).toEqual({ sum: 0, partial: false });
   });
 
   it("「その他」の媒体は名前でまとめる", () => {
@@ -124,11 +137,14 @@ describe("totalsByMedia", () => {
 });
 
 describe("grandTotal", () => {
-  it("全媒体の合計。どれにも無い値は null", () => {
+  it("全媒体の合計。どれかが一部不明なら合計も一部不明、どれにも無ければ null", () => {
     const t = totalsByMedia([
       { media_id: "M01", name: "A", started_on: "2026-10-01", cost_man_yen: 0.1, inquiries: 1, viewings: null },
       { media_id: "M02", name: "B", started_on: "2026-10-01", cost_man_yen: 0.2, inquiries: null, viewings: null },
     ]);
-    expect(grandTotal(t)).toEqual({ costManYen: 0.3, inquiries: 1, viewings: null });
+    expect(grandTotal(t)).toEqual({ costManYen: { sum: 0.3, partial: false }, inquiries: { sum: 1, partial: true }, viewings: { sum: null, partial: true } });
+  });
+  it("記録が無ければ不明", () => {
+    expect(grandTotal([]).inquiries).toEqual({ sum: null, partial: false });
   });
 });
