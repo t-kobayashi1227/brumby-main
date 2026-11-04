@@ -584,5 +584,58 @@ export const MEDIA_NOTES: Record<string, string> = {
   "C-16": "自社に登録しているお客様に、LINEやメールで新しい物件を知らせます。",
 };
 
-/** 不動産ポータルどうしの違いの補足（今の媒体一覧では、違いは届きやすい年代の見立てだけ） */
-export const PORTAL_DIFF_NOTE = "ポータルどうしの違いは、今は「届きやすい年代」の見立てだけです。掲載料・閲覧数・反響の差は、まだ入っていません。";
+/** 不動産ポータルをまとめた理由（今の媒体一覧では、ポータルどうしの違いは届きやすい年代の見立てだけ） */
+export const PORTAL_DIFF_NOTE = "ポータルどうしの違いは、今は「届きやすい年代」の見立てだけなので、1つにまとめて表示しています。掲載料・閲覧数・反響の差は、まだ入っていません。";
+
+export const PORTAL_CATEGORY = "不動産ポータル";
+
+type MediaRow = MediaOutput["media"][number];
+
+/** 画面に出す媒体の1行。不動産ポータルは members に元の媒体（SUUMO・アットホームなど）を持つ */
+export interface DisplayMedia {
+  key: string;
+  ids: string[];
+  name: string;
+  category: string | null;
+  share: number;
+  purpose: string;
+  target: string;
+  evidence: string[];
+  members: { id: string; name: string; share: number; reason: string; share_reason: string }[];
+}
+
+/**
+ * AIの媒体を画面の行にする。不動産ポータル（SUUMO・アットホーム・LIFULL HOME'S）は1行「不動産ポータル」にまとめ、配分は足す
+ * （2026-11-04 浩平さん指摘「明確な違いがない場合は分けない方が説得力がある。ツールチップにSUUMOやアットホームであることを含めて」）
+ * AIの答えそのものは変えない（保存した答え・点検・販売記録は媒体ごとのまま）。並びは配分の大きい順
+ */
+export function groupMedia(media: MediaRow[], info: (id: string) => { name?: string; category?: string } | undefined): DisplayMedia[] {
+  const uniq = (xs: string[]) => [...new Set(xs.map((x) => x.trim()).filter(Boolean))];
+  const one = (m: MediaRow, name: string, category: string | null): DisplayMedia => ({
+    key: m.id,
+    ids: [m.id],
+    name,
+    category,
+    share: m.share,
+    purpose: m.purpose,
+    target: m.target,
+    evidence: m.evidence,
+    members: [{ id: m.id, name, share: m.share, reason: m.reason, share_reason: m.share_reason }],
+  });
+  const portals = media.filter((m) => info(m.id)?.category === PORTAL_CATEGORY).sort((a, b) => b.share - a.share);
+  const rows = media.filter((m) => info(m.id)?.category !== PORTAL_CATEGORY).map((m) => one(m, info(m.id)?.name ?? m.name, info(m.id)?.category ?? null));
+  if (portals.length > 0) {
+    rows.push({
+      key: "portal",
+      ids: portals.map((m) => m.id),
+      name: PORTAL_CATEGORY,
+      category: PORTAL_CATEGORY,
+      share: portals.reduce((a, m) => a + m.share, 0),
+      purpose: uniq(portals.map((m) => m.purpose)).join("・"),
+      target: uniq(portals.map((m) => m.target)).join("、"),
+      evidence: uniq(portals.flatMap((m) => m.evidence)),
+      members: portals.map((m) => ({ id: m.id, name: info(m.id)?.name ?? m.name, share: m.share, reason: m.reason, share_reason: m.share_reason })),
+    });
+  }
+  return rows.sort((a, b) => b.share - a.share);
+}
