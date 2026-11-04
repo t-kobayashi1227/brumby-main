@@ -108,23 +108,6 @@ export function daysOnMarket(listedOn: string | null, contractedOn: string | nul
   return Math.round((Date.parse(contractedOn) - Date.parse(listedOn)) / 86_400_000);
 }
 
-/** 販売記録の一覧に出すステータス（色分けのバッジ） */
-export type SalesStage = "未着手" | "戦略作成中" | "戦略作成済み" | "販売中" | "販売済み" | "販売中止";
-
-/**
- * 販売記録の入力（sales_records.status）と販売戦略の作成状況（strategy_runs）から、物件がいまどの段階にあるかを決める
- * - 販売の入力があれば、それを優先する（DBの値「成約」は「販売済み」と表示する）
- * - 入力が無い、または「販売前」のときは、販売戦略の有無で決める（一度でも完了していれば「戦略作成済み」）
- */
-export function salesStage(saleStatus: string | null, strategy: { hasSucceeded: boolean; latest: string | null }): SalesStage {
-  if (saleStatus === "成約") return "販売済み";
-  if (saleStatus === "販売中") return "販売中";
-  if (saleStatus === "販売中止") return "販売中止";
-  if (strategy.hasSucceeded) return "戦略作成済み";
-  if (strategy.latest === "queued" || strategy.latest === "running") return "戦略作成中";
-  return "未着手";
-}
-
 /** 媒体ごとの実績の、1つの値の合計。入っていない行（不明）があれば partial を立て、0件とも完全な合計とも分ける */
 export interface PartialSum {
   /** 入っている行だけの合計。どの行にも入っていなければ null（不明） */
