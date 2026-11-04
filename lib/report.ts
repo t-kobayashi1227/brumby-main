@@ -463,7 +463,7 @@ const NOT_FEATURE = /^(価格|所在地|物件区分|広告予算の総額|土�
 const FEATURE_CATEGORIES: FactCategory[] = ["P", "S", "L", "T"];
 
 /**
- * AIが加えた候補のときに「この物件の特徴」に出す事実（重視しやすい点の表がないため）。AIが訴求・推奨方針・第一ターゲットの根拠に引いた事実のうち、物件と立地の強みになるものだけ
+ * AIが加えた候補のときに「物件のポイント」に出す事実（重視しやすい点の表がないため）。AIが訴求・推奨方針・第一ターゲットの根拠に引いた事実のうち、物件と立地の強みになるものだけ
  * 取れなかった・要確認の事実（データの注意点に出す）、0件の施設、物件の見出しと同じ項目は外す。文はAIに作らせず、事実の値をそのまま短くする
  */
 export function summaryFeatures(main: Pick<StrategyOutput, "appeals" | "summary" | "targets">, facts: Map<string, Fact>, max = MAX_TARGET_POINTS): Fact[] {

@@ -11,7 +11,7 @@ import AreaMap from "./AreaMap";
 import AreaPrice from "./AreaPrice";
 import PromptLog from "./PromptLog";
 
-// ① サマリー：販売の基本戦略（メインの買い手・物件の特徴・訴求のポイント・推奨方針。2026-11-04 浩平さん依頼で推奨方針の枠を組み直し）→ 地図と区の価格相場（2カラム、2026-11-03 追加）→ 懸念点 → 次に確かめること → AIに送った内容（最初は閉じておく）
+// ① サマリー：販売の基本戦略（メインの買い手・物件のポイント・訴求のポイント・推奨方針。2026-11-04 浩平さん依頼で推奨方針の枠を組み直し）→ 地図と区の価格相場（2カラム、2026-11-03 追加）→ 懸念点 → 次に確かめること → AIに送った内容（最初は閉じておく）
 // 懸念点の対策案（concerns[].action）は出さない（10/26 決定を 2026-11-03 に浩平さんが再確認）。AIの答えとDBには残る
 // 「データの注意点」（2026-11-04 に「次に確かめること」から改名。利用者が作業を求められていると受け取らないように）は、取得できず・要確認の事実から決まった文で作る（AIは使わない。lib/report.ts の nextCheck）
 
@@ -142,7 +142,7 @@ const RANK_NAME = ["メイン", "第二", "第三", "第四", "第五"];
  * 販売の基本戦略（2026-11-04 浩平さんの見本をもとに組み直し）
  * 左：メインの買い手（絵・名前・説明）とほかの候補／中：物件のポイント＝その買い手が重視しやすい項目の、この物件の値（2026-11-04 見出しを浩平さん指示で「物件のポイント」に。事実。lib/report.ts の targetPoints）と訴求のポイント（AI）／右：推奨方針（AI）とデータの注意点
  * 見本から変えたところ：右の「メインターゲット」は左と同じなので出さない。代表年齢は返済の計算に使う仮の値で、単身の「年代は問わない」と食い違うので出さない。
- * 特徴に価格の割高・割安は入れない（価格の位置づけのラベルは6タブでは出さない決まり。価格は推奨方針の文と価格分析タブで見る）
+ * 物件のポイントに価格の割高・割安は入れない（価格の位置づけのラベルは6タブでは出さない決まり。価格は推奨方針の文と価格分析タブで見る）
  */
 function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts: Map<string, Fact>; factList: Fact[]; notes: number }) {
   const { goTab, openFact } = useReportNav();
@@ -211,7 +211,7 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
           )}
         </div>
 
-        {/* この物件の特徴（事実）と訴求のポイント（AI） */}
+        {/* 物件のポイント（事実）と訴求のポイント（AI） */}
         <div className="grid min-w-0 content-start gap-4 lg:border-x lg:border-line lg:px-5">
           <div>
             <h3 className="mb-2 flex items-center gap-1.5 text-[15px] font-bold text-ink">
@@ -228,7 +228,7 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
                 {points.map((p) => {
                   const f = facts.get(p.ids[0]);
                   return (
-                    <li key={p.label}>
+                    <li key={p.ids.join("+") || p.label}>
                       <button
                         type="button"
                         onClick={() => openFact(p.ids[0])}
