@@ -22,3 +22,10 @@ export function navItemClass(active: boolean): string {
 export function underlineTabClass(active: boolean): string {
   return `px-4 py-2.5 text-[13px] cursor-pointer whitespace-nowrap ${active ? "text-brand font-bold border-b-2 border-brand" : "text-muted"}`;
 }
+
+/** 一覧の状態バッジ（色は呼ぶ側で足す） */
+export const badge = "inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-bold";
+
+/** 一覧の行の右端の小さなボタン */
+export const btnRow = "relative z-10 inline-flex items-center gap-0.5 whitespace-nowrap rounded-md border border-field bg-white px-3 py-1.5 text-[12px] font-bold text-body hover:border-primary hover:text-primary";
+export const btnRowPrimary = "relative z-10 inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-primary px-3 py-1.5 text-[12px] font-bold text-white hover:bg-[#2459b0]";

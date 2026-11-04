@@ -1,24 +1,16 @@
 import Link from "next/link";
 import { getSql } from "../../../lib/db";
-import { formatNumber } from "../../../lib/facts/format";
+import { strategyState } from "../../../lib/listView";
 import { PlusIcon } from "../../_components/icons";
-import { btnAction, card, emptyState, tableHead } from "../../_lib/ui";
+import { btnAction, emptyState } from "../../_lib/ui";
+import PropertyTable, { type PropertyRow } from "./PropertyTable";
 
-// 物件一覧。物件ごとに販売戦略の状態（未実行／実行中／完了／失敗）と第1ターゲットを出し、行を押すと販売戦略の画面（/strategy/[id]）を開く（2026-11-04 物件の画面から変更）
-// 戦略がまだ無い物件も販売戦略の画面を開き、そこで「戦略を作る」を押す。物件情報は販売戦略の画面の「物件情報を直す」から直す
+// 物件一覧。物件ごとに販売戦略の作成状態と第1ターゲット（AIの案）を出し、行か「詳細を見る」で販売戦略の画面（/strategy/[id]）を開く
+// 検索（物件ID・住所）と販売戦略の状態での絞り込み、価格・最終更新での並び替えは画面の中で行う（PropertyTable）
+// 2026-11-05 浩平さんの UI/UX レビューで、「完了」を「戦略作成済み」に、区分は物件IDの横に小さく、最終更新を追加
 // 新しい物件は右上の「新規登録」から入力する（/properties/new）
-// 2026-10-26 までの「販売戦略」の一覧（/strategy）をここに移した
 
 export const dynamic = "force-dynamic";
-
-const COLS = "grid-cols-[1.1fr_2.4fr_0.6fr_0.9fr_0.8fr_0.8fr_1.3fr]";
-
-const STATUS: Record<string, { label: string; className: string }> = {
-  queued: { label: "実行中", className: "text-primary font-bold" },
-  running: { label: "実行中", className: "text-primary font-bold" },
-  succeeded: { label: "完了", className: "text-[#157347] font-bold" },
-  failed: { label: "失敗", className: "text-[#b91c1c] font-bold" },
-};
 
 export default async function PropertyListPage() {
   const rows = await getSql()<
@@ -29,23 +21,36 @@ export default async function PropertyListPage() {
       address: string;
       price_man_yen: number;
       layout: string;
-      created_at: Date;
-      status: string | null;
+      latest: string | null;
       first_target: string | null;
+      updated_at: Date;
     }[]
   >`
-    select p.id, p.code, p.property_class, p.address, p.price_man_yen, p.layout, p.created_at, r.status,
+    select p.id, p.code, p.property_class, p.address, p.price_man_yen, p.layout, r.status as latest,
       (select done.result -> '戦略' -> 'targets' -> 0 ->> 'name' from strategy_runs done
-        where done.property_id = p.id and done.status = 'succeeded' and done.form = '3回' order by done.finished_at desc limit 1) as first_target
+        where done.property_id = p.id and done.status = 'succeeded' and done.form = '3回' order by done.finished_at desc limit 1) as first_target,
+      greatest(p.updated_at, r.created_at, r.finished_at) as updated_at
     from properties p
-    left join lateral (select status from strategy_runs where property_id = p.id order by created_at desc limit 1) r on true
+    left join lateral (select status, created_at, finished_at from strategy_runs where property_id = p.id order by created_at desc limit 1) r on true
     order by p.id
   `;
+
+  const data: PropertyRow[] = rows.map((p) => ({
+    id: p.id,
+    code: p.code,
+    propertyClass: p.property_class,
+    address: p.address,
+    priceManYen: p.price_man_yen,
+    layout: p.layout,
+    strategy: strategyState(p.latest),
+    firstTarget: p.first_target,
+    updatedAt: p.updated_at.toISOString(),
+  }));
 
   return (
     <div className="grid gap-4">
       <div className="flex items-center">
-        <div className="text-[13px] text-body mr-auto">登録した物件 {rows.length}件</div>
+        <div className="text-[13px] text-body mr-auto">登録物件 {rows.length}件</div>
         <Link href="/properties/new" className={btnAction}>
           <PlusIcon className="size-4" />
           新規登録
@@ -54,32 +59,7 @@ export default async function PropertyListPage() {
       {rows.length === 0 ? (
         <div className={emptyState}>物件がありません。「新規登録」から物件情報を入力してください。</div>
       ) : (
-        <div className={`${card} p-5`}>
-          <div className={`${tableHead} ${COLS} text-[12px] text-muted`}>
-            <div>物件ID</div>
-            <div>住所</div>
-            <div>区分</div>
-            <div>価格</div>
-            <div>間取り</div>
-            <div>販売戦略</div>
-            <div>第1ターゲット</div>
-          </div>
-          {rows.map((p) => (
-            // 行全体を販売戦略の画面へのリンクにする
-            <div key={p.id} className={`relative grid ${COLS} gap-2 px-1 py-3 border-b border-canvas text-[13px] text-ink hover:bg-subtle`}>
-              <Link href={`/strategy/${p.id}`} className="absolute inset-0" aria-label={`物件 ${p.code} の販売戦略を開く`} />
-              <div className="font-bold">{p.code}</div>
-              <div>{p.address}</div>
-              <div>{p.property_class}</div>
-              <div>{formatNumber(p.price_man_yen)}万円</div>
-              <div>{p.layout}</div>
-              <div className={p.status ? STATUS[p.status]?.className : "text-muted"}>
-                {p.status ? (STATUS[p.status]?.label ?? p.status) : "未実行"}
-              </div>
-              <div className="text-body">{p.first_target ?? "―"}</div>
-            </div>
-          ))}
-        </div>
+        <PropertyTable rows={data} />
       )}
     </div>
   );
