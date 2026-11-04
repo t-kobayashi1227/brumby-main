@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareNullable, matchesQuery, recordState, saleState, saleStateOrder, strategyState } from "../lib/listView";
+import { compareNullable, matchesQuery, paginate, recordState, saleState, saleStateOrder, strategyState } from "../lib/listView";
 
 describe("strategyState", () => {
   it("一番新しい実行の状態から決める", () => {
@@ -50,5 +50,25 @@ describe("compareNullable", () => {
     const xs = [3, null, 1, 2];
     expect([...xs].sort((a, b) => compareNullable(a, b, "asc"))).toEqual([1, 2, 3, null]);
     expect([...xs].sort((a, b) => compareNullable(a, b, "desc"))).toEqual([3, 2, 1, null]);
+  });
+});
+
+describe("paginate", () => {
+  it("10件ずつに分け、最後のページは残りだけ", () => {
+    expect(paginate(13, 1)).toMatchObject({ pages: 2, current: 1, start: 0, end: 10, from: 1, to: 10 });
+    expect(paginate(13, 2)).toMatchObject({ pages: 2, current: 2, start: 10, end: 13, from: 11, to: 13 });
+  });
+
+  it("ちょうど10件なら1ページ", () => {
+    expect(paginate(10, 1)).toMatchObject({ pages: 1, from: 1, to: 10 });
+  });
+
+  it("範囲外のページは端に寄せる（絞り込みで件数が減ったとき）", () => {
+    expect(paginate(3, 2)).toMatchObject({ pages: 1, current: 1, from: 1, to: 3 });
+    expect(paginate(13, 0)).toMatchObject({ current: 1 });
+  });
+
+  it("0件でも1ページとして扱い、0–0件と出す", () => {
+    expect(paginate(0, 1)).toMatchObject({ pages: 1, current: 1, start: 0, end: 0, from: 0, to: 0 });
   });
 });

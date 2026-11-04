@@ -83,3 +83,59 @@ export function SortHeader<K extends string>({
     </button>
   );
 }
+
+/** 一覧の下のページ送り。件数の表示と、前へ・ページ番号・次へ。1ページに収まるときは件数だけ出す */
+export function Pagination({
+  total,
+  allTotal,
+  from,
+  to,
+  current,
+  pages,
+  onPage,
+}: {
+  /** 絞り込んだあとの件数 */
+  total: number;
+  /** 絞り込む前の件数 */
+  allTotal: number;
+  from: number;
+  to: number;
+  current: number;
+  pages: number;
+  onPage: (page: number) => void;
+}) {
+  // 絞り込み中は「13件中 2件が該当」、ページが分かれるときは表示中の範囲を添える
+  const label =
+    total !== allTotal
+      ? `${allTotal}件中 ${total}件が該当${pages > 1 ? `（${from}–${to}件を表示）` : ""}`
+      : `全${total}件中 ${from}–${to}件を表示`;
+  const btn = "flex size-8 items-center justify-center rounded-md border text-[12px] font-bold";
+  return (
+    <div className="flex items-center justify-between pt-3">
+      <div className="text-[11px] text-muted">
+        {label}
+      </div>
+      {pages > 1 && (
+        <nav className="flex items-center gap-1.5" aria-label="ページ送り">
+          <button type="button" className={`${btn} border-field bg-white text-body disabled:opacity-40 cursor-pointer disabled:cursor-default`} disabled={current === 1} onClick={() => onPage(current - 1)} aria-label="前のページ">
+            ‹
+          </button>
+          {Array.from({ length: pages }, (_, i) => i + 1).map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onPage(n)}
+              aria-current={n === current ? "page" : undefined}
+              className={`${btn} cursor-pointer ${n === current ? "border-primary bg-primary text-white" : "border-field bg-white text-body hover:border-primary hover:text-primary"}`}
+            >
+              {n}
+            </button>
+          ))}
+          <button type="button" className={`${btn} border-field bg-white text-body disabled:opacity-40 cursor-pointer disabled:cursor-default`} disabled={current === pages} onClick={() => onPage(current + 1)} aria-label="次のページ">
+            ›
+          </button>
+        </nav>
+      )}
+    </div>
+  );
+}

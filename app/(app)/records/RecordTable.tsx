@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatJstDateTime, formatNumber } from "../../../lib/facts/format";
-import { matchesQuery, saleStateOrder, SALE_STATES, type RecordState, type SaleState } from "../../../lib/listView";
+import { matchesQuery, paginate, saleStateOrder, SALE_STATES, type RecordState, type SaleState } from "../../../lib/listView";
 import type { PartialSum } from "../../../lib/records";
-import { FilterSelect, SearchBox } from "../../_components/ListToolbar";
+import { FilterSelect, Pagination, SearchBox } from "../../_components/ListToolbar";
 import { ChevronRightIcon, PencilIcon } from "../../_components/icons";
 import { badge, btnRow, btnRowPrimary, card } from "../../_lib/ui";
 
@@ -59,6 +59,12 @@ export default function RecordTable({ rows }: { rows: RecordRow[] }) {
   const [query, setQuery] = useState("");
   const [sale, setSale] = useState<SaleState | "">("");
   const [record, setRecord] = useState<RecordState | "">("");
+  const [page, setPage] = useState(1);
+  // 検索・絞り込みを変えたら1ページ目に戻す
+  const reset = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v);
+    setPage(1);
+  };
 
   const shown = useMemo(
     () =>
@@ -67,13 +73,14 @@ export default function RecordTable({ rows }: { rows: RecordRow[] }) {
         .sort((a, b) => saleStateOrder(a.sale) - saleStateOrder(b.sale) || Number(a.id) - Number(b.id)),
     [rows, query, sale, record],
   );
+  const pg = paginate(shown.length, page);
 
   return (
     <div className="grid gap-3">
       <div className={`${card} flex flex-wrap items-center gap-3 p-3`}>
-        <SearchBox value={query} onChange={setQuery} placeholder="物件ID・住所で検索" />
-        <FilterSelect label="販売状況" value={sale} options={SALE_STATES} onChange={setSale} />
-        <FilterSelect label="記録" value={record} options={RECORD_STATES} onChange={setRecord} />
+        <SearchBox value={query} onChange={reset(setQuery)} placeholder="物件ID・住所で検索" />
+        <FilterSelect label="販売状況" value={sale} options={SALE_STATES} onChange={reset(setSale)} />
+        <FilterSelect label="記録" value={record} options={RECORD_STATES} onChange={reset(setRecord)} />
       </div>
       <div className={`${card} overflow-x-auto p-5`}>
         {/* 狭い画面では表を横にスクロールする（列をつぶして折り返さない） */}
@@ -91,7 +98,7 @@ export default function RecordTable({ rows }: { rows: RecordRow[] }) {
         {shown.length === 0 ? (
           <div className="py-10 text-center text-[13px] text-muted">条件に合う物件がありません</div>
         ) : (
-          shown.map((r) => (
+          shown.slice(pg.start, pg.end).map((r) => (
             <div key={r.id} className={`relative grid ${COLS} ${MIN_W} items-center gap-3 px-1 py-3 border-b border-canvas text-[13px] text-ink hover:bg-subtle`}>
               <Link href={`/records/${r.id}`} className="absolute inset-0" aria-label={`物件 ${r.code} の販売記録を開く`} />
               <div className="min-w-0">
@@ -131,9 +138,7 @@ export default function RecordTable({ rows }: { rows: RecordRow[] }) {
             </div>
           ))
         )}
-        <div className="pt-3 text-[11px] text-muted">
-          {shown.length === rows.length ? `${rows.length}件` : `${rows.length}件中 ${shown.length}件を表示`}
-        </div>
+        <Pagination total={shown.length} allTotal={rows.length} from={pg.from} to={pg.to} current={pg.current} pages={pg.pages} onPage={setPage} />
       </div>
     </div>
   );

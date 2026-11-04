@@ -59,3 +59,17 @@ export function compareNullable(a: number | null, b: number | null, dir: "asc" |
   if (b === null) return -1;
   return dir === "asc" ? a - b : b - a;
 }
+
+/** 一覧の1ページの件数 */
+export const PAGE_SIZE = 10;
+
+/**
+ * ページ送りの計算。ページは1から数え、範囲外は端のページに寄せる（絞り込みで件数が減ったときなど）
+ * from・to は画面に出す「◯–◯件」（1から数える、件数0のときは 0–0）
+ */
+export function paginate(total: number, page: number, size = PAGE_SIZE) {
+  const pages = Math.max(1, Math.ceil(total / size));
+  const current = Math.min(Math.max(1, Math.floor(page) || 1), pages);
+  const start = (current - 1) * size;
+  return { pages, current, start, end: Math.min(start + size, total), from: total === 0 ? 0 : start + 1, to: Math.min(start + size, total) };
+}
