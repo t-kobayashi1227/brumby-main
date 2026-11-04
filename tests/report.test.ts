@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MediaOutput } from "../lib/agents/schemas";
-import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS } from "../lib/report";
+import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex } from "../lib/report";
 import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -310,5 +310,18 @@ describe("販売の基本戦略", () => {
 
   it("基本の6候補には絵がある", () => {
     for (const n of ["若い夫婦", "小中学生のいる家族", "50代の住み替え", "60歳以上", "単身", "親と同居"]) expect(TARGET_IMAGES[n]).toMatch(/^\/targets\/.+\.webp$/);
+  });
+});
+
+describe("defaultBudgetIndex", () => {
+  it("①の総額があればそれを選ぶ", () => {
+    expect(defaultBudgetIndex([{ totalManYen: 15, isInput: true }, { totalManYen: 10, isInput: false }, { totalManYen: 20, isInput: false }])).toBe(0);
+  });
+  it("総額が無ければ20万円", () => {
+    expect(defaultBudgetIndex([{ totalManYen: 10, isInput: false }, { totalManYen: 20, isInput: false }, { totalManYen: 30, isInput: false }])).toBe(1);
+  });
+  it("20万円も無ければ最初の列", () => {
+    expect(defaultBudgetIndex([{ totalManYen: 10, isInput: false }])).toBe(0);
+    expect(defaultBudgetIndex([])).toBe(0);
   });
 });

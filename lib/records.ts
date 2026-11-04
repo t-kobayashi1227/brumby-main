@@ -124,3 +124,51 @@ export function salesStage(saleStatus: string | null, strategy: { hasSucceeded: 
   if (strategy.latest === "queued" || strategy.latest === "running") return "戦略作成中";
   return "未着手";
 }
+
+/** 販売施策タブの「販売記録の実績」に出す、媒体ごとの合計 */
+export interface MediaResultTotal {
+  /** 媒体一覧の ID。「その他」の媒体は null */
+  mediaId: string | null;
+  name: string;
+  /** 記録の行数（掲載の期間の数） */
+  periods: number;
+  /** 一番早い開始日（YYYY-MM-DD） */
+  firstStartedOn: string;
+  /** 合計。どの行にも入っていなければ null（0件と「記録なし」を分ける） */
+  costManYen: number | null;
+  inquiries: number | null;
+  viewings: number | null;
+}
+
+type ResultRow = { media_id: string | null; name: string; started_on: string; cost_man_yen: number | null; inquiries: number | null; viewings: number | null };
+
+const addOrNull = (a: number | null, b: number | null) => (b === null ? a : (a ?? 0) + b);
+
+/**
+ * 媒体ごとの実績（media_results の行）を媒体ごとに足し合わせる。数えるのはシステムで、AI は使わない
+ * - 媒体一覧の媒体は ID で、「その他」は名前でまとめる
+ * - 費用は0.1万円単位で丸める（小数の足し算の誤差を出さない）
+ * - 並びは最初に掲載した順（同じ日は記録の順）
+ */
+export function totalsByMedia(rows: ResultRow[]): MediaResultTotal[] {
+  const byKey = new Map<string, MediaResultTotal>();
+  for (const r of rows) {
+    const key = r.media_id ? `id:${r.media_id}` : `other:${r.name}`;
+    const t = byKey.get(key) ?? { mediaId: r.media_id, name: r.name, periods: 0, firstStartedOn: r.started_on, costManYen: null, inquiries: null, viewings: null };
+    t.periods += 1;
+    if (r.started_on < t.firstStartedOn) t.firstStartedOn = r.started_on;
+    t.costManYen = addOrNull(t.costManYen, r.cost_man_yen);
+    if (t.costManYen !== null) t.costManYen = Math.round(t.costManYen * 10) / 10;
+    t.inquiries = addOrNull(t.inquiries, r.inquiries);
+    t.viewings = addOrNull(t.viewings, r.viewings);
+    byKey.set(key, t);
+  }
+  return [...byKey.values()].sort((a, b) => (a.firstStartedOn < b.firstStartedOn ? -1 : a.firstStartedOn > b.firstStartedOn ? 1 : 0));
+}
+
+/** 媒体ごとの合計を、全媒体でもう一度足す（表の「合計」行） */
+export function grandTotal(totals: MediaResultTotal[]): Pick<MediaResultTotal, "costManYen" | "inquiries" | "viewings"> {
+  const sum = (k: "costManYen" | "inquiries" | "viewings") => totals.reduce<number | null>((a, t) => addOrNull(a, t[k]), null);
+  const cost = sum("costManYen");
+  return { costManYen: cost === null ? null : Math.round(cost * 10) / 10, inquiries: sum("inquiries"), viewings: sum("viewings") };
+}

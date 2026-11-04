@@ -1,214 +1,370 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import type { StrategyResult } from "../../../../lib/agents/run";
 import type { Fact } from "../../../../lib/facts/types";
-import { placeOfAnalysis } from "../../../../lib/report";
-import { AlertIcon, ChartIcon, ChatIcon, ClipboardIcon, DocIcon, MegaphoneIcon, PencilIcon, SparkIcon, YenIcon } from "../../../_components/icons";
-import { Ai, Card, Evidence, Num, useReportNav } from "./parts";
-import MediaDonut, { MEDIA_COLORS } from "./MediaDonut";
+import { SALE_STATUS_LABEL, SALE_STATUSES, grandTotal, type MediaResultTotal } from "../../../../lib/records";
+import { defaultBudgetIndex, placeOfAnalysis } from "../../../../lib/report";
+import { AlertIcon, ChartIcon, ClipboardIcon, MegaphoneIcon, SparkIcon } from "../../../_components/icons";
+import { Ai, Card, Evidence, HypothesisBadge, Num, useReportNav } from "./parts";
 
-// ③ 販売施策：方針 → 実行の流れ → 媒体（推奨の順） → 予算シミュレーション → 媒体の注意点
-// 実行の流れは、保存済みの答え（訴求・媒体・伝え方）を4つの段にまとめ直しただけで、新しい中身はAIに作らせない。進み具合（完了など）は記録の仕組みが無いので出さない
-// 配分（%）はAI（媒体担当）の見立てで、費用・反響の実績に基づかない。順位を主に見せ、%は小さく添える。円グラフは①で総額が入っているときだけ出す
-// 金額は配分×総額をシステムが計算（lib/calc/budget.ts）
+// ③ 販売施策（2026-11-04 浩平さんの依頼で、B案「実行の流れ」を軸に作り直し。構成案は Claude Doc「販売施策タブの構成案」）
+//   方針と4つの要点 → 掲載前に確かめること → 実行の4ステップ → 媒体の順位と配分（予算を切り替えて金額） → 販売記録の実績
+// 画面では AI を動かさず、保存済みの答え（方針・訴求・媒体・伝え方・注意点）を並べ直すだけ。新しい中身はAIに作らせない
+// 出さないもの：問い合わせ見込み・想定反響・成約までの期間・「推奨」の予算（根拠のある数字が無い）、予算ごとに媒体が変わるプラン
+//   （今の試算は同じ配分×総額。媒体の最低料金・相性表をいただいてから）、保存しないチェックリスト（進み具合を記録する仕組みが無い）、円グラフ
+// 配分（%）はAI（媒体担当）の暫定の見立て。金額は配分×総額をシステムが計算（lib/calc/budget.ts）
+// 実績は販売記録の画面で入れた値を、システムが媒体ごとに足しただけ（lib/records.ts の totalsByMedia）
 
 export interface MediaInfo {
   name: string;
   category: string;
 }
 
+/** 販売記録の画面で入れた値（page.tsx で読む）。記録が無ければ status は null、totals は空 */
+export interface SalesRecords {
+  status: string | null;
+  listedOn: string | null;
+  totals: MediaResultTotal[];
+}
+
 const manYen = (n: number) => `${n.toFixed(1)}万円`;
 
-export default function SalesTab({ r, facts, mediaInfo, propertyId }: { r: StrategyResult; facts: Map<string, Fact>; mediaInfo: Record<string, MediaInfo>; propertyId: number }) {
-  const { goTab } = useReportNav();
+// 販売記録の一覧（app/(app)/records/page.tsx）の色にそろえる
+const STATUS_BADGE: Record<string, string> = {
+  販売前: "bg-[#f1f3f6] text-muted",
+  販売中: "bg-primary-soft text-primary",
+  成約: "bg-[#e9f8ec] text-[#157347]",
+  販売中止: "bg-[#eceef2] text-[#5b6476]",
+};
+
+export default function SalesTab({ r, facts, mediaInfo, propertyId, records }: { r: StrategyResult; facts: Map<string, Fact>; mediaInfo: Record<string, MediaInfo>; propertyId: number; records: SalesRecords }) {
   const m = r.戦略;
   const media = [...r.媒体.media].sort((a, b) => b.share - a.share);
   const sims = r.予算シミュレーション;
   const inputSim = sims.find((s) => s.isInput) ?? null;
   const nameOf = (id: string, fallback: string) => mediaInfo[id]?.name ?? fallback;
-  const colorOf = (id: string) => MEDIA_COLORS[r.媒体.media.findIndex((x) => x.id === id) % MEDIA_COLORS.length];
   const appeals = [...m.appeals].sort((a, b) => a.rank - b.rank).slice(0, 3);
-  const combo = m.analysis.find((a) => placeOfAnalysis(a).tab === "target");
+  const main = [...m.targets].sort((a, b) => a.rank - b.rank)[0];
+  const first = media[0];
 
-  const steps: { icon: typeof DocIcon; title: string; body: React.ReactNode }[] = [
+  const tiles: { label: string; value: React.ReactNode; sub?: React.ReactNode }[] = [
+    { label: "メインの買い手", value: main ? main.name : "未設定", sub: main ? <HypothesisBadge /> : undefined },
+    { label: "最初に出す媒体", value: first ? nameOf(first.id, first.name) : "未設定", sub: first ? <span className="text-[12px] text-sub">{first.purpose}</span> : undefined },
+    { label: "掲載の軸にする訴求", value: appeals[0] ? <span className="line-clamp-2 text-[14px]">{appeals[0].text}</span> : "未設定" },
     {
-      icon: DocIcon,
-      title: "掲載の準備",
-      body: (
-        <>
-          <div className="text-[12px] text-sub mb-1">訴求を掲載文と写真の軸にする</div>
-          <ul className="grid gap-0.5 text-[13px] text-ink">
-            {appeals.map((a, i) => (
-              <li key={i} className="flex min-w-0 items-center gap-1" title={a.text}>
-                <SparkIcon className="size-3 shrink-0 text-[#6b4fc0]" />
-                <span className="truncate">{a.text}</span>
-              </li>
-            ))}
-          </ul>
-        </>
-      ),
-    },
-    {
-      icon: MegaphoneIcon,
-      title: "媒体に出す",
-      body: (
-        <>
-          <div className="text-[12px] text-sub mb-1">推奨の順に出す</div>
-          <div className="text-[13px] text-ink">{media.slice(0, 3).map((x) => nameOf(x.id, x.name)).join("・")}</div>
-        </>
-      ),
-    },
-    {
-      icon: ChatIcon,
-      title: "内見で伝える",
-      body: (
-        <>
-          <div className="text-[12px] text-sub mb-1">顧客への伝え方</div>
-          {combo ? (
-            <div className="line-clamp-3">
-              <Ai size="sm">{combo.use}</Ai>
-            </div>
-          ) : (
-            <button type="button" onClick={() => goTab("target")} className="text-[13px] text-primary underline cursor-pointer">
-              ターゲット・訴求タブを見る
-            </button>
-          )}
-        </>
-      ),
-    },
-    {
-      icon: PencilIcon,
-      title: "反響を記録して見直す",
-      body: (
-        <>
-          <div className="text-[12px] text-sub mb-1">問い合わせ・内見の数を媒体ごとに残す</div>
-          <Link href={`/records/${propertyId}`} className="text-[13px] text-primary underline">
-            販売の記録を開く
-          </Link>
-        </>
-      ),
+      label: "予算の前提",
+      value: inputSim ? `${inputSim.totalManYen}万円` : "未入力",
+      sub: <span className="text-[12px] text-sub">{inputSim ? "物件情報で入れた総額" : "下の試算は20万円から表示"}</span>,
     },
   ];
 
   return (
     <div className="grid gap-4">
-      <Card title="販売施策の方針" icon={ClipboardIcon}>
-        <Ai>{m.direction.text}</Ai>
-        <Evidence ids={m.direction.evidence} facts={facts} />
-      </Card>
-
-      <Card title="実行の流れ" icon={ChartIcon}>
-        <ol className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {steps.map((s, i) => (
-            <li key={s.title} className="relative flex gap-2.5 rounded-lg border border-line p-3">
-              <Num n={i + 1} strong={i === 0} />
-              <div className="min-w-0">
-                <div className="mb-1 flex items-center gap-1.5 text-[14px] font-bold text-ink">
-                  <s.icon className="size-4 text-primary" />
-                  {s.title}
-                </div>
-                {s.body}
-              </div>
-            </li>
-          ))}
-        </ol>
-      </Card>
-
-      <div className={`grid gap-4 ${inputSim ? "lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]" : ""}`}>
-        <Card title="推奨する媒体" icon={MegaphoneIcon}>
-          <ol className={`grid gap-2 ${inputSim ? "" : "md:grid-cols-2"}`}>
-            {media.map((x, i) => (
-              <li key={x.id} className="flex gap-2.5 rounded-lg border border-line p-3">
-                <Num n={i + 1} strong={i === 0} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <span className="text-[15px] font-bold text-ink">{nameOf(x.id, x.name)}</span>
-                    <span className="rounded bg-subtle px-1.5 py-0.5 text-[11px] text-sub">{mediaInfo[x.id]?.category ?? "その他"}</span>
-                    <span className="flex items-center gap-1 text-[12px] text-sub">
-                      <SparkIcon className="size-3 shrink-0 text-[#6b4fc0]" />
-                      {x.purpose}・{x.target}
-                    </span>
-                    <span className="ml-auto text-[12px] text-sub" title="配分はAIの見立て（費用・反響の実績には基づかない）">
-                      配分 {x.share}%
-                    </span>
-                  </div>
-                  <div className="mt-1">
-                    <Ai size="sm">{x.reason}</Ai>
-                  </div>
-                  <Evidence ids={x.evidence} facts={facts} max={2} />
-                </div>
-              </li>
-            ))}
-          </ol>
-        </Card>
-
-        {inputSim && (
-          <Card title={`入力の予算 ${inputSim.totalManYen}万円の内訳`} icon={YenIcon}>
-            <div className="flex flex-col items-center gap-3">
-              <MediaDonut items={r.媒体.media.map((x) => ({ label: nameOf(x.id, x.name), share: x.share }))} totalManYen={inputSim.totalManYen} />
-              <ul className="grid w-full gap-1 text-[13px]">
-                {r.媒体.media.map((x) => (
-                  <li key={x.id} className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 shrink-0 rounded-sm" style={{ background: colorOf(x.id) }} aria-hidden />
-                    <span className="mr-auto text-ink">{nameOf(x.id, x.name)}</span>
-                    <span className="font-bold text-ink">{manYen(inputSim.rows.find((row) => row.id === x.id)?.amountManYen ?? 0)}</span>
-                  </li>
-                ))}
-              </ul>
+      {/* 方針と4つの要点 */}
+      <section className="overflow-hidden rounded-[10px] border border-line bg-white">
+        <div className="grid md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <div className="min-w-0 p-5">
+            <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="grid size-8 place-items-center rounded-lg bg-primary-soft text-primary">
+                <ClipboardIcon className="size-[18px]" />
+              </span>
+              <h2 className="text-[17px] font-bold text-ink">販売施策の方針</h2>
+              <span className="text-[12px] text-sub">掲載の準備から見直しまで、下の順に進めます。</span>
             </div>
-          </Card>
-        )}
-      </div>
-
-      <Card title="予算シミュレーション" icon={YenIcon}>
-        <div className="mb-3 grid gap-1 rounded-lg bg-subtle px-3 py-2 text-[12px] text-body">
-          <div className="font-bold text-accent">参考の配分を示した試算です。正式な費用・見積もりではありません。</div>
-          <div>計算：AIが決めた配分（%）× 総額。システムが0.1万円単位で計算しています。</div>
-          <div>前提：媒体ごとの掲載料・最低料金、写真撮影などの制作費は入っていません（PoCでは費用の目安が空欄）。配分は反響の実績に基づかない暫定の値です。</div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-[14px] text-ink border-collapse">
-            <thead>
-              <tr className="text-sub border-b border-line">
-                <th className="py-2 pr-2 font-normal text-left">媒体</th>
-                <th className="py-2 pr-2 font-normal text-right">配分</th>
-                {sims.map((s) => (
-                  <th key={`${s.totalManYen}-${s.isInput}`} className="py-2 pr-2 font-normal text-right whitespace-nowrap">
-                    {s.totalManYen}万円{s.isInput ? "（入力の総額）" : ""}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {media.map((x) => (
-                <tr key={x.id} className="border-b border-canvas">
-                  <td className="py-2 pr-2">{nameOf(x.id, x.name)}</td>
-                  <td className="py-2 pr-2 text-right text-sub">{x.share}%</td>
-                  {sims.map((s) => (
-                    <td key={`${s.totalManYen}-${s.isInput}`} className="py-2 pr-2 text-right whitespace-nowrap">
-                      {manYen(s.rows.find((row) => row.id === x.id)?.amountManYen ?? 0)}
-                    </td>
-                  ))}
-                </tr>
+            <Ai>{m.direction.text}</Ai>
+            <Evidence ids={m.direction.evidence} facts={facts} />
+            <dl className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {tiles.map((t) => (
+                <div key={t.label} className="min-w-0 rounded-lg border border-line bg-subtle/60 px-3 py-2">
+                  <dt className="text-[11px] text-sub">{t.label}</dt>
+                  <dd className="mt-0.5 text-[15px] font-bold leading-snug text-ink break-words">{t.value}</dd>
+                  {t.sub && <dd className="mt-0.5">{t.sub}</dd>}
+                </div>
               ))}
-            </tbody>
-          </table>
+            </dl>
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- public/ の絵をそのまま出す（next.config.ts で画像の最適化を止めている） */}
+          <img src="/sales/house.webp" alt="" aria-hidden className="hidden h-full min-h-[220px] w-full object-cover md:block print:hidden" />
         </div>
-      </Card>
+      </section>
 
+      {/* 掲載前に確かめること（媒体担当の注意点）。対策案（action）は出さない決まり（懸念点と同じ） */}
       {r.媒体.cautions.length > 0 && (
-        <Card title="媒体の注意点" icon={AlertIcon}>
-          <ul className="grid gap-3">
+        <Card title="掲載前に確かめること" icon={AlertIcon}>
+          <ul className="grid gap-2">
             {r.媒体.cautions.map((c, i) => (
-              <li key={i}>
-                <Ai>{c.text}</Ai>
-                <Evidence ids={c.evidence} facts={facts} />
+              <li key={i} className="rounded-lg border border-[#f3d9a6] bg-[#fffaf0] px-3 py-2">
+                <Ai size="sm">{c.text}</Ai>
+                <Evidence ids={c.evidence} facts={facts} max={2} />
               </li>
             ))}
           </ul>
         </Card>
       )}
+
+      <Steps r={r} appeals={appeals} media={media} nameOf={nameOf} propertyId={propertyId} records={records} />
+
+      <MediaPlan media={media} sims={sims} nameOf={nameOf} mediaInfo={mediaInfo} facts={facts} />
+
+      <RecordResults records={records} propertyId={propertyId} />
     </div>
+  );
+}
+
+type MediaItem = StrategyResult["媒体"]["media"][number];
+
+/** 実行の4ステップ。表示だけで、進み具合（済み・未）は記録の仕組みが無いので出さない */
+function Steps({
+  r,
+  appeals,
+  media,
+  nameOf,
+  propertyId,
+  records,
+}: {
+  r: StrategyResult;
+  appeals: StrategyResult["戦略"]["appeals"];
+  media: MediaItem[];
+  nameOf: (id: string, fallback: string) => string;
+  propertyId: number;
+  records: SalesRecords;
+}) {
+  const { goTab } = useReportNav();
+  const combo = r.戦略.analysis.find((a) => placeOfAnalysis(a).tab === "target");
+  const recorded = grandTotal(records.totals);
+
+  const steps: { image: string; title: string; lead: string; body: React.ReactNode }[] = [
+    {
+      image: "/sales/prepare.webp",
+      title: "掲載の準備",
+      lead: "写真と掲載文の軸にする訴求",
+      body: (
+        <ul className="grid gap-1">
+          {appeals.map((a, i) => (
+            <li key={i}>
+              <Ai size="sm">{a.text}</Ai>
+            </li>
+          ))}
+        </ul>
+      ),
+    },
+    {
+      image: "/sales/listing.webp",
+      title: "媒体に掲載する",
+      lead: "順位の高い媒体から出す",
+      body: (
+        <ol className="grid gap-1 text-[13px] text-ink">
+          {media.slice(0, 3).map((x, i) => (
+            <li key={x.id} className="flex items-center gap-1.5">
+              <Num n={i + 1} strong={i === 0} />
+              <span className="min-w-0 break-words">{nameOf(x.id, x.name)}</span>
+            </li>
+          ))}
+        </ol>
+      ),
+    },
+    {
+      image: "/sales/viewing.webp",
+      title: "内見で伝える",
+      lead: "買い手への伝え方",
+      body: combo ? (
+        <Ai size="sm">{combo.use}</Ai>
+      ) : (
+        <button type="button" onClick={() => goTab("target")} className="text-[13px] text-primary underline cursor-pointer">
+          ターゲット・訴求タブを見る
+        </button>
+      ),
+    },
+    {
+      image: "/sales/review.webp",
+      title: "反響を記録して見直す",
+      lead: "問い合わせ・内見の数を媒体ごとに残す",
+      body: (
+        <div className="grid gap-1 text-[13px]">
+          {records.totals.length > 0 && (
+            <div className="text-ink">
+              記録 {records.totals.length}媒体{recorded.inquiries !== null && `・問い合わせ ${recorded.inquiries}件`}
+            </div>
+          )}
+          <Link href={`/records/${propertyId}`} className="text-primary underline">
+            販売記録を開く
+          </Link>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <Card title="実行の4ステップ" icon={ChartIcon}>
+      <ol className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {steps.map((s, i) => (
+          <li key={s.title} className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line">
+            {/* eslint-disable-next-line @next/next/no-img-element -- public/ の絵をそのまま出す（next.config.ts で画像の最適化を止めている） */}
+            <img src={s.image} alt="" aria-hidden className="aspect-[16/9] w-full border-b border-line object-cover print:hidden" />
+            <div className="min-w-0 p-3">
+              <div className="mb-1 flex items-center gap-2">
+                <Num n={i + 1} strong={i === 0} />
+                <span className="text-[14px] font-bold text-ink">{s.title}</span>
+              </div>
+              <div className="mb-1.5 text-[12px] text-sub">{s.lead}</div>
+              {s.body}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
+
+/** 媒体の順位と配分。予算を切り替えると、その総額での金額（システムの計算）を出す */
+function MediaPlan({
+  media,
+  sims,
+  nameOf,
+  mediaInfo,
+  facts,
+}: {
+  media: MediaItem[];
+  sims: StrategyResult["予算シミュレーション"];
+  nameOf: (id: string, fallback: string) => string;
+  mediaInfo: Record<string, MediaInfo>;
+  facts: Map<string, Fact>;
+}) {
+  const [picked, setPicked] = useState(() => defaultBudgetIndex(sims));
+  const sim = sims[picked] ?? null;
+  const amountOf = (id: string) => sim?.rows.find((row) => row.id === id)?.amountManYen ?? 0;
+
+  const toggle =
+    sims.length > 0 ? (
+      <div role="group" aria-label="予算の総額" className="flex flex-wrap gap-1">
+        {sims.map((s, i) => (
+          <button
+            key={`${s.totalManYen}-${s.isInput}`}
+            type="button"
+            onClick={() => setPicked(i)}
+            aria-pressed={i === picked}
+            className={`rounded-full border px-3 py-1 text-[12px] cursor-pointer ${i === picked ? "border-primary bg-primary text-white" : "border-line bg-white text-body hover:bg-subtle"}`}
+          >
+            {s.isInput ? `入力の総額 ${s.totalManYen}万円` : `${s.totalManYen}万円`}
+          </button>
+        ))}
+      </div>
+    ) : undefined;
+
+  return (
+    <Card title="媒体の順位と配分" icon={MegaphoneIcon} aside={toggle}>
+      <div className="mb-3 grid gap-0.5 rounded-lg bg-subtle px-3 py-2 text-[12px] text-body">
+        <div className="font-bold text-accent">配分はAIの暫定の見立てです。費用・反響の実績には基づきません。</div>
+        <div>金額は、配分（%）×総額をシステムが0.1万円単位で計算した参考の試算です。媒体の掲載料・最低料金、写真撮影などの制作費は入っていません。</div>
+      </div>
+      <ol className="grid gap-2">
+        {media.map((x, i) => (
+          <li key={x.id} className="rounded-lg border border-line p-3">
+            <div className="flex gap-2.5">
+              <Num n={i + 1} strong={i === 0} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="text-[15px] font-bold text-ink">{nameOf(x.id, x.name)}</span>
+                  <span className="rounded bg-subtle px-1.5 py-0.5 text-[11px] text-sub">{mediaInfo[x.id]?.category ?? "その他"}</span>
+                  <span className="flex min-w-0 items-center gap-1 text-[12px] text-sub">
+                    <SparkIcon className="size-3 shrink-0 text-[#6b4fc0]" />
+                    <span className="min-w-0 break-words">
+                      {x.purpose}・{x.target}
+                    </span>
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-subtle" aria-hidden>
+                    <div className={`h-full rounded-full ${i === 0 ? "bg-primary" : "bg-primary/55"}`} style={{ width: `${Math.max(0, Math.min(100, x.share))}%` }} />
+                  </div>
+                  <span className="w-[3.2em] shrink-0 text-right text-[12px] text-sub">{x.share}%</span>
+                  {sim && <span className="w-[5.5em] shrink-0 text-right text-[14px] font-bold text-ink">{manYen(amountOf(x.id))}</span>}
+                </div>
+                <details className="group mt-1.5">
+                  <summary className="cursor-pointer text-[12px] text-primary underline">理由を見る</summary>
+                  <div className="mt-1.5 grid gap-1">
+                    <Ai size="sm">{x.reason}</Ai>
+                    <Ai size="sm">配分：{x.share_reason}</Ai>
+                    <Evidence ids={x.evidence} facts={facts} max={2} />
+                  </div>
+                </details>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+      {sim && (
+        <div className="mt-2 text-right text-[13px] text-sub">
+          合計 <span className="font-bold text-ink">{manYen(sim.totalManYen)}</span>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** 販売記録の実績。記録が1件も無ければ出さない（4ステップ目の「販売記録を開く」から入れる） */
+function RecordResults({ records, propertyId }: { records: SalesRecords; propertyId: number }) {
+  if (records.status === null && records.totals.length === 0) return null;
+  const total = grandTotal(records.totals);
+  const cell = (n: number | null, unit: "件" | "万円") => (n === null ? <span className="text-muted">未記録</span> : unit === "万円" ? manYen(n) : `${n}件`);
+  const statusLabel = records.status && (SALE_STATUSES as readonly string[]).includes(records.status) ? SALE_STATUS_LABEL[records.status as (typeof SALE_STATUSES)[number]] : records.status;
+
+  return (
+    <Card
+      title="販売記録の実績"
+      icon={ChartIcon}
+      aside={
+        <Link href={`/records/${propertyId}`} className="text-[12px] text-primary underline">
+          販売記録を開く
+        </Link>
+      }
+    >
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-body">
+        {statusLabel && <span className={`rounded px-2 py-0.5 text-[12px] font-bold ${STATUS_BADGE[records.status ?? ""] ?? "bg-subtle text-sub"}`}>{statusLabel}</span>}
+        {records.listedOn && <span>販売開始 {records.listedOn}</span>}
+        <span className="text-sub">販売記録の画面で入れた値を、媒体ごとに足しています。</span>
+      </div>
+      {records.totals.length === 0 ? (
+        <div className="text-[13px] text-sub">媒体ごとの実績はまだありません。</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[14px] text-ink">
+            <thead>
+              <tr className="border-b border-line text-sub">
+                <th className="py-2 pr-2 text-left font-normal">媒体</th>
+                <th className="py-2 pr-2 text-left font-normal whitespace-nowrap">掲載の記録</th>
+                <th className="py-2 pr-2 text-right font-normal">費用</th>
+                <th className="py-2 pr-2 text-right font-normal whitespace-nowrap">問い合わせ</th>
+                <th className="py-2 pr-2 text-right font-normal">内見</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.totals.map((t) => (
+                <tr key={t.mediaId ?? `other:${t.name}`} className="border-b border-canvas">
+                  <td className="py-2 pr-2">{t.name}</td>
+                  <td className="py-2 pr-2 text-[13px] text-body whitespace-nowrap">
+                    {t.periods}件（{t.firstStartedOn}〜）
+                  </td>
+                  <td className="py-2 pr-2 text-right whitespace-nowrap">{cell(t.costManYen, "万円")}</td>
+                  <td className="py-2 pr-2 text-right whitespace-nowrap">{cell(t.inquiries, "件")}</td>
+                  <td className="py-2 pr-2 text-right whitespace-nowrap">{cell(t.viewings, "件")}</td>
+                </tr>
+              ))}
+              {records.totals.length > 1 && (
+                <tr className="font-bold">
+                  <td className="py-2 pr-2">合計</td>
+                  <td />
+                  <td className="py-2 pr-2 text-right whitespace-nowrap">{cell(total.costManYen, "万円")}</td>
+                  <td className="py-2 pr-2 text-right whitespace-nowrap">{cell(total.inquiries, "件")}</td>
+                  <td className="py-2 pr-2 text-right whitespace-nowrap">{cell(total.viewings, "件")}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
