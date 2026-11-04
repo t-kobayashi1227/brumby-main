@@ -39,7 +39,7 @@ export default function TargetTab({ r, facts }: { r: StrategyResult; facts: Map<
             <li key={`empty-${i}`} className="grid min-h-[100px] place-items-center rounded-lg border border-dashed border-line p-4 text-center">
               <div>
                 <div className="text-[13px] font-bold text-sub">{RANK_LABEL[targets.length + i]}はありません</div>
-                <div className="mt-1 text-[12px] text-muted">AIが、根拠のそろう候補はここまでと判断しました。</div>
+                <div className="mt-1 text-[12px] text-muted">この答えには、この順位の候補がありません。戦略を作り直してください。</div>
               </div>
             </li>
           ))}
@@ -113,7 +113,11 @@ function TargetCard({ t, position, facts }: { t: Target; position: number; facts
       <div className="grid min-w-0 flex-1 content-start gap-2 p-3">
         <div>
           <span className={`rounded px-2 py-0.5 text-[12px] font-bold ${main ? "bg-primary text-white" : "bg-primary-soft text-primary"}`}>{RANK_LABEL[position]}</span>
-          <div className="mt-1 text-[18px] font-bold leading-snug text-ink">{t.name}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="text-[18px] font-bold leading-snug text-ink">{t.name}</span>
+            {/* 指示文で候補を必ず3つにしたので、根拠がそろわない候補は confidence「低」で来る（2026-11-04 浩平さん了承）。その候補だけに札を付ける */}
+            {t.confidence === "低" && <span className="rounded bg-[#fdf1e7] px-1.5 py-0.5 text-[11px] font-bold text-accent">根拠が少ない</span>}
+          </div>
           {t.source === "エージェント提案" && <div className="text-[12px] text-sub">AIが加えた候補{t.definition ? `：${t.definition}` : ""}</div>}
         </div>
 
