@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MediaOutput } from "../lib/agents/schemas";
-import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex, firstSentence, aspectLine, pickAspectFact, MEDIA_NOTES } from "../lib/report";
+import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex, firstSentence, aspectLine, pickAspectFact, MEDIA_NOTES, groupMedia } from "../lib/report";
 import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -405,5 +405,31 @@ describe("媒体の補足", () => {
     expect(Object.keys(MEDIA_NOTES).sort()).toEqual(ids.sort());
     // 強さを言い切る言葉（最大・No.1 など）は書かない
     for (const t of Object.values(MEDIA_NOTES)) expect(t).not.toMatch(/最大|最多|No\.?1|一番|必ず/);
+  });
+});
+
+describe("groupMedia", () => {
+  const info: Record<string, { name: string; category: string }> = {
+    "C-01": { name: "SUUMO", category: "不動産ポータル" },
+    "C-02": { name: "アットホーム", category: "不動産ポータル" },
+    "C-05": { name: "Google検索広告", category: "ネット広告" },
+    "C-15": { name: "オープンハウス（現地販売会）", category: "現地" },
+  };
+  const m = (id: string, share: number, evidence: string[] = []) => ({ id, name: `AI名${id}`, purpose: "問い合わせ", target: "第1ターゲット", share, share_reason: `配分${id}`, reason: `理由${id}`, evidence });
+  it("不動産ポータルは1行にまとめて配分を足し、元の媒体を配分の大きい順に持つ。ほかは1行ずつ、配分の大きい順", () => {
+    const rows = groupMedia([m("C-05", 30), m("C-01", 20, ["B-05"]), m("C-02", 25, ["B-05", "B-06"]), m("C-15", 25)], (id) => info[id]);
+    expect(rows.map((r) => [r.name, r.share])).toEqual([
+      ["不動産ポータル", 45],
+      ["Google検索広告", 30],
+      ["オープンハウス（現地販売会）", 25],
+    ]);
+    expect(rows[0].ids).toEqual(["C-02", "C-01"]);
+    expect(rows[0].members.map((x) => `${x.name}${x.share}`)).toEqual(["アットホーム25", "SUUMO20"]);
+    expect(rows[0].evidence).toEqual(["B-05", "B-06"]);
+    expect(rows[0].purpose).toBe("問い合わせ");
+  });
+  it("ポータルが1つでも「不動産ポータル」の行にする。ポータルが無ければ行を作らない", () => {
+    expect(groupMedia([m("C-02", 60), m("C-05", 40)], (id) => info[id]).map((r) => r.name)).toEqual(["不動産ポータル", "Google検索広告"]);
+    expect(groupMedia([m("C-05", 100)], (id) => info[id]).map((r) => r.name)).toEqual(["Google検索広告"]);
   });
 });

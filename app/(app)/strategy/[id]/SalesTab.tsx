@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { StrategyResult } from "../../../../lib/agents/run";
 import type { Fact } from "../../../../lib/facts/types";
 import { SALE_STATUS_LABEL, SALE_STATUSES, grandTotal, type MediaResultTotal, type PartialSum } from "../../../../lib/records";
-import { defaultBudgetIndex, MEDIA_NOTES, placeOfAnalysis, PORTAL_DIFF_NOTE } from "../../../../lib/report";
+import { defaultBudgetIndex, groupMedia, MEDIA_NOTES, placeOfAnalysis, PORTAL_CATEGORY, PORTAL_DIFF_NOTE, type DisplayMedia } from "../../../../lib/report";
 import { AlertIcon, ChartIcon, ClipboardIcon, MegaphoneIcon, SparkIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, HypothesisBadge, InfoTip, Num, useReportNav } from "./parts";
 
@@ -44,10 +44,10 @@ const STATUS_BADGE: Record<string, string> = {
 
 export default function SalesTab({ r, facts, mediaInfo, propertyId, records }: { r: StrategyResult; facts: Map<string, Fact>; mediaInfo: Record<string, MediaInfo>; propertyId: number; records: SalesRecords }) {
   const m = r.戦略;
-  const media = [...r.媒体.media].sort((a, b) => b.share - a.share);
+  // 不動産ポータル（SUUMO・アットホームなど）は1行にまとめる（2026-11-04 浩平さん指摘。lib/report.ts の groupMedia）
+  const media = groupMedia(r.媒体.media, (id) => mediaInfo[id]);
   const sims = r.予算シミュレーション;
   const inputSim = sims.find((s) => s.isInput) ?? null;
-  const nameOf = (id: string, fallback: string) => mediaInfo[id]?.name ?? fallback;
   const appeals = [...m.appeals].sort((a, b) => a.rank - b.rank).slice(0, 3);
   const main = [...m.targets].sort((a, b) => a.rank - b.rank)[0];
   const first = media[0];
@@ -57,7 +57,7 @@ export default function SalesTab({ r, facts, mediaInfo, propertyId, records }: {
     // 媒体の目的と訴求はAIの文なので ✦ を付ける（事実と見分ける決まり）
     {
       label: "最初に出す媒体",
-      value: first ? nameOf(first.id, first.name) : "未設定",
+      value: first ? first.name : "未設定",
       sub: first ? (
         <span className="flex gap-1 text-[12px] text-sub">
           <SparkIcon className="mt-0.5 size-3 shrink-0 text-[#6b4fc0]" />
@@ -127,30 +127,26 @@ export default function SalesTab({ r, facts, mediaInfo, propertyId, records }: {
         </Card>
       )}
 
-      <Steps r={r} appeals={appeals} media={media} nameOf={nameOf} propertyId={propertyId} records={records} />
+      <Steps r={r} appeals={appeals} media={media} propertyId={propertyId} records={records} />
 
-      <MediaPlan key={sims.map((s) => `${s.totalManYen}${s.isInput ? "i" : ""}`).join(",")} media={media} sims={sims} nameOf={nameOf} mediaInfo={mediaInfo} facts={facts} />
+      <MediaPlan key={sims.map((s) => `${s.totalManYen}${s.isInput ? "i" : ""}`).join(",")} media={media} sims={sims} mediaInfo={mediaInfo} facts={facts} />
 
       <RecordResults records={records} propertyId={propertyId} />
     </div>
   );
 }
 
-type MediaItem = StrategyResult["媒体"]["media"][number];
-
 /** 実行の4ステップ。表示だけで、進み具合（済み・未）は記録の仕組みが無いので出さない */
 function Steps({
   r,
   appeals,
   media,
-  nameOf,
   propertyId,
   records,
 }: {
   r: StrategyResult;
   appeals: StrategyResult["戦略"]["appeals"];
-  media: MediaItem[];
-  nameOf: (id: string, fallback: string) => string;
+  media: DisplayMedia[];
   propertyId: number;
   records: SalesRecords;
 }) {
@@ -180,9 +176,9 @@ function Steps({
       body: (
         <ol className="grid gap-1 text-[13px] text-ink">
           {media.slice(0, 3).map((x, i) => (
-            <li key={x.id} className="flex items-center gap-1.5">
+            <li key={x.key} className="flex items-center gap-1.5">
               <Num n={i + 1} strong={i === 0} />
-              <span className="min-w-0 break-words">{nameOf(x.id, x.name)}</span>
+              <span className="min-w-0 break-words">{x.name}</span>
             </li>
           ))}
         </ol>
@@ -246,19 +242,18 @@ function Steps({
 function MediaPlan({
   media,
   sims,
-  nameOf,
   mediaInfo,
   facts,
 }: {
-  media: MediaItem[];
+  media: DisplayMedia[];
   sims: StrategyResult["予算シミュレーション"];
-  nameOf: (id: string, fallback: string) => string;
   mediaInfo: Record<string, MediaInfo>;
   facts: Map<string, Fact>;
 }) {
   const [picked, setPicked] = useState(() => defaultBudgetIndex(sims));
   const sim = sims[picked] ?? null;
-  const amountOf = (id: string) => sim?.rows.find((row) => row.id === id)?.amountManYen ?? 0;
+  // まとめた行（不動産ポータル）は、元の媒体ごとの金額を足す。0.1万円単位の誤差が出ないよう10倍して整数で足す
+  const amountOf = (ids: string[]) => ids.reduce((a, id) => a + Math.round((sim?.rows.find((row) => row.id === id)?.amountManYen ?? 0) * 10), 0) / 10;
 
   // ①の総額が10万・20万・30万円と同じときは、同じ金額の切り替えを2つ出さない
   const inputTotal = sims.find((s) => s.isInput)?.totalManYen;
@@ -289,18 +284,18 @@ function MediaPlan({
       </div>
       <ol className="grid gap-2">
         {media.map((x, i) => (
-          <li key={x.id} className="rounded-lg border border-line p-3">
+          <li key={x.key} className="rounded-lg border border-line p-3">
             <div className="flex gap-2.5">
               <Num n={i + 1} strong={i === 0} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                   <span className="inline-flex items-center gap-0.5">
-                    <span className="text-[15px] font-bold text-ink">{nameOf(x.id, x.name)}</span>
-                    <InfoTip label={`${nameOf(x.id, x.name)}の特徴`}>
-                      <MediaHelp info={mediaInfo[x.id]} id={x.id} />
+                    <span className="text-[15px] font-bold text-ink">{x.name}</span>
+                    <InfoTip label={`${x.name}の特徴`}>
+                      <MediaHelp x={x} mediaInfo={mediaInfo} />
                     </InfoTip>
                   </span>
-                  <span className="rounded bg-subtle px-1.5 py-0.5 text-[11px] text-sub">{mediaInfo[x.id]?.category ?? "その他"}</span>
+                  {x.category !== PORTAL_CATEGORY && <span className="rounded bg-subtle px-1.5 py-0.5 text-[11px] text-sub">{x.category ?? "その他"}</span>}
                   <span className="flex min-w-0 items-center gap-1 text-[12px] text-sub">
                     <SparkIcon className="size-3 shrink-0 text-[#6b4fc0]" />
                     <span className="min-w-0 break-words">
@@ -313,7 +308,7 @@ function MediaPlan({
                     <div className={`h-full rounded-full ${i === 0 ? "bg-primary" : "bg-primary/55"}`} style={{ width: `${Math.max(0, Math.min(100, x.share))}%` }} />
                   </div>
                   <span className="w-[3.2em] shrink-0 text-right text-[12px] text-sub">{x.share}%</span>
-                  {sim && <span className="w-[5.5em] shrink-0 text-right text-[14px] font-bold text-ink">{manYen(amountOf(x.id))}</span>}
+                  {sim && <span className="w-[5.5em] shrink-0 text-right text-[14px] font-bold text-ink">{manYen(amountOf(x.ids))}</span>}
                 </div>
                 <details className="mt-1.5 print:hidden">
                   <summary className="cursor-pointer text-[12px] text-primary underline">理由を見る</summary>
@@ -346,6 +341,9 @@ function PlanHelp() {
         <b>媒体と配分（%）</b>：AIが16の媒体から3〜6件を選んで決めます。材料は、ターゲット、年代別のメディア利用率と家の探し方の統計、各媒体の目的と届きやすい年代です。不動産ポータルは必ず入れます。
       </span>
       <span className="block">
+        <b>不動産ポータル</b>：SUUMO・アットホームなどは違いがはっきりしないため、1つにまとめて配分を足しています。
+      </span>
+      <span className="block">
         <b>順位</b>：配分の大きい順に並べています。
       </span>
       <span className="block">
@@ -356,40 +354,60 @@ function PlanHelp() {
   );
 }
 
-/** 媒体1つの特徴。説明は画面に固定の一般的な説明、分類・目的・年代は媒体一覧（DB）の値 */
-function MediaHelp({ info, id }: { info: MediaInfo | undefined; id: string }) {
-  const note = MEDIA_NOTES[id];
+/** 媒体1行の特徴。説明は画面に固定の一般的な説明、分類・目的・年代は媒体一覧（DB）の値。不動産ポータルは、まとめた媒体の名前と配分も出す */
+function MediaHelp({ x, mediaInfo }: { x: DisplayMedia; mediaInfo: Record<string, MediaInfo> }) {
+  const portal = x.category === PORTAL_CATEGORY;
+  const note = MEDIA_NOTES[x.ids[0]];
+  const infos = x.ids.map((id) => mediaInfo[id]).filter((i): i is MediaInfo => Boolean(i));
+  const ages = infos.filter((i) => i.reachAges);
   return (
     <span className="grid gap-1.5">
       {note && <span className="block text-ink">{note}</span>}
-      {info && (
-        <span className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
-          <span className="text-muted">分類</span>
-          <span>{info.category}</span>
-          {info.purpose && (
-            <>
-              <span className="text-muted">主な目的</span>
-              <span>{info.purpose}</span>
-            </>
-          )}
-          {info.reachAges && (
-            <>
-              <span className="text-muted">届きやすい年代</span>
-              <span>{info.reachAges}（当社の見立て）</span>
-            </>
-          )}
+      {portal && (
+        <span className="block">
+          <span className="text-muted">この物件で使う：</span>
+          <span className="font-bold text-ink">{x.members.map((m) => `${m.name}（${m.share}%）`).join("、")}</span>
         </span>
       )}
-      {info?.category === "不動産ポータル" && <span className="block text-muted">{PORTAL_DIFF_NOTE}</span>}
+      <span className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+        {!portal && x.category && (
+          <>
+            <span className="text-muted">分類</span>
+            <span>{x.category}</span>
+          </>
+        )}
+        {infos[0]?.purpose && (
+          <>
+            <span className="text-muted">主な目的</span>
+            <span>{[...new Set(infos.map((i) => i.purpose).filter(Boolean))].join("・")}</span>
+          </>
+        )}
+        {ages.length > 0 && (
+          <>
+            <span className="text-muted">届きやすい年代</span>
+            <span>
+              {portal ? ages.map((i) => `${i.name} ${i.reachAges}`).join("、") : ages[0].reachAges}（当社の見立て）
+            </span>
+          </>
+        )}
+      </span>
+      {portal && <span className="block text-muted">{PORTAL_DIFF_NOTE}</span>}
     </span>
   );
 }
 
-function Reasons({ x, facts }: { x: MediaItem; facts: Map<string, Fact> }) {
+/** 理由（AIの文）。まとめた行は、元の媒体ごとに名前を付けて並べる */
+function Reasons({ x, facts }: { x: DisplayMedia; facts: Map<string, Fact> }) {
+  const many = x.members.length > 1;
   return (
-    <div className="mt-1.5 grid gap-1">
-      <Ai size="sm">{x.reason}</Ai>
-      <Ai size="sm">配分：{x.share_reason}</Ai>
+    <div className="mt-1.5 grid gap-1.5">
+      {x.members.map((m) => (
+        <div key={m.id} className="grid gap-1">
+          {many && <div className="text-[12px] font-bold text-sub">{m.name}（{m.share}%）</div>}
+          <Ai size="sm">{m.reason}</Ai>
+          <Ai size="sm">配分：{m.share_reason}</Ai>
+        </div>
+      ))}
       <Evidence ids={x.evidence} facts={facts} max={2} />
     </div>
   );
