@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MediaOutput } from "../lib/agents/schemas";
-import { compactValue, evidenceText, factOrigin, factUsage, groupByAspect, nextCheck, placeOfAnalysis, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds } from "../lib/report";
+import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds } from "../lib/report";
 import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -149,5 +149,69 @@ describe("見せ方の補助", () => {
     expect(nextCheck({ ...FACTS[2], 項目: "液状化の発生傾向" }).what).toBe("物件の位置で液状化の発生傾向を確かめる");
     expect(nextCheck({ ...FACTS[0], id: "B-05", 項目: "買主の年代（二次取得の世帯主）", 状態: "要確認" }).who).toBe("元の資料");
     expect(nextCheck({ ...FACTS[0], id: "L-12", 項目: "放課後児童クラブ（1km以内）", 状態: "要確認", 比較: "データは2017-03時点。その後の閉所・新設を市の最新の一覧で確かめる" })).toEqual({ who: "市の一覧・現地", what: "近くの放課後児童クラブを、最新の一覧か現地で確かめる（データの時点より後の閉所・新設は入っていない）" });
+  });
+});
+
+describe("データの注意点に出す事実", () => {
+  const f = (id: string, 項目: string, 状態: Fact["状態"]): Fact => ({ id, 項目, 値: 状態 === "取得できず" ? null : "x", 出典: "x", 時点: "x", 状態 });
+  const list = [
+    f("H-01", "洪水の想定浸水深（想定最大規模）", "取得できず"),
+    f("S-02", "中学校区", "要確認"),
+    f("L-12", "放課後児童クラブ（1km以内）", "要確認"),
+    f("T-03", "最寄り駅の乗降客数（1日あたり）", "取得できず"),
+    f("P-10", "リフォーム", "要確認"),
+    f("B-10", "買主の年代（中古戸建を買った世帯の世帯主）", "要確認"),
+    f("P-02", "価格", "取得"),
+  ];
+  it("災害・学区は必ず出し、ほかは根拠に使った要確認の事実だけ", () => {
+    expect(factsToCheck(list, []).map((x) => x.id)).toEqual(["H-01", "S-02"]);
+    expect(factsToCheck(list, ["B-10", "T-03", "P-02"]).map((x) => x.id)).toEqual(["H-01", "S-02", "B-10"]);
+  });
+});
+
+describe("AIの文の事実IDを利用者向けにする", () => {
+  const byId = new Map<string, Fact>([
+    ["P-10", { id: "P-10", 項目: "リフォーム", 値: null, 出典: "入力", 時点: "2026-11", 状態: "要確認" }],
+    ["L-04", { id: "L-04", 項目: "小児科のある病院・診療所（1km以内）", 値: "0件", 出典: "x", 時点: "x", 状態: "取得" }],
+  ]);
+  it("かっこで添えたIDは外し、文の中のIDは名前にする", () => {
+    expect(plainIds("リフォームの有無が分からない［P-10］", byId)).toBe("リフォームの有無が分からない");
+    expect(plainIds("近くに小児科がない（L-04、P-10）。", byId)).toBe("近くに小児科がない。");
+    expect(plainIds("P-10が未入力のため確かめる", byId)).toBe("リフォームが未入力のため確かめる");
+    expect(plainIds("L-04は0件", byId)).toBe("小児科のある病院・診療所（1km以内）は0件");
+    expect(plainIds("P-99が未入力、A-01区画", byId)).toBe("P-99が未入力、A-01区画");
+    expect(plainIds("X-01 や claude-sonnet-5-5 はそのまま", byId)).toBe("X-01 や claude-sonnet-5-5 はそのまま");
+  });
+  it("evidence と id は変えない", () => {
+    const out = withPlainIds({ text: "庭がある（P-10）", evidence: ["P-10"], items: [{ id: "C-01", reason: "L-04が0件" }] }, byId);
+    expect(out).toEqual({ text: "庭がある", evidence: ["P-10"], items: [{ id: "C-01", reason: "小児科のある病院・診療所（1km以内）が0件" }] });
+  });
+});
+
+describe("AIが分からないと挙げたことのうち出すもの", () => {
+  const f = (id: string, 状態: Fact["状態"]): Fact => ({ id, 項目: id, 値: 状態 === "取得できず" ? null : "x", 出典: "x", 時点: "x", 状態 });
+  const facts = [f("T-03", "取得できず"), f("P-10", "要確認"), f("L-07", "要確認"), f("L-11", "取得"), f("L-14", "取得"), f("H-01", "取得できず")];
+  it("重要でない取れなかった事実だけを挙げた項目は出さない", () => {
+    const unknown = [
+      "最寄り駅の乗降客数は取得できていない。［T-03］",
+      "リフォームの実施年が不明。［P-10］",
+      "放課後児童クラブは2017-03時点。［L-07］",
+      "「（仮称）」の店は営業状況を確かめるまで訴求しない。［L-11］［L-14］",
+      "洪水の浸水深が取れていない（H-01）",
+      "引き渡し時期が事実シートにない",
+    ];
+    expect(unknownToShow(unknown, facts, [])).toEqual([unknown[3], unknown[4], unknown[5]]);
+    expect(unknownToShow(unknown, facts, ["P-10"])).toContain(unknown[1]);
+  });
+});
+
+describe("懸念点の札", () => {
+  const byId = new Map<string, Fact>([["P-02", { id: "P-02", 項目: "価格", 値: "x", 出典: "入力", 時点: "x", 状態: "取得" }]]);
+  it("根拠の分類から決める", () => {
+    expect(concernTopic(["P-02", "M-05", "P-10"], byId)).toBe("価格");
+    expect(concernTopic(["H-01", "H-04"], byId)).toBe("災害");
+    expect(concernTopic(["P-10"], byId)).toBe("物件");
+    expect(concernTopic(["L-04", "A-03"], byId)).toBe("立地");
+    expect(concernTopic([], byId)).toBeNull();
   });
 });
