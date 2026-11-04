@@ -324,3 +324,182 @@ export function concernTopic(evidence: string[], facts: Map<string, Fact>): stri
   if (cats.has("K")) return "競合";
   return null;
 }
+
+// ---- サマリーの「販売の基本戦略」（2026-11-04 浩平さん依頼） ----
+
+/** 基本の6候補の絵（public/targets/）。AIが加えた候補には絵を出さない */
+export const TARGET_IMAGES: Record<string, string> = {
+  若い夫婦: "/targets/young-couple.webp",
+  小中学生のいる家族: "/targets/school-family.webp",
+  "50代の住み替え": "/targets/fifties-move.webp",
+  "60歳以上": "/targets/senior.webp",
+  単身: "/targets/single.webp",
+  親と同居: "/targets/with-parents.webp",
+};
+
+/**
+ * ターゲットの説明。AIが加えた候補は AI の definition、基本の候補は事実 B「ターゲット候補「…」の定義」の値
+ * 代表年齢（返済の計算に使う仮の年齢）は外す。単身の「年代は問わない」と食い違って見えるため
+ */
+export function targetDefinition(t: { name: string; source: string; definition: string | null }, facts: Fact[]): string | null {
+  if (t.source === "エージェント提案") return t.definition?.trim() || null;
+  const f = facts.find((x) => x.項目 === `ターゲット候補「${t.name}」の定義`);
+  if (!f?.値 || f.値.startsWith("定義は未設定")) return null;
+  return f.値.replace(/（代表年齢\d+歳）$/, "").trim() || null;
+}
+
+/**
+ * ターゲットが重視しやすい点（2026-11-04 浩平さん指摘「公園・こども園は重要度が高くない。ターゲットに合う要素を、多すぎない数で」）
+ * 何を重視するかは、調査で重視される項目から決めたたたき台（docs/参考/ペルソナの根拠_統計メモ.md）。BRUMBY様の実務感覚で直す前提
+ *   全類型：住宅の質では広さ・間取りが1位（住生活総合調査 図70）。中古戸建を選んだ理由は価格が上位（住宅市場動向調査）
+ *   若い夫婦：価格・交通（住宅市場動向調査 若者夫婦）／小中学生のいる家族：広さ・間取りが最も重要、子育て・教育環境（図14・図71）
+ *   50代の住み替え：今の家を売って買う二次取得。中古はリフォームで快適が理由の上位（住宅市場動向調査）
+ *   60歳以上：買物・医療（図71 65歳以上夫婦）、段差のなさ（図70）／単身：通勤・買物（図71 単独）
+ *   親と同居：広さ・間取り（図70）、高齢の親と住む（医療）。地方は車が要るので駐車（調査の裏付けはなく、たたき台）
+ * 値は事実シートの値をそのまま短くするだけで、AIは使わない。取れなかった・要確認の事実は飛ばして次の項目を出す
+ */
+type PointKey = "loan" | "size" | "land" | "elementary" | "juniorHigh" | "station" | "bus" | "supermarket" | "medical" | "floors" | "parking" | "renovation";
+export const TARGET_POINTS: Record<string, PointKey[]> = {
+  若い夫婦: ["loan", "size", "station", "supermarket", "renovation"],
+  小中学生のいる家族: ["elementary", "juniorHigh", "size", "loan", "supermarket"],
+  "50代の住み替え": ["loan", "size", "renovation", "supermarket", "medical"],
+  "60歳以上": ["supermarket", "medical", "floors", "bus", "loan"],
+  単身: ["station", "supermarket", "loan", "size", "bus"],
+  親と同居: ["size", "land", "parking", "medical", "loan"],
+};
+/** サマリーに出す重視しやすい点の数（多すぎないように） */
+export const MAX_TARGET_POINTS = 4;
+
+export interface TargetPoint {
+  label: string;
+  value: string;
+  /** 押したときに開く事実（最初の1件）と、使った事実 */
+  ids: string[];
+}
+
+const usable = (f: Fact | undefined): f is Fact => !!f && f.状態 === "取得" && !!f.値;
+const byItem = (facts: Fact[], 項目: string) => facts.find((f) => f.項目 === 項目);
+/** 「A 直線320m（…）」の後ろの補足を外す */
+const dropTail = (v: string) => v.replace(/（[^（）]*）$/, "").trim();
+/** 施設の件数の値：「3件：A 直線320m、…」→「A 直線320m（1km以内3件）」、「0件。3km以内の最寄り：A 直線1.1km」→「1km以内になし（最寄り A 直線1.1km）」 */
+function nearbyText(v: string): string {
+  const count = v.match(/^(\d+)件：([^、]+?)(?:、| ほか|$)/);
+  if (count) return `${count[2].trim()}（1km以内${count[1]}件）`;
+  const none = v.match(/^0件。3km以内の最寄り：(.+)$/);
+  if (none) return `1km以内になし（最寄り ${none[1].trim()}）`;
+  if (/^0件。3km以内になし/.test(v)) return "3km以内になし";
+  return v;
+}
+
+function point(key: PointKey, target: string, facts: Fact[]): TargetPoint | null {
+  const one = (項目: string, label: string, text: (v: string) => string = (v) => v): TargetPoint | null => {
+    const f = byItem(facts, 項目);
+    return usable(f) ? { label, value: text(f.値!), ids: [f.id] } : null;
+  };
+  switch (key) {
+    case "loan": {
+      // 候補の名前が入った返済の目安。住み替えの候補は、今の家を売ったお金を頭金にした行を先に使う
+      const rows = facts.filter((f) => usable(f) && f.項目.includes("】の返済の目安（") && (f.項目.match(/^【(.+?)】/)?.[1].split("・") ?? []).includes(target));
+      const f = rows.find((r) => r.項目.replace(/^【.+?】/, "").includes("住み替え")) ?? rows[0];
+      if (!f) return null;
+      const term = f.項目.match(/返済期間(\d+)年/)?.[1];
+      const down = f.項目.match(/頭金([\d.]+%|[\d,]+万円)/)?.[1];
+      // 「変動0.95%：月々約6.2万円・必要年収約300万円（…）」→「月々約6.2万円」。1つ目（変動）の月々の返済だけ出す（2026-11-04 浩平さん指示：必要年収と金利は出さない）
+      const first = f.値!.replace(/^代表年齢[^。]*。/, "").split("。")[0];
+      const monthly = first.match(/月々約[\d.,]+万円/)?.[0];
+      if (!monthly) return null;
+      return { label: `返済の目安（${down ? `住み替えで頭金${down}・` : ""}${term ?? "?"}年）`, value: monthly, ids: [f.id] };
+    }
+    case "size": {
+      const layout = byItem(facts, "間取り");
+      const area = byItem(facts, "建物面積");
+      const l = usable(layout) ? (layout.値!.match(/（([^（）]+)）$/)?.[1] ?? layout.値!) : null;
+      const parts = [l && !l.includes("書き方") ? l : null, usable(area) ? `建物${area.値}` : null].filter(Boolean);
+      return parts.length ? { label: "広さ・間取り", value: parts.join("・"), ids: [layout, area].filter(usable).map((f) => f.id) } : null;
+    }
+    case "land": {
+      const land = byItem(facts, "土地面積");
+      const garden = byItem(facts, "庭");
+      if (!usable(land)) return null;
+      return { label: "土地", value: `${land.値}${usable(garden) ? `・庭${garden.値}` : ""}`, ids: [land, garden].filter(usable).map((f) => f.id) };
+    }
+    case "elementary":
+      return one("小学校区", "小学校区", (v) => v.replace("物件から", ""));
+    case "juniorHigh":
+      return one("中学校区", "中学校区", (v) => v.replace("物件から", ""));
+    case "station":
+      return one("最寄り駅（直線）", "最寄り駅", (v) => v.replace(/（[^（）]*）/, "").replace(/\s+/g, " ").trim());
+    case "bus":
+      return one("最寄りバス停（直線）", "最寄りバス停", dropTail);
+    case "supermarket":
+      return one("スーパー（1km以内）", "スーパー", nearbyText);
+    case "medical":
+      return one("内科のある病院・診療所（1km以内）", "内科", nearbyText);
+    case "floors":
+      return one("階数", "階数");
+    case "parking":
+      return one("駐車台数", "駐車");
+    case "renovation":
+      return one("リフォーム", "リフォーム");
+  }
+}
+
+/** 基本の候補が重視しやすい点を、この物件の事実で出す。AIが加えた候補や表にない名前は null（呼び出し側で根拠の事実を出す） */
+export function targetPoints(target: string, facts: Fact[], max = MAX_TARGET_POINTS): TargetPoint[] | null {
+  const keys = TARGET_POINTS[target];
+  if (!keys) return null;
+  const out: TargetPoint[] = [];
+  for (const k of keys) {
+    const p = point(k, target, facts);
+    if (p) out.push(p);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** 物件の見出しにすでに出ている、または特徴と呼べない P の項目 */
+const NOT_FEATURE = /^(価格|所在地|物件区分|広告予算の総額|土地面積|築年数|階数)$/;
+/** 特徴に使う分類：物件・学区・周りの施設・交通 */
+const FEATURE_CATEGORIES: FactCategory[] = ["P", "S", "L", "T"];
+
+/**
+ * AIが加えた候補のときに「物件のポイント」に出す事実（重視しやすい点の表がないため）。AIが訴求・推奨方針・第一ターゲットの根拠に引いた事実のうち、物件と立地の強みになるものだけ
+ * 取れなかった・要確認の事実（データの注意点に出す）、0件の施設、物件の見出しと同じ項目は外す。文はAIに作らせず、事実の値をそのまま短くする
+ */
+export function summaryFeatures(main: Pick<StrategyOutput, "appeals" | "summary" | "targets">, facts: Map<string, Fact>, max = MAX_TARGET_POINTS): Fact[] {
+  const appeals = [...main.appeals].sort((a, b) => a.rank - b.rank);
+  const first = [...main.targets].sort((a, b) => a.rank - b.rank)[0];
+  const ids = [...appeals.flatMap((a) => a.evidence), ...main.summary.evidence, ...(first?.evidence ?? [])].map((i) => i.trim());
+  const out: Fact[] = [];
+  for (const id of new Set(ids)) {
+    const f = facts.get(id);
+    if (!f || f.状態 !== "取得" || !f.値) continue;
+    if (!FEATURE_CATEGORIES.includes(categoryOf(id) as FactCategory)) continue;
+    if (categoryOf(id) === "P" && NOT_FEATURE.test(f.項目)) continue;
+    if (/^0件/.test(f.値) || /^(不明|なし|入力なし)/.test(f.値)) continue;
+    // 公園・保育の施設は販売の決め手になりにくい（2026-11-04 浩平さん指摘。住生活総合調査でも公園は重視の上位に入らない）
+    if (/^(公園|保育|地域型保育|幼稚園|認定こども園|こども園|放課後児童クラブ)/.test(f.項目)) continue;
+    out.push(f);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/**
+ * 特徴の1行。値を書き換えずに短くするだけ
+ * 「3件：A 直線320m、B …」→「A 直線320m（1km以内3件）」、間取り「居室4・納戸0（4LDK）」→「4LDK」
+ */
+export function featureText(f: Fact): { label: string; value: string } {
+  const label = shortLabel(f.項目);
+  const v = f.値 ?? "";
+  if (f.項目 === "間取り") {
+    const m = v.match(/（([^（）]+)）$/);
+    return { label, value: m && !m[1].includes("書き方") ? m[1] : v };
+  }
+  const count = v.match(/^(\d+)件：([^、]+?)(?:、| ほか|$)/);
+  if (count) {
+    const scope = f.項目.match(/（(\d+(?:\.\d+)?k?m以内)）$/)?.[1] ?? "";
+    return { label, value: `${count[2].trim()}（${scope}${count[1]}件）` };
+  }
+  return { label, value: v.replace(/\s+/g, " ").trim() };
+}
