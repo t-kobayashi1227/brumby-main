@@ -503,3 +503,11 @@ export function featureText(f: Fact): { label: string; value: string } {
   }
   return { label, value: v.replace(/\s+/g, " ").trim() };
 }
+
+/** 販売施策タブで最初に選んでおく予算：①の総額があればそれ、無ければ20万円、それも無ければ最初の列（2026-11-04 浩平さん了承の推奨案） */
+export function defaultBudgetIndex(sims: { totalManYen: number; isInput: boolean }[]): number {
+  const input = sims.findIndex((s) => s.isInput);
+  if (input >= 0) return input;
+  const twenty = sims.findIndex((s) => s.totalManYen === 20);
+  return twenty >= 0 ? twenty : 0;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daysOnMarket, OTHER_MEDIA, readMediaResult, readSalesRecord, salesStage } from "../lib/records";
+import { daysOnMarket, grandTotal, OTHER_MEDIA, readMediaResult, readSalesRecord, salesStage, totalsByMedia } from "../lib/records";
 
 const form = (values: Record<string, string>) => ({ get: (k: string) => values[k] ?? null });
 const OPTS = { mediaIds: ["C-01", "C-11"], households: ["若い夫婦", "60歳以上"] };
@@ -80,5 +80,71 @@ describe("salesStage", () => {
 
   it("最新の実行が失敗でも、前に完了した戦略があれば戦略作成済み", () => {
     expect(salesStage(null, { hasSucceeded: true, latest: "failed" })).toBe("戦略作成済み");
+  });
+});
+
+describe("totalsByMedia", () => {
+  const row = (media_id: string | null, name: string, started_on: string, cost: number | null, inquiries: number | null, viewings: number | null) => ({
+    media_id,
+    name,
+    started_on,
+    cost_man_yen: cost,
+    inquiries,
+    viewings,
+  });
+
+  it("媒体ごとに足し、最初に掲載した順に並べる", () => {
+    const t = totalsByMedia([
+      row("M02", "SUUMO", "2026-10-10", 3.3, 2, 1),
+      row("M01", "自社HP", "2026-10-01", 0, 1, 0),
+      row("M02", "SUUMO", "2026-09-20", 0.1, 3, 2),
+    ]);
+    expect(t.map((x) => x.mediaId)).toEqual(["M02", "M01"]);
+    expect(t[0]).toEqual({
+      mediaId: "M02",
+      name: "SUUMO",
+      periods: 2,
+      firstStartedOn: "2026-09-20",
+      costManYen: { sum: 3.4, partial: false },
+      inquiries: { sum: 5, partial: false },
+      viewings: { sum: 3, partial: false },
+    });
+  });
+
+  it("入っていない行は0にせず「一部不明」にする。どの行にも無ければ不明（null）", () => {
+    const [t] = totalsByMedia([row("M01", "自社HP", "2026-10-01", null, null, 1), row("M01", "自社HP", "2026-10-02", null, null, null)]);
+    expect(t.costManYen).toEqual({ sum: null, partial: true });
+    expect(t.inquiries).toEqual({ sum: null, partial: true });
+    expect(t.viewings).toEqual({ sum: 1, partial: true });
+  });
+
+  it("0件は0件のまま（不明と分ける）", () => {
+    const [t] = totalsByMedia([row("M01", "自社HP", "2026-10-01", 0, 0, 0)]);
+    expect(t.inquiries).toEqual({ sum: 0, partial: false });
+  });
+
+  it("「その他」の媒体は名前でまとめる", () => {
+    const t = totalsByMedia([row(null, "地域情報誌", "2026-10-01", 1, 1, 1), row(null, "チラシ", "2026-10-02", 1, 0, 0), row(null, "地域情報誌", "2026-10-03", 1, 1, 0)]);
+    expect(t.map((x) => [x.name, x.periods])).toEqual([
+      ["地域情報誌", 2],
+      ["チラシ", 1],
+    ]);
+  });
+
+  it("記録が無ければ空", () => {
+    expect(totalsByMedia([])).toEqual([]);
+  });
+});
+
+describe("grandTotal", () => {
+  it("全媒体の合計。どれかが一部不明なら合計も一部不明、どれにも無ければ null", () => {
+    const t = totalsByMedia([
+      { media_id: "M01", name: "A", started_on: "2026-10-01", cost_man_yen: 0.1, inquiries: 1, viewings: null },
+      { media_id: "M02", name: "B", started_on: "2026-10-01", cost_man_yen: 0.2, inquiries: null, viewings: null },
+    ]);
+    expect(grandTotal(t)).toEqual({ costManYen: { sum: 0.3, partial: false }, inquiries: { sum: 1, partial: true }, viewings: { sum: null, partial: true } });
+  });
+  it("記録が無ければ不明", () => {
+    expect(grandTotal([]).inquiries).toEqual({ sum: null, partial: false });
   });
 });

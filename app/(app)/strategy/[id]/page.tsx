@@ -8,6 +8,7 @@ import type { DatasetInfo } from "../../../../lib/facts/build";
 import { formatJstDateTime, formatNumber } from "../../../../lib/facts/format";
 import type { FactSheet } from "../../../../lib/facts/types";
 import { parsePropertyId } from "../../../../lib/property";
+import { totalsByMedia } from "../../../../lib/records";
 import { sourceList, usedFactIds } from "../../../../lib/report";
 import { card, emptyState } from "../../../_lib/ui";
 import FactSheetTable from "../../../_components/FactSheetTable";
@@ -68,12 +69,24 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
   // 以前はここに「まだ販売戦略がありません。上の『戦略を作る』を押してください」を出していたが、登録後の自動作成中にも出て進み具合と食い違うため外した
   let report: React.ReactNode = latestSheet ? <LatestFactSheet sheet={latestSheet.content} /> : null;
   if (done) {
-    const [datasets, media, areaMap, areaPrice] = await inOrder(
+    const [datasets, media, areaMap, areaPrice, saleRows, resultRows] = await inOrder(
       () => sql<(DatasetInfo & { attribution: string | null })[]>`select id, name, provider, as_of, row_count, attribution from datasets`,
       () => sql<{ id: string; name: string; category: string }[]>`select id, name, category from media`,
       () => loadAreaMap(sql, propertyId),
       () => loadAreaPrice(sql, propertyId, done.content.事実),
+      // 販売施策タブの「販売記録の実績」（2026-11-04）。販売記録の画面で入れた値を読むだけで、ここでは書かない
+      () => sql<{ status: string; listed_on: string | null }[]>`select status, listed_on::text from sales_records where property_id = ${propertyId}`,
+      () => sql<{ media_id: string | null; name: string; started_on: string; cost_man_yen: string | null; inquiries: number | null; viewings: number | null }[]>`
+        select r.media_id, coalesce(m.name, r.other_name) as name, r.started_on::text, r.cost_man_yen, r.inquiries, r.viewings
+        from media_results r left join media m on m.id = r.media_id
+        where r.property_id = ${propertyId} order by r.started_on, r.id
+      `,
     );
+    const records = {
+      status: saleRows[0]?.status ?? null,
+      listedOn: saleRows[0]?.listed_on ?? null,
+      totals: totalsByMedia(resultRows.map((r) => ({ ...r, cost_man_yen: r.cost_man_yen === null ? null : Number(r.cost_man_yen) }))),
+    };
     const facts = done.content.事実;
     const { rows, credits: usedCredits } = sourceList(facts, usedFactIds(done.result.戦略, done.result.媒体), [...datasets]);
     // 地図の施設と区の価格相場はAIが根拠に引いていなくても画面に出すので、そのデータのクレジットも足す（2026-11-03）
@@ -100,6 +113,7 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
           runId={Number(done.run_id)}
           areaMap={areaMap}
           areaPrice={areaPrice}
+          records={records}
         />
       </>
     );

@@ -11,7 +11,7 @@ import AreaTab from "./AreaTab";
 import EvidenceTab from "./EvidenceTab";
 import { Legend, ReportNav } from "./parts";
 import PriceTab from "./PriceTab";
-import SalesTab, { type MediaInfo } from "./SalesTab";
+import SalesTab, { type MediaInfo, type SalesRecords } from "./SalesTab";
 import SummaryTab from "./SummaryTab";
 import TargetTab from "./TargetTab";
 
@@ -32,6 +32,7 @@ export default function Report({
   runId,
   areaMap,
   areaPrice,
+  records,
 }: {
   result: StrategyResult;
   facts: Fact[];
@@ -46,6 +47,8 @@ export default function Report({
   areaMap: AreaMapData | null;
   /** サマリーの区の価格相場（区×築年数帯の取引から計算） */
   areaPrice: AreaPriceResult;
+  /** 販売記録の画面で入れた販売の状況と、媒体ごとの実績の合計（販売施策タブに出す） */
+  records: SalesRecords;
 }) {
   const [tab, setTab] = useState<ReportTab>("summary");
   const [selectedFact, setSelectedFact] = useState<string | null>(null);
@@ -85,7 +88,7 @@ export default function Report({
       <Legend />
       {tab === "summary" && <SummaryTab r={result} facts={byId} factList={facts} propertyId={propertyId} runId={runId} areaMap={areaMap} areaPrice={areaPrice} />}
       {tab === "target" && <TargetTab r={result} facts={byId} />}
-      {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} />}
+      {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} records={records} />}
       {tab === "price" && <PriceTab r={result} facts={byId} factList={facts} />}
       {tab === "area" && <AreaTab r={result} facts={byId} factList={facts} areaMap={areaMap} />}
       {tab === "evidence" && <EvidenceTab facts={facts} usage={usage} sources={sources} sheetCreatedAt={sheetCreatedAt} selected={selectedFact} onSelect={setSelectedFact} />}
