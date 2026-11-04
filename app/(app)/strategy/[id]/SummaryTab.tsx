@@ -4,7 +4,7 @@ import type { StrategyResult } from "../../../../lib/agents/run";
 import type { AreaMapData } from "../../../../lib/area-map";
 import type { AreaPriceResult } from "../../../../lib/area-price";
 import type { Fact } from "../../../../lib/facts/types";
-import { concernTopic, factsToCheck, featureText, nextCheck, shortLabel, summaryFeatures, TARGET_IMAGES, targetDefinition, usedFactIds } from "../../../../lib/report";
+import { concernTopic, factsToCheck, featureText, nextCheck, shortLabel, summaryFeatures, TARGET_IMAGES, targetDefinition, targetPoints, usedFactIds } from "../../../../lib/report";
 import { AlertIcon, ClipboardIcon, HomeIcon, MegaphoneIcon, SearchIcon, SparkIcon, UsersIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, factIcon, HypothesisBadge, Num, useReportNav } from "./parts";
 import AreaMap from "./AreaMap";
@@ -140,7 +140,7 @@ const RANK_NAME = ["メイン", "第二", "第三", "第四", "第五"];
 
 /**
  * 販売の基本戦略（2026-11-04 浩平さんの見本をもとに組み直し）
- * 左：メインの買い手（絵・名前・説明）とほかの候補／中：この物件の特徴（事実）と訴求のポイント（AI）／右：推奨方針（AI）とデータの注意点
+ * 左：メインの買い手（絵・名前・説明）とほかの候補／中：その買い手が重視しやすい点（事実。lib/report.ts の targetPoints）と訴求のポイント（AI）／右：推奨方針（AI）とデータの注意点
  * 見本から変えたところ：右の「メインターゲット」は左と同じなので出さない。代表年齢は返済の計算に使う仮の値で、単身の「年代は問わない」と食い違うので出さない。
  * 特徴に価格の割高・割安は入れない（価格の位置づけのラベルは6タブでは出さない決まり。価格は推奨方針の文と価格分析タブで見る）
  */
@@ -151,7 +151,12 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
   const main = targets[0];
   const others = targets.slice(1);
   const appeals = [...m.appeals].sort((a, b) => a.rank - b.rank).slice(0, 3);
-  const features = summaryFeatures(m, facts);
+  // 基本の候補は、その候補が重視しやすい点をこの物件の事実で出す。AIが加えた候補は表がないので、AIが根拠にした物件・立地の事実
+  const fixed = main && main.source !== "エージェント提案" ? targetPoints(main.name, factList) : null;
+  const points =
+    fixed ??
+    summaryFeatures({ ...m, targets: main ? [main] : [] }, facts).map((f) => ({ ...featureText(f), ids: [f.id] }));
+  const pointsTitle = fixed && main ? `${main.name}が重視しやすい点` : "この物件の特徴";
   const image = main && main.source !== "エージェント提案" ? TARGET_IMAGES[main.name] : undefined;
   const definition = main ? targetDefinition(main, factList) : null;
 
@@ -212,21 +217,30 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
           <div>
             <h3 className="mb-2 flex items-center gap-1.5 text-[15px] font-bold text-ink">
               <HomeIcon className="size-[18px] text-primary" />
-              この物件の特徴
+              {pointsTitle}
             </h3>
-            {features.length === 0 ? (
-              <div className="text-[13px] text-sub">訴求の根拠になった物件・立地の事実はありません。</div>
+            <div className="mb-2 text-[12px] text-sub">
+              {fixed ? "調査で重視される項目を、この物件の値で示しています。" : "AIが根拠にした物件・立地の事実です。"}
+            </div>
+            {points.length === 0 ? (
+              <div className="text-[13px] text-sub">出せる事実がありません。</div>
             ) : (
               <ul className="grid gap-1.5">
-                {features.map((f) => {
-                  const t = featureText(f);
+                {points.map((p) => {
+                  const f = facts.get(p.ids[0]);
                   return (
-                    <li key={f.id}>
-                      <button type="button" onClick={() => openFact(f.id)} title={`${f.項目}\n${f.値}\n出典：${f.出典}（${f.時点}）`} className="flex w-full items-start gap-2 text-left cursor-pointer group">
-                        {factIcon(f, "mt-0.5 size-4 shrink-0 text-primary")}
+                    <li key={p.label}>
+                      <button
+                        type="button"
+                        onClick={() => openFact(p.ids[0])}
+                        title={p.ids.map((id) => facts.get(id)).filter(Boolean).map((x) => `${x!.項目}：${x!.値}（${x!.出典}・${x!.時点}）`).join("\n")}
+                        className="flex w-full items-start gap-2 text-left cursor-pointer group"
+                      >
+                        {/* アイコンは見出しの言葉で選ぶ（返済の行が「割合」の絵にならないように） */}
+                        {f ? factIcon({ id: f.id, 項目: p.label }, "mt-0.5 size-4 shrink-0 text-primary") : null}
                         <span className="min-w-0 text-[14px] text-ink">
-                          <span className="text-sub">{t.label}：</span>
-                          <span className="font-bold group-hover:text-primary">{t.value}</span>
+                          <span className="text-sub">{p.label}：</span>
+                          <span className="font-bold group-hover:text-primary">{p.value}</span>
                         </span>
                       </button>
                     </li>
