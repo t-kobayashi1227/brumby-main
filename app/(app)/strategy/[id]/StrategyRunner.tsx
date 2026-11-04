@@ -6,6 +6,9 @@ import { useEffect, useRef, useState } from "react";
 import { FACT_STEPS, type FactStepKey } from "../../../../lib/facts/steps";
 import { btnAction, btnSecondary, card } from "../../../_lib/ui";
 
+// 「PDFで保存」ボタンは2026-11-04 浩平さん指示で一旦隠す（後で使う可能性があるので、印刷用の見た目と処理は残す）。出すときは true に
+const SHOW_PDF_BUTTON = false;
+
 // 「戦略を作る」→ 進み具合を表示 → 完了したらレポートを読み直す（CLAUDE.md「エージェントの実行」）
 // 実行はサーバーで動き続けるので、画面を閉じても止まらない。開き直すと、実行中なら進み具合の表示に戻る
 // 物件の見出しカード（children）の右側にボタンを置き、進み具合や失敗はカードの下側に出す（提案資料の画面イメージに合わせる）
@@ -160,7 +163,7 @@ export default function StrategyRunner({
         <div className="mr-auto min-w-0">{children}</div>
         <div className="flex flex-col items-end gap-1.5 print:hidden">
           <div className="flex gap-2">
-            {hasReport && (
+            {SHOW_PDF_BUTTON && hasReport && (
               <button type="button" onClick={() => window.print()} className={btnSecondary}>
                 PDFで保存
               </button>
