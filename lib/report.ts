@@ -404,10 +404,11 @@ function point(key: PointKey, target: string, facts: Fact[]): TargetPoint | null
       if (!f) return null;
       const term = f.項目.match(/返済期間(\d+)年/)?.[1];
       const down = f.項目.match(/頭金([\d.]+%|[\d,]+万円)/)?.[1];
-      // 「変動0.95%：月々約6.2万円・必要年収約300万円（…）」→「月々約6.2万円・必要年収約300万円（変動0.95%）」。金利は1つ目（変動）だけ
-      const first = f.値!.replace(/^代表年齢[^。]*。/, "").split("。")[0].replace(/（必要年収以上の割合[^）]*）/, "").trim();
-      const m = first.match(/^([^：]+)：(.+)$/);
-      return { label: `返済の目安（${down ? `住み替えで頭金${down}・` : ""}${term ?? "?"}年）`, value: m ? `${m[2]}（${m[1]}）` : first, ids: [f.id] };
+      // 「変動0.95%：月々約6.2万円・必要年収約300万円（…）」→「月々約6.2万円」。1つ目（変動）の月々の返済だけ出す（2026-11-04 浩平さん指示：必要年収と金利は出さない）
+      const first = f.値!.replace(/^代表年齢[^。]*。/, "").split("。")[0];
+      const monthly = first.match(/月々約[\d.,]+万円/)?.[0];
+      if (!monthly) return null;
+      return { label: `返済の目安（${down ? `住み替えで頭金${down}・` : ""}${term ?? "?"}年）`, value: monthly, ids: [f.id] };
     }
     case "size": {
       const layout = byItem(facts, "間取り");
