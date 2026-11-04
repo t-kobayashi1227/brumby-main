@@ -182,7 +182,16 @@ export default function StrategyRunner({
       {!hasReport && !running && (
         <div className="text-[12px] text-muted print:hidden">周辺情報を集めて事実シートを作り、AIエージェントが戦略を作ります。数分かかります。画面を閉じても作成は続きます</div>
       )}
-      {!hasLocation && <div className="print:hidden text-xs text-[#b91c1c]">物件の位置がありません。物件の画面の地図でピンを置いてから作ってください。</div>}
+      {/* 物件一覧から直接この画面に来る（2026-11-04）ので、位置が無いときはピンを置く画面へのリンクを出す */}
+      {!hasLocation && (
+        <div className="print:hidden text-xs text-[#b91c1c]">
+          物件の位置がありません。
+          <Link href={`/properties/${propertyId}`} className="underline">
+            物件の画面の地図でピンを置いて
+          </Link>
+          から作ってください。
+        </div>
+      )}
 
       {(running || factStep?.failed) && (
         <ol className="grid gap-1.5 text-[15px] border-t border-divider pt-3 print:hidden">
