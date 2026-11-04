@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MediaOutput } from "../lib/agents/schemas";
-import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds } from "../lib/report";
+import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES } from "../lib/report";
 import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -213,5 +213,54 @@ describe("懸念点の札", () => {
     expect(concernTopic(["P-10"], byId)).toBe("物件");
     expect(concernTopic(["L-04", "A-03"], byId)).toBe("立地");
     expect(concernTopic([], byId)).toBeNull();
+  });
+});
+
+describe("販売の基本戦略", () => {
+  const F = (id: string, 項目: string, 値: string | null, 状態: Fact["状態"] = 値 === null ? "取得できず" : "取得"): Fact => ({ id, 項目, 値, 出典: "入力", 時点: "2026-11", 状態 });
+  const list: Fact[] = [
+    F("P-02", "価格", "2,499万円"),
+    F("P-03", "間取り", "居室4・納戸0（4LDK）"),
+    F("P-06", "駐車台数", "2台"),
+    F("P-09", "庭", "不明（入力なし）", "要確認"),
+    F("P-10", "リフォーム", "年は不明：キッチン・浴室を交換"),
+    F("M-02", "相場比", "1.61倍"),
+    F("L-01", "認定こども園（1km以内）", "3件：こどものいえこども園 直線320m、B園 直線700m"),
+    F("L-02", "公園（1km以内）", "34件：大島公園 直線80m ほか33件"),
+    F("L-03", "スーパー（1km以内）", "0件。3km以内の最寄り：A 直線1.4km"),
+    F("B-07", "ターゲット候補「若い夫婦」の定義", "世帯主が20代〜30代前半の世帯（代表年齢30歳）"),
+    F("B-08", "ターゲット候補「単身」の定義", "定義は未設定（代表年齢35歳）"),
+  ];
+  const byId = new Map(list.map((f) => [f.id, f]));
+  const main = {
+    summary: { text: "", evidence: ["P-02", "M-02", "P-10"] },
+    appeals: [
+      { rank: 2, text: "", evidence: ["L-02", "L-03"] },
+      { rank: 1, text: "", evidence: ["P-03", "P-09", "L-01"] },
+    ],
+    targets: [{ rank: 1, name: "若い夫婦", source: "候補" as const, definition: null, reason: "", evidence: ["P-06"], confidence: "中" as const }],
+  };
+
+  it("特徴は訴求の順位順に、物件・立地の取れた事実だけ。価格・相場・要確認・0件は入れない", () => {
+    expect(summaryFeatures(main, byId).map((f) => f.id)).toEqual(["P-03", "L-01", "L-02", "P-10", "P-06"]);
+    expect(summaryFeatures(main, byId, 2).map((f) => f.id)).toEqual(["P-03", "L-01"]);
+  });
+
+  it("特徴の値は書き換えずに短くする", () => {
+    expect(featureText(byId.get("P-03")!)).toEqual({ label: "間取り", value: "4LDK" });
+    expect(featureText(byId.get("L-01")!)).toEqual({ label: "認定こども園", value: "こどものいえこども園 直線320m（1km以内3件）" });
+    expect(featureText(byId.get("L-02")!)).toEqual({ label: "公園", value: "大島公園 直線80m（1km以内34件）" });
+    expect(featureText(byId.get("P-10")!).value).toBe("年は不明：キッチン・浴室を交換");
+  });
+
+  it("ターゲットの説明は事実の定義から代表年齢を外す。AIが加えた候補はAIの説明、未設定は出さない", () => {
+    expect(targetDefinition({ name: "若い夫婦", source: "候補", definition: null }, list)).toBe("世帯主が20代〜30代前半の世帯");
+    expect(targetDefinition({ name: "単身", source: "候補", definition: null }, list)).toBeNull();
+    expect(targetDefinition({ name: "親と同居", source: "候補", definition: null }, list)).toBeNull();
+    expect(targetDefinition({ name: "車2台の世帯", source: "エージェント提案", definition: " 車で通勤する世帯 " }, list)).toBe("車で通勤する世帯");
+  });
+
+  it("基本の6候補には絵がある", () => {
+    for (const n of ["若い夫婦", "小中学生のいる家族", "50代の住み替え", "60歳以上", "単身", "親と同居"]) expect(TARGET_IMAGES[n]).toMatch(/^\/targets\/.+\.webp$/);
   });
 });

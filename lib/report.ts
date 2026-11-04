@@ -324,3 +324,71 @@ export function concernTopic(evidence: string[], facts: Map<string, Fact>): stri
   if (cats.has("K")) return "競合";
   return null;
 }
+
+// ---- サマリーの「販売の基本戦略」（2026-11-04 浩平さん依頼） ----
+
+/** 基本の6候補の絵（public/targets/）。AIが加えた候補には絵を出さない */
+export const TARGET_IMAGES: Record<string, string> = {
+  若い夫婦: "/targets/young-couple.webp",
+  小中学生のいる家族: "/targets/school-family.webp",
+  "50代の住み替え": "/targets/fifties-move.webp",
+  "60歳以上": "/targets/senior.webp",
+  単身: "/targets/single.webp",
+  親と同居: "/targets/with-parents.webp",
+};
+
+/**
+ * ターゲットの説明。AIが加えた候補は AI の definition、基本の候補は事実 B「ターゲット候補「…」の定義」の値
+ * 代表年齢（返済の計算に使う仮の年齢）は外す。単身の「年代は問わない」と食い違って見えるため
+ */
+export function targetDefinition(t: { name: string; source: string; definition: string | null }, facts: Fact[]): string | null {
+  if (t.source === "エージェント提案") return t.definition?.trim() || null;
+  const f = facts.find((x) => x.項目 === `ターゲット候補「${t.name}」の定義`);
+  if (!f?.値 || f.値.startsWith("定義は未設定")) return null;
+  return f.値.replace(/（代表年齢\d+歳）$/, "").trim() || null;
+}
+
+/** 物件の見出しにすでに出ている、または特徴と呼べない P の項目 */
+const NOT_FEATURE = /^(価格|所在地|物件区分|広告予算の総額|土地面積|築年数|階数)$/;
+/** 特徴に使う分類：物件・学区・周りの施設・交通 */
+const FEATURE_CATEGORIES: FactCategory[] = ["P", "S", "L", "T"];
+
+/**
+ * 「この物件の特徴」に出す事実。AIが訴求・推奨方針・第一ターゲットの根拠に引いた事実のうち、物件と立地の強みになるものだけ
+ * 取れなかった・要確認の事実（データの注意点に出す）、0件の施設、物件の見出しと同じ項目は外す。文はAIに作らせず、事実の値をそのまま短くする
+ */
+export function summaryFeatures(main: Pick<StrategyOutput, "appeals" | "summary" | "targets">, facts: Map<string, Fact>, max = 5): Fact[] {
+  const appeals = [...main.appeals].sort((a, b) => a.rank - b.rank);
+  const first = [...main.targets].sort((a, b) => a.rank - b.rank)[0];
+  const ids = [...appeals.flatMap((a) => a.evidence), ...main.summary.evidence, ...(first?.evidence ?? [])].map((i) => i.trim());
+  const out: Fact[] = [];
+  for (const id of new Set(ids)) {
+    const f = facts.get(id);
+    if (!f || f.状態 !== "取得" || !f.値) continue;
+    if (!FEATURE_CATEGORIES.includes(categoryOf(id) as FactCategory)) continue;
+    if (categoryOf(id) === "P" && NOT_FEATURE.test(f.項目)) continue;
+    if (/^0件/.test(f.値) || /^(不明|なし|入力なし)/.test(f.値)) continue;
+    out.push(f);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/**
+ * 特徴の1行。値を書き換えずに短くするだけ
+ * 「3件：A 直線320m、B …」→「A 直線320m（1km以内3件）」、間取り「居室4・納戸0（4LDK）」→「4LDK」
+ */
+export function featureText(f: Fact): { label: string; value: string } {
+  const label = shortLabel(f.項目);
+  const v = f.値 ?? "";
+  if (f.項目 === "間取り") {
+    const m = v.match(/（([^（）]+)）$/);
+    return { label, value: m && !m[1].includes("書き方") ? m[1] : v };
+  }
+  const count = v.match(/^(\d+)件：([^、]+?)(?:、| ほか|$)/);
+  if (count) {
+    const scope = f.項目.match(/（(\d+(?:\.\d+)?k?m以内)）$/)?.[1] ?? "";
+    return { label, value: `${count[2].trim()}（${scope}${count[1]}件）` };
+  }
+  return { label, value: v.replace(/\s+/g, " ").trim() };
+}

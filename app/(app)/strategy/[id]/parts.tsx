@@ -170,7 +170,7 @@ export function FactChip({ f, id }: { f: Fact | undefined; id: string }) {
   );
 }
 
-/** 文の根拠。件数ではなく、どの事実かが分かるチップで出す。多いときは3つまで見せて残りは開く */
+/** 文の根拠。件数ではなく、どの事実かが分かるチップで出す。多いときは3つまで見せて残りは開く。max=0 は「N件を見る」で開くまで閉じておく */
 export function Evidence({ ids, facts, max = 3 }: { ids: string[]; facts: Map<string, Fact>; max?: number }) {
   const [open, setOpen] = useState(false);
   const list = [...new Set(ids.map((i) => i.trim()).filter(Boolean))];
@@ -184,7 +184,7 @@ export function Evidence({ ids, facts, max = 3 }: { ids: string[]; facts: Map<st
       ))}
       {list.length > max && (
         <button type="button" onClick={() => setOpen(!open)} className="text-[12px] text-primary cursor-pointer">
-          {open ? "たたむ" : `ほか${list.length - max}件`}
+          {open ? "たたむ" : max === 0 ? `${list.length}件を見る` : `ほか${list.length - max}件`}
         </button>
       )}
     </div>
