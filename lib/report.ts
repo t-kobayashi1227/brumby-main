@@ -525,15 +525,34 @@ export function firstSentence(text: string): { head: string; rest: string | null
 
 /**
  * 根拠の事実を「何が・どうか」の短い1行にする（ターゲットを選んだ理由の観点ごとに1つ見せる）。値は書き換えず短くするだけ
- * 返済の目安は月々の返済額だけ（必要年収・金利は出さない。2026-11-04 浩平さん指示）。施設の件数は最寄り1つと件数
+ * 返済は月々の返済額だけ（必要年収・金利は出さない。2026-11-04 浩平さん指示）。必要年収の事実は null（1行に出さない）
+ * 施設の件数は最寄り1つと件数
  */
-export function aspectLine(f: Fact): { label: string; value: string } {
-  if (/の返済の目安/.test(f.項目) && f.値) {
-    const monthly = f.値.replace(/^代表年齢[^。]*。/, "").split("。")[0].match(/月々約[\d.,]+万円/)?.[0];
-    if (monthly) return { label: "返済の目安", value: monthly };
+export function aspectLine(f: Fact): { label: string; value: string } | null {
+  if (/^必要年収/.test(f.項目)) return null;
+  if (/の返済の目安/.test(f.項目)) {
+    const monthly = (f.値 ?? "").replace(/^代表年齢[^。]*。/, "").split("。")[0].match(/月々約[\d.,]+万円/)?.[0];
+    return monthly ? { label: "返済の目安", value: monthly } : null;
   }
+  if (/^月々の返済額/.test(f.項目)) return f.値 ? { label: "月々の返済額", value: f.値 } : null;
   const { label, value } = featureText(f);
   const short = label.replace(/^ターゲット候補「(.+)」の定義$/, "$1の定義");
   // 末尾の補足（系統・路線など）は外す。件数の補足（1km以内3件）は残す
   return { label: short, value: value.replace(/（(?![^（）]*件）)[^（）]*）$/, "").trim() || value };
+}
+
+/**
+ * 観点ごとに1行で見せる事実を選ぶ。事実シートにあるIDだけを数え、状態が「取得」で値のある事実を、AIが挙げた順に先に使う
+ * 1行にできない事実（必要年収など）は飛ばす。取れた事実が無く要確認・取得できずだけのときは、その事実を caution 付きで返す
+ */
+export function pickAspectFact(ids: string[], facts: Map<string, Fact>): { fact: Fact; line: { label: string; value: string } | null; caution: boolean; count: number } | null {
+  const resolved = ids.map((id) => facts.get(id)).filter((f): f is Fact => !!f);
+  if (resolved.length === 0) return null;
+  for (const f of resolved) {
+    if (f.状態 !== "取得" || !f.値) continue;
+    const line = aspectLine(f);
+    if (line) return { fact: f, line, caution: false, count: resolved.length };
+  }
+  const f = resolved.find((x) => x.状態 !== "取得") ?? resolved[0];
+  return { fact: f, line: f.状態 === "取得" ? null : { label: shortLabel(f.項目), value: f.状態 }, caution: f.状態 !== "取得", count: resolved.length };
 }

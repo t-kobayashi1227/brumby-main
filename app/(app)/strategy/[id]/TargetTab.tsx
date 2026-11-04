@@ -2,14 +2,14 @@
 
 import type { StrategyResult } from "../../../../lib/agents/run";
 import type { Fact } from "../../../../lib/facts/types";
-import { aspectLine, firstSentence, groupByAspect, placeOfAnalysis, TARGET_IMAGES } from "../../../../lib/report";
-import { CheckIcon, ChatIcon, DatabaseIcon, HomeIcon, MegaphoneIcon, PinIcon, TargetIcon, UsersIcon, YenIcon } from "../../../_components/icons";
+import { firstSentence, groupByAspect, pickAspectFact, placeOfAnalysis, TARGET_IMAGES } from "../../../../lib/report";
+import { AlertIcon, ChatIcon, DatabaseIcon, HomeIcon, MegaphoneIcon, PinIcon, TargetIcon, UsersIcon, YenIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, FactChip, HypothesisBadge, Num, useReportNav } from "./parts";
 
 // ② ターゲット・訴求：狙う層（第一〜第三候補）、訴求ポイント、顧客への伝え方（組み合わせた見立て）
 // 2026-11-04 浩平さん指摘「文字が多く認知的負荷が高い。なぜそのターゲットかを簡潔に」で組み直し：
 //   候補を横に並べ、理由はAIの文の最初の1文だけを見せ（firstSentence。中身は変えず「。」で切るだけ）、
-//   その下に「地域の特性・物件との合い方・買える見込み」の3つの観点を、根拠の事実の短い1行（aspectLine）で出す。説明の残りと根拠のチップは開いて見る
+//   その下に「地域の特性・物件との合い方・買える見込み」の3つの観点を、根拠の事実の短い1行（pickAspectFact・aspectLine）で出す。印は付けない（「検証済み」の印は使わない決まり）。説明の残りと根拠のチップは開いて見る
 // 順位はAIの見立てで、需要データで確かめたものではないため「仮説」を付ける。観点の分け方は事実の分類で決める（groupByAspect）
 // AIが3つより少なく返したときは、足りない枠に「候補なし」を出す（推測で埋めない）
 
@@ -21,7 +21,8 @@ type Target = StrategyResult["戦略"]["targets"][number];
 
 export default function TargetTab({ r, facts }: { r: StrategyResult; facts: Map<string, Fact> }) {
   const m = r.戦略;
-  const targets = [...m.targets].sort((a, b) => a.rank - b.rank);
+  // 順位の数字ではなく並び順で「第一〜第三」と呼ぶ（点検で外れた候補があっても番号が飛ばない）。4つ目以降は出さない
+  const targets = [...m.targets].sort((a, b) => a.rank - b.rank).slice(0, SLOTS);
   const appeals = [...m.appeals].sort((a, b) => a.rank - b.rank).slice(0, 3);
   const combos = m.analysis.filter((a) => placeOfAnalysis(a).tab === "target");
   const empty = Math.max(0, SLOTS - targets.length);
@@ -31,8 +32,8 @@ export default function TargetTab({ r, facts }: { r: StrategyResult; facts: Map<
       <Card title="狙うターゲット" icon={TargetIcon} aside={<HypothesisBadge />}>
         <div className="mb-3 text-[12px] text-sub">順位はAIの見立てです。反響を見て見直してください。</div>
         <ol className="grid gap-3 lg:grid-cols-3">
-          {targets.map((t) => (
-            <TargetCard key={`${t.rank}-${t.name}`} t={t} facts={facts} />
+          {targets.map((t, i) => (
+            <TargetCard key={`${t.rank}-${t.name}`} t={t} position={i} facts={facts} />
           ))}
           {Array.from({ length: empty }, (_, i) => (
             <li key={`empty-${i}`} className="grid min-h-[100px] place-items-center rounded-lg border border-dashed border-line p-4 text-center">
@@ -69,13 +70,17 @@ export default function TargetTab({ r, facts }: { r: StrategyResult; facts: Map<
             {combos.map((a, i) => (
               <li key={i} className="min-w-0 rounded-lg border border-line p-3">
                 <Ai size="sm">{a.use}</Ai>
-                <details className="mt-1.5">
+                <details className="mt-1.5 print:hidden">
                   <summary className="cursor-pointer text-[12px] text-primary underline">買い手にとっての意味と根拠</summary>
                   <div className="mt-1.5 grid gap-1">
                     <Ai size="sm">{a.meaning}</Ai>
                     <Evidence ids={a.evidence} facts={facts} />
                   </div>
                 </details>
+                <div className="mt-1.5 hidden gap-1 print:grid">
+                  <Ai size="sm">{a.meaning}</Ai>
+                  <Evidence ids={a.evidence} facts={facts} />
+                </div>
               </li>
             ))}
           </ul>
@@ -86,9 +91,9 @@ export default function TargetTab({ r, facts }: { r: StrategyResult; facts: Map<
 }
 
 /** 候補1つ：絵・順位・名前・理由の一言・3つの観点。説明の残りと根拠のチップは開いて見る */
-function TargetCard({ t, facts }: { t: Target; facts: Map<string, Fact> }) {
+function TargetCard({ t, position, facts }: { t: Target; position: number; facts: Map<string, Fact> }) {
   const { openFact } = useReportNav();
-  const main = t.rank === 1;
+  const main = position === 0;
   const image = t.source !== "エージェント提案" ? TARGET_IMAGES[t.name] : undefined;
   const { head, rest } = firstSentence(t.reason);
   // 一覧では3つの観点だけ。「買い手の傾向」「その他」の根拠は「説明と根拠をすべて見る」で出す
@@ -107,7 +112,7 @@ function TargetCard({ t, facts }: { t: Target; facts: Map<string, Fact> }) {
       )}
       <div className="grid min-w-0 flex-1 content-start gap-2 p-3">
         <div>
-          <span className={`rounded px-2 py-0.5 text-[12px] font-bold ${main ? "bg-primary text-white" : "bg-primary-soft text-primary"}`}>{RANK_LABEL[t.rank - 1] ?? `第${t.rank}候補`}</span>
+          <span className={`rounded px-2 py-0.5 text-[12px] font-bold ${main ? "bg-primary text-white" : "bg-primary-soft text-primary"}`}>{RANK_LABEL[position]}</span>
           <div className="mt-1 text-[18px] font-bold leading-snug text-ink">{t.name}</div>
           {t.source === "エージェント提案" && <div className="text-[12px] text-sub">AIが加えた候補{t.definition ? `：${t.definition}` : ""}</div>}
         </div>
@@ -120,44 +125,57 @@ function TargetCard({ t, facts }: { t: Target; facts: Map<string, Fact> }) {
         <ul className="grid gap-1">
           {groups.map((g) => {
             const Icon = ASPECT_ICON[g.key as keyof typeof ASPECT_ICON] ?? DatabaseIcon;
-            const f = g.ids.map((id) => facts.get(id)).find((x): x is Fact => !!x);
-            const line = f ? aspectLine(f) : null;
+            // 事実シートにある根拠だけを数え、取れた事実を先に1つ短く出す。要確認・取得できずだけなら、その状態を注意の色で出す（lib/report.ts の pickAspectFact）
+            const pick = pickAspectFact(g.ids, facts);
             return (
-              <li key={g.key} className="grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-1.5 text-[12px]">
-                {g.ids.length > 0 ? <CheckIcon className="mt-0.5 size-3.5 text-[#157347]" /> : <span className="text-center text-muted">－</span>}
-                <div className="min-w-0">
-                  <span className="flex items-center gap-1 text-sub">
-                    <Icon className="size-3.5 shrink-0" />
-                    {g.title}
-                    {g.ids.length > 1 && <span className="text-[11px] text-muted">（根拠{g.ids.length}件）</span>}
-                  </span>
-                  {line && f ? (
-                    <button type="button" onClick={() => openFact(f.id)} className="block max-w-full cursor-pointer text-left text-[13px] text-ink hover:text-primary" title={`${line.label} ${line.value}`}>
-                      <span className="line-clamp-2">
-                        {line.label} <span className="font-bold">{line.value}</span>
-                      </span>
-                    </button>
-                  ) : (
-                    <span className="text-muted">根拠なし</span>
-                  )}
-                </div>
+              <li key={g.key} className="min-w-0 text-[12px]">
+                <span className="flex items-center gap-1 text-sub">
+                  <Icon className="size-3.5 shrink-0" />
+                  {g.title}
+                  {pick && pick.count > 1 && <span className="text-[11px] text-muted">（根拠{pick.count}件）</span>}
+                </span>
+                {pick?.line ? (
+                  <button
+                    type="button"
+                    onClick={() => openFact(pick.fact.id)}
+                    className={`block max-w-full cursor-pointer pl-[1.125rem] text-left text-[13px] hover:text-primary ${pick.caution ? "text-accent" : "text-ink"}`}
+                    title={`${pick.line.label} ${pick.line.value}`}
+                  >
+                    <span className="line-clamp-2">
+                      {pick.caution && <AlertIcon className="mr-0.5 inline size-3.5 align-[-2px]" />}
+                      {pick.line.label} <span className="font-bold">{pick.line.value}</span>
+                    </span>
+                  </button>
+                ) : (
+                  <span className="block pl-[1.125rem] text-muted">{pick ? `根拠${pick.count}件（下で見る）` : "根拠なし"}</span>
+                )}
               </li>
             );
           })}
         </ul>
 
-        <details>
-          <summary className="cursor-pointer text-[12px] text-primary underline print:hidden">説明と根拠をすべて見る</summary>
-          <div className="mt-1.5 grid gap-1.5">
-            {rest && <Ai size="sm">{rest}</Ai>}
-            <div className="flex flex-wrap gap-1">
-              {[...new Set(t.evidence.map((e) => e.trim()).filter(Boolean))].map((id) => (
-                <FactChip key={id} id={id} f={facts.get(id)} />
-              ))}
-            </div>
-          </div>
+        <details className="print:hidden">
+          <summary className="cursor-pointer text-[12px] text-primary underline">説明と根拠をすべて見る</summary>
+          <More rest={rest} evidence={t.evidence} facts={facts} />
         </details>
+        {/* 閉じた details は印刷されないので、印刷では残りの説明と根拠をそのまま出す */}
+        <div className="hidden print:block">
+          <More rest={rest} evidence={t.evidence} facts={facts} />
+        </div>
       </div>
     </li>
+  );
+}
+
+function More({ rest, evidence, facts }: { rest: string | null; evidence: string[]; facts: Map<string, Fact> }) {
+  return (
+    <div className="mt-1.5 grid gap-1.5">
+      {rest && <Ai size="sm">{rest}</Ai>}
+      <div className="flex flex-wrap gap-1">
+        {[...new Set(evidence.map((e) => e.trim()).filter(Boolean))].map((id) => (
+          <FactChip key={id} id={id} f={facts.get(id)} />
+        ))}
+      </div>
+    </div>
   );
 }

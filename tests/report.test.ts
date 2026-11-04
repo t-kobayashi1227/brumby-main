@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MediaOutput } from "../lib/agents/schemas";
-import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex, firstSentence, aspectLine } from "../lib/report";
+import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex, firstSentence, aspectLine, pickAspectFact } from "../lib/report";
 import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -348,6 +348,46 @@ describe("aspectLine", () => {
     expect(aspectLine(f("最寄りバス停（直線）", "草水 直線90m（系統数1：新潟交通観光バス）"))).toEqual({ label: "最寄りバス停", value: "草水 直線90m" });
   });
   it("ターゲット候補の定義は短い名前にする", () => {
-    expect(aspectLine(f("ターゲット候補「50代の住み替え」の定義", "世帯主が50代")).label).toBe("50代の住み替えの定義");
+    expect(aspectLine(f("ターゲット候補「50代の住み替え」の定義", "世帯主が50代"))?.label).toBe("50代の住み替えの定義");
+  });
+});
+
+describe("aspectLine の返済・年収", () => {
+  const f = (項目: string, 値: string): Fact => ({ id: "B-01", 項目, 値, 出典: "s", 時点: "t", 状態: "取得" });
+  it("必要年収は1行にしない", () => {
+    expect(aspectLine(f("必要年収（変動0.95%）", "約300万円"))).toBeNull();
+    expect(aspectLine(f("必要年収以上の世帯の割合（変動0.95%、全国）", "約85%"))).toBeNull();
+  });
+  it("月々の返済額は金利を外した名前にする", () => {
+    expect(aspectLine(f("月々の返済額（変動0.95%・35年）", "約6.2万円"))).toEqual({ label: "月々の返済額", value: "約6.2万円" });
+  });
+  it("返済の目安に月々が無ければ null", () => {
+    expect(aspectLine(f("【若い夫婦】の返済の目安（返済期間35年）", "代表年齢30歳。計算できず"))).toBeNull();
+  });
+});
+
+describe("pickAspectFact", () => {
+  const mk = (id: string, 項目: string, 値: string | null, 状態: Fact["状態"] = "取得"): Fact => ({ id, 項目, 値, 出典: "s", 時点: "t", 状態 });
+  const facts = new Map(
+    [
+      mk("B-02", "必要年収（変動0.95%）", "約300万円"),
+      mk("B-07", "【若い夫婦】の返済の目安（返済期間35年）", "代表年齢30歳。変動0.95%：月々約6.2万円・必要年収約300万円"),
+      mk("S-01", "小学校区", "架空小学校", "要確認"),
+      mk("T-03", "最寄り駅の乗降客数（1日あたり）", null, "取得できず"),
+      mk("T-04", "最寄りバス停（直線）", "架空停 直線120m（系統数 3）"),
+    ].map((f) => [f.id, f]),
+  );
+  it("必要年収を飛ばし、返済の目安の月々を出す", () => {
+    expect(pickAspectFact(["B-02", "B-07"], facts)).toMatchObject({ line: { label: "返済の目安", value: "月々約6.2万円" }, caution: false, count: 2 });
+  });
+  it("取れた事実を先に使う", () => {
+    expect(pickAspectFact(["S-01", "T-04"], facts)).toMatchObject({ line: { label: "最寄りバス停", value: "架空停 直線120m" }, caution: false });
+  });
+  it("要確認・取得できずだけなら、その状態を caution で返す", () => {
+    expect(pickAspectFact(["T-03"], facts)).toMatchObject({ line: { value: "取得できず" }, caution: true, count: 1 });
+  });
+  it("事実シートに無いIDは数えない", () => {
+    expect(pickAspectFact(["A-99"], facts)).toBeNull();
+    expect(pickAspectFact(["A-99", "T-04"], facts)?.count).toBe(1);
   });
 });
