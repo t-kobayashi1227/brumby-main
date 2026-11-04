@@ -71,7 +71,7 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
   if (done) {
     const [datasets, media, areaMap, areaPrice, saleRows, resultRows] = await inOrder(
       () => sql<(DatasetInfo & { attribution: string | null })[]>`select id, name, provider, as_of, row_count, attribution from datasets`,
-      () => sql<{ id: string; name: string; category: string }[]>`select id, name, category from media`,
+      () => sql<{ id: string; name: string; category: string; purpose: string; reach_ages: string }[]>`select id, name, category, purpose, reach_ages from media`,
       () => loadAreaMap(sql, propertyId),
       () => loadAreaPrice(sql, propertyId, done.content.事実),
       // 販売施策タブの「販売記録の実績」（2026-11-04）。販売記録の画面で入れた値を読むだけで、ここでは書かない
@@ -107,7 +107,7 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
           facts={facts}
           sources={rows}
           credits={credits}
-          mediaInfo={Object.fromEntries(media.map((m) => [m.id, { name: m.name, category: m.category }]))}
+          mediaInfo={Object.fromEntries(media.map((m) => [m.id, { name: m.name, category: m.category, purpose: m.purpose, reachAges: m.reach_ages }]))}
           sheetCreatedAt={formatJstDateTime(done.content.作成日時)}
           propertyId={propertyId}
           runId={Number(done.run_id)}

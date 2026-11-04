@@ -5,9 +5,9 @@ import { useState } from "react";
 import type { StrategyResult } from "../../../../lib/agents/run";
 import type { Fact } from "../../../../lib/facts/types";
 import { SALE_STATUS_LABEL, SALE_STATUSES, grandTotal, type MediaResultTotal, type PartialSum } from "../../../../lib/records";
-import { defaultBudgetIndex, placeOfAnalysis } from "../../../../lib/report";
+import { defaultBudgetIndex, MEDIA_NOTES, placeOfAnalysis, PORTAL_DIFF_NOTE } from "../../../../lib/report";
 import { AlertIcon, ChartIcon, ClipboardIcon, MegaphoneIcon, SparkIcon } from "../../../_components/icons";
-import { Ai, Card, Evidence, HypothesisBadge, Num, useReportNav } from "./parts";
+import { Ai, Card, Evidence, HypothesisBadge, InfoTip, Num, useReportNav } from "./parts";
 
 // ③ 販売施策（2026-11-04 浩平さんの依頼で、B案「実行の流れ」を軸に作り直し。構成案は Claude Doc「販売施策タブの構成案」）
 //   方針と4つの要点 → 掲載前に確かめること → 実行の4ステップ → 媒体の順位と配分（予算を切り替えて金額） → 販売記録の実績
@@ -20,6 +20,9 @@ import { Ai, Card, Evidence, HypothesisBadge, Num, useReportNav } from "./parts"
 export interface MediaInfo {
   name: string;
   category: string;
+  /** 媒体一覧の「主な目的」「届きやすい年代（見立て）」。「i」の補足に出す */
+  purpose?: string;
+  reachAges?: string;
 }
 
 /** 販売記録の画面で入れた値（page.tsx で読む）。記録が無ければ status は null、totals は空 */
@@ -278,7 +281,7 @@ function MediaPlan({
     ) : undefined;
 
   return (
-    <Card title="媒体の順位と配分" icon={MegaphoneIcon} aside={toggle} className="print:[print-color-adjust:exact]">
+    <Card title="媒体の順位と配分" icon={MegaphoneIcon} aside={toggle} help={<PlanHelp />} className="print:[print-color-adjust:exact]">
       <div className="mb-3 grid gap-0.5 rounded-lg bg-subtle px-3 py-2 text-[12px] text-body">
         <div className="font-bold text-accent">参考の配分を示した試算です。正式な費用・見積もりではありません。</div>
         <div>配分はAIの暫定の見立てで、費用・反響の実績には基づきません。金額は、配分（%）×総額をシステムが0.1万円単位で計算しています。媒体の掲載料・最低料金、写真撮影などの制作費は入っていません。</div>
@@ -291,7 +294,12 @@ function MediaPlan({
               <Num n={i + 1} strong={i === 0} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <span className="text-[15px] font-bold text-ink">{nameOf(x.id, x.name)}</span>
+                  <span className="inline-flex items-center gap-0.5">
+                    <span className="text-[15px] font-bold text-ink">{nameOf(x.id, x.name)}</span>
+                    <InfoTip label={`${nameOf(x.id, x.name)}の特徴`}>
+                      <MediaHelp info={mediaInfo[x.id]} id={x.id} />
+                    </InfoTip>
+                  </span>
                   <span className="rounded bg-subtle px-1.5 py-0.5 text-[11px] text-sub">{mediaInfo[x.id]?.category ?? "その他"}</span>
                   <span className="flex min-w-0 items-center gap-1 text-[12px] text-sub">
                     <SparkIcon className="size-3 shrink-0 text-[#6b4fc0]" />
@@ -326,6 +334,54 @@ function MediaPlan({
         </div>
       )}
     </Card>
+  );
+}
+
+/** 「媒体の順位と配分」の決め方。だれ（AI／システム）が何を決めているかを短く */
+function PlanHelp() {
+  return (
+    <span className="grid gap-1.5">
+      <span className="block font-bold text-ink">順位と配分の決め方</span>
+      <span className="block">
+        <b>媒体と配分（%）</b>：AIが16の媒体から3〜6件を選んで決めます。材料は、ターゲット、年代別のメディア利用率と家の探し方の統計、各媒体の目的と届きやすい年代です。不動産ポータルは必ず入れます。
+      </span>
+      <span className="block">
+        <b>順位</b>：配分の大きい順に並べています。
+      </span>
+      <span className="block">
+        <b>金額</b>：配分×総額をシステムが計算します。
+      </span>
+      <span className="block text-muted">掲載料・反響の実績はまだ使っていません。</span>
+    </span>
+  );
+}
+
+/** 媒体1つの特徴。説明は画面に固定の一般的な説明、分類・目的・年代は媒体一覧（DB）の値 */
+function MediaHelp({ info, id }: { info: MediaInfo | undefined; id: string }) {
+  const note = MEDIA_NOTES[id];
+  return (
+    <span className="grid gap-1.5">
+      {note && <span className="block text-ink">{note}</span>}
+      {info && (
+        <span className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+          <span className="text-muted">分類</span>
+          <span>{info.category}</span>
+          {info.purpose && (
+            <>
+              <span className="text-muted">主な目的</span>
+              <span>{info.purpose}</span>
+            </>
+          )}
+          {info.reachAges && (
+            <>
+              <span className="text-muted">届きやすい年代</span>
+              <span>{info.reachAges}（当社の見立て）</span>
+            </>
+          )}
+        </span>
+      )}
+      {info?.category === "不動産ポータル" && <span className="block text-muted">{PORTAL_DIFF_NOTE}</span>}
+    </span>
   );
 }
 
