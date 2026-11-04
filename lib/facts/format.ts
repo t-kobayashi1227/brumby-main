@@ -31,6 +31,17 @@ export function formatJstDateTime(value: Date | string): string {
   });
 }
 
+/**
+ * 年齢 → 年代の言い方（30 → 「30代前半」、35 → 「30代半ば」、38 → 「30代後半」）
+ * ターゲット候補の返済の目安で、計算に使う年齢を「代表年齢55歳」ではなく年代で伝えるため（2026-11-04 浩平さん指摘）
+ * 一の位が0〜3は前半、4〜6は半ば、7〜9は後半
+ */
+export function ageBand(age: number): string {
+  const decade = Math.floor(age / 10) * 10;
+  const r = age - decade;
+  return `${decade}代${r <= 3 ? "前半" : r <= 6 ? "半ば" : "後半"}`;
+}
+
 /** 3桁ごとのカンマ */
 export function formatNumber(n: number, digits = 0): string {
   return n.toLocaleString("ja-JP", { minimumFractionDigits: digits, maximumFractionDigits: digits });
