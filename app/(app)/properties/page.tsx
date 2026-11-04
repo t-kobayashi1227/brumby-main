@@ -4,8 +4,8 @@ import { formatNumber } from "../../../lib/facts/format";
 import { PlusIcon } from "../../_components/icons";
 import { btnAction, card, emptyState, tableHead } from "../../_lib/ui";
 
-// 物件一覧。物件ごとに販売戦略の状態（未実行／実行中／完了／失敗）と第1ターゲットを出し、行を押すと物件の画面（/properties/[id]）を開く
-// 販売戦略を一度でも作った物件は、「販売戦略」の欄からレポート（/strategy/[id]）を開ける
+// 物件一覧。物件ごとに販売戦略の状態（未実行／実行中／完了／失敗）と第1ターゲットを出し、行を押すと販売戦略の画面（/strategy/[id]）を開く（2026-11-04 物件の画面から変更）
+// 戦略がまだ無い物件も販売戦略の画面を開き、そこで「戦略を作る」を押す。物件情報は販売戦略の画面の「物件情報を直す」から直す
 // 新しい物件は右上の「新規登録」から入力する（/properties/new）
 // 2026-10-26 までの「販売戦略」の一覧（/strategy）をここに移した
 
@@ -65,22 +65,16 @@ export default async function PropertyListPage() {
             <div>第1ターゲット</div>
           </div>
           {rows.map((p) => (
-            // 行全体を物件の画面へのリンクにし、販売戦略の欄だけ上に重ねてレポートへのリンクにする（リンクの入れ子を避ける）
+            // 行全体を販売戦略の画面へのリンクにする
             <div key={p.id} className={`relative grid ${COLS} gap-2 px-1 py-3 border-b border-canvas text-[13px] text-ink hover:bg-subtle`}>
-              <Link href={`/properties/${p.id}`} className="absolute inset-0" aria-label={`物件 ${p.code} を開く`} />
+              <Link href={`/strategy/${p.id}`} className="absolute inset-0" aria-label={`物件 ${p.code} の販売戦略を開く`} />
               <div className="font-bold">{p.code}</div>
               <div>{p.address}</div>
               <div>{p.property_class}</div>
               <div>{formatNumber(p.price_man_yen)}万円</div>
               <div>{p.layout}</div>
               <div className={p.status ? STATUS[p.status]?.className : "text-muted"}>
-                {p.status ? (
-                  <Link href={`/strategy/${p.id}`} className="relative z-10 underline underline-offset-2 hover:opacity-80">
-                    {STATUS[p.status]?.label ?? p.status}
-                  </Link>
-                ) : (
-                  "未実行"
-                )}
+                {p.status ? (STATUS[p.status]?.label ?? p.status) : "未実行"}
               </div>
               <div className="text-body">{p.first_target ?? "―"}</div>
             </div>

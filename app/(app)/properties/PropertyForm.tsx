@@ -413,7 +413,16 @@ function AiAssistPanel({ onImported, onBusyChange }: { onImported: (r: ImportRes
   );
 }
 
-export default function PropertyForm({ values = EMPTY, heading }: { values?: PropertyValues; heading?: React.ReactNode }) {
+export default function PropertyForm({
+  values = EMPTY,
+  heading,
+  rebuild = false,
+}: {
+  values?: PropertyValues;
+  heading?: React.ReactNode;
+  /** 販売戦略の画面の「戦略を作り直す」から開いたとき。保存したら販売戦略の画面へ移り、作り直しを始める（2026-11-04） */
+  rebuild?: boolean;
+}) {
   const [state, formAction, pending] = useActionState<PropertyFormState, FormData>(saveProperty, {});
   const v = values;
   const formRef = useRef<HTMLFormElement>(null);
@@ -547,6 +556,7 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
           className="grid gap-4 min-w-0"
         >
           {v.id && <input type="hidden" name="id" value={v.id} />}
+          {v.id && rebuild && <input type="hidden" name="after_save" value="strategy" />}
 
           {!v.id && <AiAssistPanel onImported={applyImport} onBusyChange={setAnalyzing} />}
 
@@ -819,8 +829,8 @@ export default function PropertyForm({ values = EMPTY, heading }: { values?: Pro
                 </div>
               )}
               <button type="submit" disabled={pending} className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-bold text-white shadow-sm cursor-pointer hover:bg-[#2459b0] disabled:opacity-60">
-                {pending ? "保存中…" : v.id ? "保存する" : "登録して位置を確認"}
-                {!pending && !v.id && <ArrowRightIcon className="size-4" />}
+                {pending ? "保存中…" : v.id ? (rebuild ? "保存して戦略を作り直す" : "保存する") : "登録して位置を確認"}
+                {!pending && (!v.id || rebuild) && <ArrowRightIcon className="size-4" />}
               </button>
             </div>
           </div>
