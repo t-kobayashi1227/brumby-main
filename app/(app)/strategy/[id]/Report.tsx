@@ -14,6 +14,7 @@ import PriceTab from "./PriceTab";
 import SalesTab, { type MediaInfo, type SalesRecords } from "./SalesTab";
 import SummaryTab from "./SummaryTab";
 import TargetTab from "./TargetTab";
+import type { CompetitorLink } from "../../../../lib/competitor-report";
 
 // ⑤販売戦略レポート（docs/設計まとめ.md「⑤画面の表示」）
 // 2026-11-03 浩平さんの変更仕様で、3タブ（販売戦略・根拠データ・エリア分析）から6タブに組み直した：
@@ -54,7 +55,7 @@ export default function Report({
   /** 入力画面で添付した外観の写真の URL。無ければ null（販売施策タブは既定の絵を出す） */
   exteriorImage: string | null;
   /** 競合の物件ID → その物件の番号（販売施策タブの競合の列から、その物件の販売戦略へ） */
-  competitorLinks?: Record<string, number>;
+  competitorLinks?: Record<string, CompetitorLink>;
 }) {
   const [tab, setTab] = useState<ReportTab>("summary");
   const [selectedFact, setSelectedFact] = useState<string | null>(null);

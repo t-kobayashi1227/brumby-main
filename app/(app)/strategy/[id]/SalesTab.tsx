@@ -9,6 +9,7 @@ import { defaultBudgetIndex, groupMedia, MEDIA_NOTES, placeOfAnalysis, PORTAL_CA
 import { AlertIcon, ChartIcon, ClipboardIcon, MegaphoneIcon, SparkIcon } from "../../../_components/icons";
 import CompetitorCompare from "./CompetitorCompare";
 import { Ai, Card, Evidence, HypothesisBadge, InfoTip, Num, useReportNav } from "./parts";
+import type { CompetitorLink } from "../../../../lib/competitor-report";
 
 // ③ 販売施策（2026-11-04 浩平さんの依頼で、B案「実行の流れ」を軸に作り直し。構成案は Claude Doc「販売施策タブの構成案」）
 //   方針と4つの要点 → 競合と比べたおすすめポイントと懸念点（2026-11-05） → 掲載前に確かめること → 実行の4ステップ → 媒体の順位と配分（予算を切り替えて金額） → 販売記録の実績
@@ -60,7 +61,7 @@ export default function SalesTab({
   /** 添付した外観の写真。あれば方針の右の絵の代わりに出す（2026-11-05 浩平さん依頼）。無ければ既定の絵 */
   exteriorImage: string | null;
   /** 競合の物件ID → その物件の番号（競合の販売戦略へのリンク） */
-  competitorLinks: Record<string, number>;
+  competitorLinks: Record<string, CompetitorLink>;
 }) {
   const m = r.戦略;
   // 不動産ポータル（SUUMO・アットホームなど）は1行にまとめる（2026-11-04 浩平さん指摘。lib/report.ts の groupMedia）

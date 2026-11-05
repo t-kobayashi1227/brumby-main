@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { competitorPart } from "../../../../lib/agents/competitor-part";
 import type { StrategyOutput } from "../../../../lib/agents/schemas";
-import { competitorColumns, type CompetitorColumn } from "../../../../lib/competitor-report";
+import { competitorColumns, type CompetitorColumn, type CompetitorLink } from "../../../../lib/competitor-report";
+import { IMAGE_KINDS, type ImageKind } from "../../../../lib/property-images";
 import type { Fact } from "../../../../lib/facts/types";
 import { AlertIcon, ChevronRightIcon, ScaleIcon, SparkIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence } from "./parts";
@@ -44,8 +45,7 @@ export default function CompetitorCompare({
   strategy: StrategyOutput;
   facts: Map<string, Fact>;
   propertyId: number;
-  /** 競合の物件ID → その物件の番号（販売戦略へのリンク）。消えた物件は無い */
-  competitorLinks: Record<string, number>;
+  competitorLinks: Record<string, CompetitorLink>;
 }) {
   const columns = competitorColumns([...facts.values()]);
   const part = competitorPart(strategy);
@@ -156,7 +156,7 @@ function Column({
   col: CompetitorColumn;
   note: NonNullable<ReturnType<typeof competitorPart>>["competitors"][number] | null;
   concernNo: Map<number, number>;
-  link: number | undefined;
+  link: CompetitorLink | undefined;
   facts: Map<string, Fact>;
 }) {
   const [open, setOpen] = useState(false);
@@ -182,7 +182,7 @@ function Column({
           <span className="rounded bg-[#f59e0b] px-1.5 py-0.5 text-[11px] font-bold text-white">競合{col.n}</span>
           <span className="text-[14px] font-bold text-ink">{col.code ?? "物件IDなし"}</span>
           {link !== undefined && (
-            <Link href={`/strategy/${link}`} className="ml-auto flex items-center text-[12px] text-brand underline print:hidden">
+            <Link href={`/strategy/${link.id}`} className="ml-auto flex items-center text-[12px] text-brand underline print:hidden">
               販売戦略を見る
               <ChevronRightIcon className="size-3.5" />
             </Link>
@@ -195,6 +195,9 @@ function Column({
           )}
         </div>
       </div>
+
+      {/* 競合の物件の画像（2026-11-05 浩平さん依頼）。1枚も無いときは既定の絵 */}
+      <Photos propertyId={link?.id} kinds={link?.images ?? []} code={col.code} />
 
       {/* 物件情報と、この物件との差（システムの登録値と計算） */}
       <dl className="grid gap-1 text-[13px]">
@@ -291,5 +294,50 @@ function Column({
         </div>
       )}
     </section>
+  );
+}
+
+/** 列の見出しの下の画像。大きく1枚（外観→内観→間取り図の順で最初のもの）、2枚以上あれば下の小さい画像で切り替える */
+function Photos({ propertyId, kinds, code }: { propertyId: number | undefined; kinds: ImageKind[]; code: string | null }) {
+  const [shown, setShown] = useState<ImageKind | null>(null);
+  const slots = propertyId === undefined ? [] : IMAGE_KINDS.filter((k) => kinds.includes(k.kind));
+  const current = slots.find((k) => k.kind === shown) ?? slots[0];
+  // 間取り図は切れないように全体を見せる。写真は枠いっぱいに出す
+  const fit = (kind: ImageKind) => (kind === "間取り図" ? "object-contain bg-white" : "object-cover bg-subtle");
+  if (!current || propertyId === undefined) {
+    return (
+      <div className="relative overflow-hidden rounded-md border border-divider">
+        {/* eslint-disable-next-line @next/next/no-img-element -- 画像の最適化は止めている（next.config.ts） */}
+        <img src="/sales/house.webp" alt="" aria-hidden className="aspect-[16/10] w-full object-cover opacity-80" />
+        <span className="absolute bottom-1.5 left-1.5 rounded bg-white/90 px-1.5 py-0.5 text-[10px] text-sub">画像の登録なし（イメージ）</span>
+      </div>
+    );
+  }
+  const src = (slug: string) => `/properties/${propertyId}/images/${slug}`;
+  return (
+    <div className="grid gap-1.5">
+      <a href={src(current.slug)} target="_blank" rel="noreferrer" className="relative block overflow-hidden rounded-md border border-divider" aria-label={`${code ?? "競合"}の${current.fact}を大きく見る`}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- 画像の最適化は止めている（next.config.ts） */}
+        <img src={src(current.slug)} alt={`${code ?? "競合"}の${current.fact}`} loading="lazy" className={`aspect-[16/10] w-full ${fit(current.kind)}`} />
+        <span className="absolute bottom-1.5 left-1.5 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-sub">{current.kind}</span>
+      </a>
+      {slots.length > 1 && (
+        <div className="flex gap-1.5 print:hidden">
+          {slots.map((k) => (
+            <button
+              key={k.kind}
+              type="button"
+              onClick={() => setShown(k.kind)}
+              aria-label={`${k.fact}を見る`}
+              aria-pressed={k.kind === current.kind}
+              className={`w-16 overflow-hidden rounded border-2 cursor-pointer ${k.kind === current.kind ? "border-[#f59e0b]" : "border-transparent opacity-70 hover:opacity-100"}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- 画像の最適化は止めている（next.config.ts） */}
+              <img src={src(k.slug)} alt="" loading="lazy" className={`aspect-[4/3] w-full ${fit(k.kind)}`} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

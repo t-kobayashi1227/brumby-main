@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { StrategyResult } from "../../../../lib/agents/run";
 import { loadAreaMap } from "../../../../lib/area-map-load";
 import { competitorColumns } from "../../../../lib/competitor-report";
+import { IMAGE_KINDS } from "../../../../lib/property-images";
 import { loadAreaPrice } from "../../../../lib/area-price-load";
 import { getSql, inOrder } from "../../../../lib/db";
 import type { DatasetInfo } from "../../../../lib/facts/build";
@@ -84,10 +85,15 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
         from media_results r left join media m on m.id = r.media_id
         where r.property_id = ${propertyId} order by r.started_on, r.id
       `,
-      // 販売施策タブの競合の列から、その物件の販売戦略へ移るための番号（事実シートには物件IDだけがある。消えた物件は出ない）
+      // 販売施策タブの競合の列から、その物件の販売戦略へ移るための番号と、列に出す画像の枠（事実シートには物件IDだけがある。消えた物件は出ない）
       async () => {
         const codes = competitorColumns(done.content.事実).flatMap((c) => (c.code ? [c.code] : []));
-        return codes.length ? await sql<{ id: string; code: string }[]>`select id, code from properties where code in ${sql(codes)}` : [];
+        return codes.length
+          ? await sql<{ id: string; code: string; image_kinds: string[] }[]>`
+              select id, code, array(select kind from property_images i where i.property_id = properties.id) as image_kinds
+              from properties where code in ${sql(codes)}
+            `
+          : [];
       },
     );
     const records = {
@@ -123,7 +129,9 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
           areaPrice={areaPrice}
           records={records}
           exteriorImage={p.has_exterior ? `/properties/${propertyId}/images/exterior` : null}
-          competitorLinks={Object.fromEntries(competitorRows.map((c) => [c.code, Number(c.id)]))}
+          competitorLinks={Object.fromEntries(
+            competitorRows.map((c) => [c.code, { id: Number(c.id), images: IMAGE_KINDS.filter((k) => c.image_kinds.includes(k.kind)).map((k) => k.kind) }]),
+          )}
         />
       </>
     );

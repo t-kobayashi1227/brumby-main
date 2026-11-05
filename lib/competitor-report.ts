@@ -2,6 +2,13 @@
 // 値はシステムが作った事実の文字（lib/facts/build.ts の competitorFacts）を読み分けるだけ。新しい数字は作らない
 
 import type { Fact } from "./facts/types";
+import type { ImageKind } from "./property-images";
+
+/** 競合の物件ID → その物件の番号（販売戦略へのリンク）と、添付されている画像の枠（並びは IMAGE_KINDS の順）。消えた物件は無い */
+export interface CompetitorLink {
+  id: number;
+  images: ImageKind[];
+}
 
 export interface CompetitorRow {
   label: string;
