@@ -3,7 +3,7 @@
 import type { StrategyResult } from "../../../../lib/agents/run";
 import { vsNextOf } from "../../../../lib/agents/sales-focus";
 import type { Fact } from "../../../../lib/facts/types";
-import { firstSentence, groupByAspect, pickAspectFact, placeOfAnalysis, TARGET_IMAGES } from "../../../../lib/report";
+import { baseTargets, firstSentence, groupByAspect, pickAspectFact, placeOfAnalysis, TARGET_IMAGES } from "../../../../lib/report";
 import { AlertIcon, ChatIcon, DatabaseIcon, HomeIcon, MegaphoneIcon, PinIcon, TargetIcon, UsersIcon, YenIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, FactChip, HypothesisBadge, Num, useReportNav } from "./parts";
 
@@ -30,7 +30,7 @@ export default function TargetTab({ r, facts }: { r: StrategyResult; facts: Map<
 
   return (
     <div className="grid gap-4">
-      <Card title="狙うターゲット" icon={TargetIcon} aside={<HypothesisBadge />}>
+      <Card title="狙うターゲット" icon={TargetIcon} aside={<HypothesisBadge />} help={<BaseTargetsHelp facts={facts} />}>
         <div className="mb-3 text-[12px] text-sub">順位はAIの見立てです。反響を見て見直してください。</div>
         <ol className="grid gap-3 lg:grid-cols-3">
           {targets.map((t, i) => (
@@ -191,5 +191,20 @@ function More({ rest, evidence, facts }: { rest: string | null; evidence: string
         ))}
       </div>
     </div>
+  );
+}
+
+/** 「狙うターゲット」の補足：登録済みの基本の6候補の概要（2026-11-06 浩平さん依頼）。AIはこの中から選び、合わない層が見えるときだけ候補を足す */
+function BaseTargetsHelp({ facts }: { facts: Map<string, Fact> }) {
+  const list = baseTargets([...facts.values()]);
+  return (
+    <span className="grid gap-1.5">
+      <span>AIは、登録済みの次の6つから3つを選びます。当てはまらない層が事実から見えるときは、新しい候補を足すことがあります。</span>
+      {list.map((t) => (
+        <span key={t.name} className="block">
+          <span className="font-bold">{t.name}</span>：{t.definition ?? "説明なし"}
+        </span>
+      ))}
+    </span>
   );
 }

@@ -372,6 +372,14 @@ export const TARGET_IMAGES: Record<string, string> = {
 };
 
 /**
+ * 登録済みの基本の6候補と、その説明（ターゲット・訴求タブの「狙うターゲット」の補足。2026-11-06 浩平さん依頼）
+ * 説明はこの戦略に使った事実シートの定義（targetDefinition と同じ読み方）。無ければ null
+ */
+export function baseTargets(facts: Fact[]): { name: string; definition: string | null }[] {
+  return Object.keys(TARGET_IMAGES).map((name) => ({ name, definition: targetDefinition({ name, source: "候補", definition: null }, facts) }));
+}
+
+/**
  * ターゲットの説明。AIが加えた候補は AI の definition、基本の候補は事実 B「ターゲット候補「…」の定義」の値
  * 前の事実シートは末尾に「（代表年齢30歳）」（返済の計算に使う仮の年齢）が付いているので外す。単身の「年代は問わない」と食い違って見えるため
  */

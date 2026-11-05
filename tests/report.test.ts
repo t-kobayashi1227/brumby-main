@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MediaOutput } from "../lib/agents/schemas";
-import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, focusToCheck, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex, firstSentence, aspectLine, pickAspectFact, MEDIA_NOTES, groupMedia } from "../lib/report";
+import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, focusToCheck, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, baseTargets, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex, firstSentence, aspectLine, pickAspectFact, MEDIA_NOTES, groupMedia } from "../lib/report";
 import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -319,6 +319,13 @@ describe("販売の基本戦略", () => {
     expect(targetDefinition({ name: "単身", source: "候補", definition: null }, list)).toBeNull();
     expect(targetDefinition({ name: "親と同居", source: "候補", definition: null }, list)).toBeNull();
     expect(targetDefinition({ name: "車2台の世帯", source: "エージェント提案", definition: " 車で通勤する世帯 " }, list)).toBe("車で通勤する世帯");
+  });
+
+  it("狙うターゲットの補足は、基本の6候補を決まった順に、事実の定義で出す", () => {
+    const got = baseTargets(list);
+    expect(got.map((t) => t.name)).toEqual(["若い夫婦", "小中学生のいる家族", "50代の住み替え", "60歳以上", "単身", "親と同居"]);
+    expect(got[0].definition).toBe("世帯主が20代〜30代前半の世帯");
+    expect(got.find((t) => t.name === "単身")!.definition).toBeNull();
   });
 
   it("基本の6候補には絵がある", () => {
