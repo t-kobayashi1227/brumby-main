@@ -184,7 +184,7 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
       </div>
 
       <div className="grid gap-5 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)_minmax(0,1fr)]">
-        {/* メインの買い手 */}
+        {/* ターゲット像（2026-11-06 浩平さん指示で「想定するメインの買い手」から変更。対象以外も買う余地があるため） */}
         <div className="min-w-0">
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element -- public/ の絵をそのまま出す（next.config.ts で画像の最適化を止めている）
@@ -195,7 +195,7 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
             </div>
           )}
           <div className="mt-3">
-            <span className="inline-block rounded bg-[#f1ecfb] px-2 py-0.5 text-[11px] font-bold text-[#5b3fa8]">想定するメインの買い手</span>
+            <span className="inline-block rounded bg-[#f1ecfb] px-2 py-0.5 text-[11px] font-bold text-[#5b3fa8]">ターゲット像</span>
           </div>
           {main ? (
             <>

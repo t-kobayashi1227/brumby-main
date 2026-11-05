@@ -372,7 +372,7 @@ export const TARGET_IMAGES: Record<string, string> = {
 };
 
 /**
- * 登録済みの基本の6候補と、その説明（ターゲット・訴求タブの「狙うターゲット」の補足。2026-11-06 浩平さん依頼）
+ * 登録済みの基本の6候補と、その説明（ターゲット・訴求タブの「ターゲット像」の補足。2026-11-06 浩平さん依頼）
  * 説明はこの戦略に使った事実シートの定義（targetDefinition と同じ読み方）。無ければ null
  */
 export function baseTargets(facts: Fact[]): { name: string; definition: string | null }[] {

@@ -75,7 +75,7 @@ export default function SalesTab({
   const first = media[0];
 
   const tiles: { label: string; value: React.ReactNode; sub?: React.ReactNode }[] = [
-    { label: "メインの買い手", value: main ? main.name : "未設定", sub: main ? <HypothesisBadge /> : undefined },
+    { label: "ターゲット像", value: main ? main.name : "未設定", sub: main ? <HypothesisBadge /> : undefined },
     // 媒体の目的と訴求はAIの文なので ✦ を付ける（事実と見分ける決まり）
     {
       label: "最初に出す媒体",

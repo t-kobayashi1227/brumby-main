@@ -30,7 +30,7 @@ export default function TargetTab({ r, facts }: { r: StrategyResult; facts: Map<
 
   return (
     <div className="grid gap-4">
-      <Card title="狙うターゲット" icon={TargetIcon} aside={<HypothesisBadge />} help={<BaseTargetsHelp facts={facts} />}>
+      <Card title="ターゲット像" icon={TargetIcon} aside={<HypothesisBadge />} help={<BaseTargetsHelp facts={facts} />}>
         <div className="mb-3 text-[12px] text-sub">順位はAIの見立てです。反響を見て見直してください。</div>
         <ol className="grid gap-3 lg:grid-cols-3">
           {targets.map((t, i) => (
@@ -194,7 +194,7 @@ function More({ rest, evidence, facts }: { rest: string | null; evidence: string
   );
 }
 
-/** 「狙うターゲット」の補足：登録済みの基本の6候補の概要（2026-11-06 浩平さん依頼）。AIはこの中から選び、合わない層が見えるときだけ候補を足す */
+/** 「ターゲット像」の補足：登録済みの基本の6候補の概要（2026-11-06 浩平さん依頼）。AIはこの中から選び、合わない層が見えるときだけ候補を足す */
 function BaseTargetsHelp({ facts }: { facts: Map<string, Fact> }) {
   const list = baseTargets([...facts.values()]);
   return (
