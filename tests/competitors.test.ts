@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { addressToChome, filterCandidates, formatCompetitorDistance, parseCompetitorIds, sortCandidates, type CompetitorCandidate } from "../lib/competitors";
 import { diffPhrase, firstSentence, parseDiffs, parsePairs } from "../lib/competitor-report";
 import { quoteCompetitorView } from "../lib/facts/competitor-quote";
-import { factUsage, withPlainIds } from "../lib/report";
+import { factOrigin, factUsage, nextCheck, withPlainIds } from "../lib/report";
 import type { MediaOutput, StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -144,6 +144,13 @@ describe("レポートでの競合と比べた部分", () => {
     const r = withPlainIds(main, facts);
     expect(r.competitor_edge?.point).toBe("競合1：物件情報 より広い");
     expect(r.competitors[0].fact_id).toBe("K-01");
+  });
+
+  it("競合の事実の出どころは「入力」。確かめ先は競合の物件の画面", () => {
+    const view: Fact = { id: "K-03", 項目: "競合1：AIの見立て", 値: "x", 出典: "本システムの販売戦略（物件ID A1、2026-11-01作成）", 時点: "2026-11", 状態: "要確認" };
+    expect(factOrigin(facts.get("K-01")!)).toBe("入力");
+    expect(nextCheck(view)).toMatchObject({ who: "競合の物件の画面", what: expect.stringContaining("競合の戦略を作り直してから比べ直す") });
+    expect(nextCheck(facts.get("K-01")!).who).toBe("競合の物件の画面");
   });
 
   it("使用箇所は販売施策タブ", () => {

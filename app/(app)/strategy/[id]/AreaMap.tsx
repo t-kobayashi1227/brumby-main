@@ -202,7 +202,7 @@ export default function AreaMap({ data, compact = false }: { data: AreaMapData; 
           </div>
         ) : (
           <div>
-            競合物件は入力された住所の位置、成約事例は販売記録で販売の状況を「販売済み」にした自社の物件（3km以内）、生活施設は取り込み済みの公的データ（種類ごとに1km以内を近い順に{PER_KIND_LIMIT}件まで、無ければ3km以内の最寄り）です。ボタンの数字は地図に出した件数で、バス停は乗り場（ポール）ごとに数えるため、事実シートの件数と違うことがあります。
+            競合物件は物件情報の画面で選んだ物件の登録位置、成約事例は販売記録で販売の状況を「販売済み」にした自社の物件（3km以内）、生活施設は取り込み済みの公的データ（種類ごとに1km以内を近い順に{PER_KIND_LIMIT}件まで、無ければ3km以内の最寄り）です。ボタンの数字は地図に出した件数で、バス停は乗り場（ポール）ごとに数えるため、事実シートの件数と違うことがあります。
             {data.cut.length > 0 && ` 1km以内に多いため近い${PER_KIND_LIMIT}件だけ出した種類：${data.cut.map((c) => `${c.kind}（${c.total}件）`).join("、")}。`}
           {data.competitorsWithoutLocation > 0 && ` 位置が無い競合物件 ${data.competitorsWithoutLocation}件は地図に出ていません。`}
           </div>

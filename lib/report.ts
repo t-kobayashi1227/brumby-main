@@ -146,6 +146,8 @@ export type FactOrigin = "入力" | "公的・調査データ" | "地図デー�
 const RAW_LAND_PRICE = /^近くの(公示地|基準地)/;
 export function factOrigin(f: Fact): FactOrigin {
   if (f.出典.startsWith("入力")) return "入力";
+  // 競合（K）は本システムに登録した物件の値と、その物件の販売戦略の引用（2026-11-05）
+  if (categoryOf(f.id) === "K") return "入力";
   if (f.出典.includes("計算") || (categoryOf(f.id) === "M" && !RAW_LAND_PRICE.test(f.項目))) return "システム計算";
   if (f.出典.includes("一覧（")) return "設定値";
   if (f.出典.includes("OpenStreetMap")) return "地図データ（OSM）";
@@ -237,7 +239,12 @@ export function groupByAspect(evidence: string[], facts: Map<string, Fact>): { k
 export function nextCheck(f: Fact): { who: string; what: string } {
   const c = categoryOf(f.id);
   const name = shortLabel(f.項目);
-  if (factOrigin(f) === "入力" || c === "P" || c === "K") return { who: "売主・物件資料", what: `${name}を確認し、物件情報に入力する` };
+  if (c === "K") {
+    return f.項目.endsWith("AIの見立て")
+      ? { who: "競合の物件の画面", what: `${name}は、競合の物件情報を直す前の戦略からの引用なので、競合の戦略を作り直してから比べ直す` }
+      : { who: "競合の物件の画面", what: `${name}を、競合の物件の画面で確かめる` };
+  }
+  if (factOrigin(f) === "入力" || c === "P") return { who: "売主・物件資料", what: `${name}を確認し、物件情報に入力する` };
   if (c === "H" || c === "R") return { who: "ハザードマップ・都市計画図", what: `物件の位置で${name}を確かめる` };
   if (c === "S") return { who: "市の通学区域", what: `住所から${name}を確かめる` };
   if (f.状態 === "要確認" && /^データは.+時点/.test(f.比較 ?? "")) return { who: "市の一覧・現地", what: `近くの${name}を、最新の一覧か現地で確かめる（データの時点より後の閉所・新設は入っていない）` };

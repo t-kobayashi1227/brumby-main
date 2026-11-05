@@ -5,7 +5,7 @@ import { addressToChome, sortCandidates, type CompetitorCandidate } from "./comp
 import { saleState } from "./listView";
 
 /** 戦略を作り終えた物件の条件（3回の形で、戦略の答えがあるもの）。SQL の where に埋め込む */
-const DONE = "status = 'succeeded' and form = '3回' and result -> '戦略' is not null";
+const done = (sql: Sql) => sql`status = 'succeeded' and form = '3回' and result -> '戦略' is not null`;
 
 /**
  * 競合に選べる物件：販売戦略を作り終えた物件（この物件を除く）。近い順
@@ -35,7 +35,7 @@ export async function loadCompetitorCandidates(sql: Sql, selfId: number | null):
       s.status as sale_status
     from properties p
     join lateral (
-      select finished_at from strategy_runs where property_id = p.id and ${sql.unsafe(DONE)} order by finished_at desc limit 1
+      select finished_at from strategy_runs where property_id = p.id and ${done(sql)} order by finished_at desc limit 1
     ) r on true
     left join sales_records s on s.property_id = p.id
     where p.id <> ${self}
@@ -71,7 +71,7 @@ export async function competitorsWithoutStrategy(sql: Sql, ids: number[]): Promi
   if (ids.length === 0) return [];
   const rows = await sql<{ id: string }[]>`
     select p.id from properties p
-    where p.id in ${sql(ids)} and exists (select 1 from strategy_runs where property_id = p.id and ${sql.unsafe(DONE)})
+    where p.id in ${sql(ids)} and exists (select 1 from strategy_runs where property_id = p.id and ${done(sql)})
   `;
   const ok = new Set(rows.map((r) => Number(r.id)));
   return ids.filter((id) => !ok.has(id));
