@@ -159,7 +159,7 @@ describe("レポートでの競合と比べた部分", () => {
     competitor_edge: { point: "K-01 より広い", cause: "c", action: "a", why_first: "w", evidence: ["K-01", "P-02"] },
     competitor_concerns: [{ rank: 1, concern: "高い", cause: "c", evidence: ["K-01", "P-03"] }],
     competitors: [{ fact_id: "K-01", buyer_view: { text: "見え方", evidence: ["K-01"] }, about_edge: true, concern_ranks: [1] }],
-  } as StrategyOutput;
+  } as unknown as StrategyOutput;
   const media: MediaOutput = { media: [], cautions: [] };
 
   it("文の中のIDは名前に直し、fact_id は事実IDのまま残す", () => {

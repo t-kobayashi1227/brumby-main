@@ -21,6 +21,8 @@ const mainSchema = z.object({
       // エージェント提案の候補だけ説明を書く。候補（6つ）は null
       definition: z.string().nullable(),
       reason: z.string(),
+      // 第1を第2より上にした理由（rank 1 だけ。差がつく事実がなければ「はっきりした差なし」）。2026-11-05 より前の答えには無い
+      vs_next: z.string().nullable(),
       evidence,
       confidence,
     }),
@@ -48,6 +50,20 @@ const competitorShape = {
   competitors: z.array(z.object({ fact_id: z.string(), buyer_view: sentence, about_edge: z.boolean(), concern_ranks: z.array(z.number().int()) })),
 };
 
+/**
+ * この物件でいちばん大事なこと（2026-11-05 妥当性チェックの結果から）。戦略を決める前に1つ決めさせるので、分析のあと・ターゲットの前に置く
+ * 媒体担当には渡さない（mainPart で落ちる）。2026-11-05 より前の答えには無い（lib/agents/sales-focus.ts）
+ */
+export const SALES_FOCUS_KINDS = ["強みを伝える", "不安を取り除く", "確かめる"] as const;
+const salesFocusSchema = z.object({
+  kind: z.enum(SALES_FOCUS_KINDS),
+  point: z.string(),
+  why_this_property: z.string(),
+  why_first: z.string(),
+  action: z.string(),
+  evidence,
+});
+
 /** 戦略担当の答え。分析（事実 → 買い手にとっての意味 → 販売での使い方）と戦略を1回で作る。分析を先に書かせる */
 export const STRATEGY_TOPICS = ["物件", "立地", "価格", "買い手", "組み合わせ", "その他"] as const;
 export const strategySchema = z.object({
@@ -63,10 +79,12 @@ export const strategySchema = z.object({
     }),
   ),
   unknown: z.array(z.string()),
+  sales_focus: salesFocusSchema,
   ...mainSchema.shape,
   ...competitorShape,
 });
 export type StrategyOutput = z.infer<typeof strategySchema>;
+export type SalesFocus = StrategyOutput["sales_focus"];
 export type CompetitorEdge = NonNullable<StrategyOutput["competitor_edge"]>;
 export type CompetitorConcern = StrategyOutput["competitor_concerns"][number];
 export type CompetitorNote = StrategyOutput["competitors"][number];

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { bannedWords, checkCompetitors, checkProgram, removeSentences, splitWhere } from "../lib/agents/checks";
+import { bannedWords, checkCompetitors, checkProgram, checkSalesFocus, isGuideFlow, removeSentences, splitWhere, strengthFacts } from "../lib/agents/checks";
+import { salesFocusOf, vsNextOf } from "../lib/agents/sales-focus";
 import { competitorPart } from "../lib/agents/competitor-part";
 import { z } from "zod/v4";
 import { costUsd, providerOf, resolveModels } from "../lib/agents/cost";
@@ -48,7 +49,8 @@ function main(overrides: Partial<StrategyOutput> = {}): StrategyOutput {
     analysis: [analysis(["L-04"])],
     unknown: [],
     summary: { text: "総合評価", evidence: ["P-02"] },
-    targets: [{ rank: 1, name: "若い夫婦", source: "候補", definition: null, reason: "理由", evidence: ["B-06"], confidence: "中" }],
+    sales_focus: { kind: "強みを伝える", point: "公園が近い", why_this_property: "理由", why_first: "先にやる理由", action: "写真を出す", evidence: ["P-02"] },
+    targets: [{ rank: 1, name: "若い夫婦", source: "候補", definition: null, reason: "理由", vs_next: null, evidence: ["B-06"], confidence: "中" }],
     not_fit: [],
     appeals: [
       { rank: 1, text: "公園が近い", evidence: ["L-04"] },
@@ -362,5 +364,83 @@ describe("OpenAI の答えの読み取り", () => {
     expect(parseJson('{"ok":true,', schema)).toBeNull();
     expect(parseJson('{"ok":"yes","n":3}', schema)).toBeNull();
     expect(parseJson("", schema)).toBeNull();
+  });
+});
+
+describe("この物件でいちばん大事なこと・第1と第2の差（2026-11-05）", () => {
+  const SF = [
+    ...FACTS,
+    { ...fact("P-01"), 項目: "物件区分", 値: "新築" },
+    { ...fact("P-11"), 項目: "リフォーム", 値: "2024年：キッチン・浴室" },
+    { ...fact("P-12"), 項目: "リフォーム", 値: "不明（入力なし）", 状態: "要確認" as const },
+    { ...fact("T-01"), 項目: "交通1（物件資料の徒歩分）", 値: "白山駅 徒歩8分" },
+  ];
+  const target = (rank: number, vs_next: string | null): StrategyOutput["targets"][number] => ({
+    rank, name: `候補${rank}`, source: "候補", definition: null, reason: "理由", vs_next, evidence: ["B-06"], confidence: "中",
+  });
+  const names = (issues: { check_name: string }[]) => issues.map((i) => i.check_name);
+
+  it("強みの事実は新築・リフォームあり・交通を拾い、不明のリフォームは拾わない", () => {
+    expect(strengthFacts(SF)).toEqual([
+      { label: "新築", ids: ["P-01"] },
+      { label: "リフォーム", ids: ["P-11"] },
+      { label: "交通", ids: ["T-01"] },
+    ]);
+    expect(strengthFacts([{ ...fact("P-01"), 項目: "物件区分", 値: "中古" }, { ...fact("P-11"), 項目: "リフォーム", 値: "なし" }])).toEqual([]);
+  });
+
+  it("案内の流れの型は「問い合わせ」と「内見・内覧」の両方で見る", () => {
+    expect(isGuideFlow("問い合わせを集め、内見で広さを見せる")).toBe(true);
+    expect(isGuideFlow("問い合わせの後に内覧へ")).toBe(true);
+    expect(isGuideFlow("子育て世帯に学区の近さを推す")).toBe(false);
+  });
+
+  it("強みを根拠に使っていれば記録しない。使っていない強みと案内の型は記録だけ", () => {
+    const used = main({
+      sales_focus: { ...main().sales_focus, evidence: ["P-01", "T-01"] },
+      appeals: [{ rank: 1, text: "リフォーム済み", evidence: ["P-11"] }],
+    });
+    expect(checkSalesFocus(used, SF)).toEqual([]);
+
+    const issues = checkSalesFocus(main({ direction: { text: "問い合わせから内見へ案内する", evidence: ["S-02"] } }), SF);
+    expect(names(issues)).toEqual(["案内の流れの型", "強みの取りこぼし", "強みの取りこぼし", "強みの取りこぼし"]);
+    expect(issues.every((i) => i.action === "記録だけ")).toBe(true);
+    expect(issues[1].problem).toContain("新築の事実（P-01）");
+  });
+
+  it("いちばん大事なことの根拠に物件（P）の事実が無ければ作り直し", () => {
+    const issues = checkSalesFocus(main({ sales_focus: { ...main().sales_focus, evidence: ["L-04", "P-99"] } }), FACTS);
+    expect(issues).toContainEqual(expect.objectContaining({ location: "sales_focus", check_name: "いちばん大事なことに物件の根拠がない", action: "作り直し" }));
+  });
+
+  it("vs_next は第1候補だけ。第1に無い・第2以降にあるときは記録だけ", () => {
+    expect(names(checkSalesFocus(main({ targets: [target(1, "間取りが4LDK"), target(2, null)] }), FACTS))).toEqual([]);
+    expect(names(checkSalesFocus(main({ targets: [target(1, "はっきりした差なし"), target(2, null)] }), FACTS))).toEqual([]);
+    const issues = checkSalesFocus(main({ targets: [target(2, "x"), target(1, " ")] }), FACTS);
+    expect(issues.map((i) => [i.location, i.problem])).toEqual([
+      ["targets[1]", "第1候補に、第2候補より上にした理由（vs_next）がありません"],
+      ["targets[0]", "第1候補以外に vs_next があります"],
+    ]);
+    // 候補が1つだけなら比べる相手がないので求めない
+    expect(names(checkSalesFocus(main({ targets: [target(1, null)] }), FACTS))).toEqual([]);
+  });
+
+  it("sales_focus の事実IDもほかの文と同じく点検する（無いIDは作り直し）", () => {
+    const issues = checkProgram(main({ sales_focus: { ...main().sales_focus, evidence: ["P-02", "X-01"] } }), media(), FACTS, MEDIA_IDS);
+    expect(issues).toContainEqual(expect.objectContaining({ location: "sales_focus", action: "作り直し", problem: expect.stringContaining("X-01") }));
+  });
+
+  it("以前の答え（sales_focus・vs_next が無い）は案内の型だけ見て、ほかは点検しない", () => {
+    const legacy = { ...main(), targets: [{ ...target(1, null) }, { ...target(2, null) }] } as Partial<StrategyOutput>;
+    delete legacy.sales_focus;
+    for (const t of legacy.targets!) delete (t as Partial<typeof t>).vs_next;
+    expect(salesFocusOf(legacy as StrategyOutput)).toBeNull();
+    expect(vsNextOf(legacy.targets![0])).toBeNull();
+    expect(checkSalesFocus(legacy as StrategyOutput, SF)).toEqual([]);
+    expect(checkProgram(legacy as StrategyOutput, media(), FACTS, MEDIA_IDS).some((i) => i.location === "sales_focus")).toBe(false);
+  });
+
+  it("媒体担当には sales_focus を渡さない", () => {
+    expect("sales_focus" in mainPart(main())).toBe(false);
   });
 });
