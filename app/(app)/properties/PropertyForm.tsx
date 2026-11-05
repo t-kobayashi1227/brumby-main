@@ -451,7 +451,24 @@ function ImageSlot({ kind, slug, savedUrl, onBusyChange }: { kind: string; slug:
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 画像をドラッグして枠の上に乗せているか（ドロップでも添付できる。2026-11-05 浩平さん依頼）
+  const [dragging, setDragging] = useState(false);
   const shown = action === "replace" ? preview : action === "keep" ? savedUrl : null;
+
+  const dropProps = {
+    onDragOver: (e: React.DragEvent) => {
+      if (busy || !e.dataTransfer.types.includes("Files")) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      setDragging(true);
+    },
+    onDragLeave: () => setDragging(false),
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      if (!busy) choose(e.dataTransfer.files[0]);
+    },
+  };
 
   const clearFile = () => {
     if (fileRef.current) fileRef.current.value = "";
@@ -506,7 +523,10 @@ function ImageSlot({ kind, slug, savedUrl, onBusyChange }: { kind: string; slug:
         onClick={() => fileRef.current?.click()}
         disabled={busy}
         aria-label={shown ? `${kind}の画像を差し替える` : `${kind}の画像を添付`}
-        className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg border border-dashed border-field bg-subtle text-[13px] text-sub cursor-pointer hover:border-primary hover:text-primary disabled:cursor-wait disabled:opacity-60"
+        {...dropProps}
+        className={`flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg border border-dashed text-[13px] cursor-pointer hover:border-primary hover:text-primary disabled:cursor-wait disabled:opacity-60 ${
+          dragging ? "border-2 border-primary bg-primary-soft text-primary" : "border-field bg-subtle text-sub"
+        }`}
       >
         {shown ? (
           // eslint-disable-next-line @next/next/no-img-element -- 添付した画像をその場で見せるだけ（最適化しない）
@@ -514,7 +534,7 @@ function ImageSlot({ kind, slug, savedUrl, onBusyChange }: { kind: string; slug:
         ) : (
           <span className="flex flex-col items-center gap-1.5">
             {busy ? <SpinnerIcon className="size-6 animate-spin" /> : <PlusIcon className="size-6" />}
-            {busy ? "読み込み中…" : "画像を添付"}
+            {busy ? "読み込み中…" : dragging ? "ここにドロップ" : "クリックかドラッグで添付"}
           </span>
         )}
       </button>

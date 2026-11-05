@@ -42,7 +42,22 @@ const STATUS_BADGE: Record<string, string> = {
   販売中止: "bg-[#eceef2] text-[#5b6476]",
 };
 
-export default function SalesTab({ r, facts, mediaInfo, propertyId, records }: { r: StrategyResult; facts: Map<string, Fact>; mediaInfo: Record<string, MediaInfo>; propertyId: number; records: SalesRecords }) {
+export default function SalesTab({
+  r,
+  facts,
+  mediaInfo,
+  propertyId,
+  records,
+  exteriorImage,
+}: {
+  r: StrategyResult;
+  facts: Map<string, Fact>;
+  mediaInfo: Record<string, MediaInfo>;
+  propertyId: number;
+  records: SalesRecords;
+  /** 添付した外観の写真。あれば方針の右の絵の代わりに出す（2026-11-05 浩平さん依頼）。無ければ既定の絵 */
+  exteriorImage: string | null;
+}) {
   const m = r.戦略;
   // 不動産ポータル（SUUMO・アットホームなど）は1行にまとめる（2026-11-04 浩平さん指摘。lib/report.ts の groupMedia）
   const media = groupMedia(r.媒体.media, (id) => mediaInfo[id]);
@@ -108,8 +123,14 @@ export default function SalesTab({ r, facts, mediaInfo, propertyId, records }: {
               ))}
             </dl>
           </div>
-          {/* eslint-disable-next-line @next/next/no-img-element -- public/ の絵をそのまま出す（next.config.ts で画像の最適化を止めている） */}
-          <img src="/sales/house.webp" alt="" aria-hidden className="hidden h-full min-h-[220px] w-full object-cover md:block print:hidden" />
+          {/* 外観の写真を添付していればそれを、無ければ既定の絵を出す。eslint-disable-next-line は画像の最適化を止めているため（next.config.ts） */}
+          {exteriorImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={exteriorImage} alt="外観の写真" className="hidden h-full min-h-[220px] w-full bg-subtle object-cover md:block print:hidden" />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src="/sales/house.webp" alt="" aria-hidden className="hidden h-full min-h-[220px] w-full object-cover md:block print:hidden" />
+          )}
         </div>
       </section>
 

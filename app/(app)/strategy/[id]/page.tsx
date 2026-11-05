@@ -34,6 +34,7 @@ interface PropertyRow {
   parking: number;
   building_age: number;
   has_location: boolean;
+  has_exterior: boolean;
 }
 
 export default async function StrategyDetailPage({ params, searchParams }: PageProps<"/strategy/[id]">) {
@@ -44,7 +45,8 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
 
   const sql = getSql();
   const [p] = await sql<PropertyRow[]>`
-    select code, property_class, price_man_yen, address, layout, building_sqm, land_sqm, parking, building_age, geog is not null as has_location
+    select code, property_class, price_man_yen, address, layout, building_sqm, land_sqm, parking, building_age, geog is not null as has_location,
+      exists(select 1 from property_images i where i.property_id = properties.id and i.kind = '外観') as has_exterior
     from properties where id = ${propertyId}
   `;
   if (!p) return <div className={emptyState}>物件 {propertyId} が見つかりません。</div>;
@@ -114,6 +116,7 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
           areaMap={areaMap}
           areaPrice={areaPrice}
           records={records}
+          exteriorImage={p.has_exterior ? `/properties/${propertyId}/images/exterior` : null}
         />
       </>
     );
