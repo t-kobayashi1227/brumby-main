@@ -13,10 +13,9 @@ import { Ai, Card, Evidence } from "./parts";
 // 販売施策タブの「競合と比べたおすすめポイントと懸念点」（2026-11-05 浩平さん依頼）
 // 競合は、物件情報の画面で選んだ、本システムで販売戦略を作った別の物件（最大3件）
 // いちばん上に、競合と比べて事実で示せるこの物件の良さ（おすすめポイント）を出し、次に懸念点（最大2つ、対策は出さない）、
-// その下に競合を選んだ数だけ列で並べる（1件なら1列、2件なら2列、3件なら3列。狭い画面では縦に並べる）
+// その下に競合を列で並べる。1〜2件でも3列の幅にそろえ、空いた列は「未選択です」でグレーアウト（2026-11-05 浩平さん指示。1列だと画像と表が横に広がりすぎる）。狭い画面では縦に並べる
 // 列の物件情報・特徴は事実（システムの登録値）、AIの見立ては競合の販売戦略からの引用、「買い手から見ると」はこの物件の戦略担当の見立て
 
-const COLS: Record<number, string> = { 1: "", 2: "md:grid-cols-2", 3: "md:grid-cols-3" };
 
 /** 上のおすすめポイント・懸念点へ移る（列の札から） */
 function jumpTo(id: string) {
@@ -137,9 +136,19 @@ export default function CompetitorCompare({
         </div>
       )}
 
-      <div className={`grid gap-3 ${COLS[columns.length] ?? "md:grid-cols-3"}`}>
+      <div className="grid gap-3 md:grid-cols-3">
         {columns.map((col) => (
           <Column key={col.infoId} col={col} note={notes.get(col.n) ?? null} concernNo={concernNo} link={col.code ? competitorLinks[col.code] : undefined} facts={facts} />
+        ))}
+        {/* 選んでいない列は「未選択です」でグレーアウト（2026-11-05 浩平さん指示）。狭い画面では縦に並ぶので出さない */}
+        {Array.from({ length: Math.max(0, 3 - columns.length) }, (_, i) => (
+          <div
+            key={`empty-${i}`}
+            className="hidden min-h-[200px] flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line bg-subtle text-[13px] text-muted md:flex print:hidden"
+          >
+            <span className="rounded bg-[#d4d8de] px-1.5 py-0.5 text-[11px] font-bold text-white">競合{columns.length + i + 1}</span>
+            未選択です
+          </div>
         ))}
       </div>
     </Card>
@@ -308,7 +317,7 @@ function Photos({ propertyId, kinds, code }: { propertyId: number | undefined; k
     return (
       <div className="relative overflow-hidden rounded-md border border-divider">
         {/* eslint-disable-next-line @next/next/no-img-element -- 画像の最適化は止めている（next.config.ts） */}
-        <img src="/sales/house.webp" alt="" aria-hidden className="aspect-[16/10] w-full object-cover opacity-80" />
+        <img src="/sales/house.webp" alt="" aria-hidden className="aspect-[16/9] max-h-44 w-full object-cover opacity-80" />
         <span className="absolute bottom-1.5 left-1.5 rounded bg-white/90 px-1.5 py-0.5 text-[10px] text-sub">画像の登録なし（イメージ）</span>
       </div>
     );
@@ -318,7 +327,7 @@ function Photos({ propertyId, kinds, code }: { propertyId: number | undefined; k
     <div className="grid gap-1.5">
       <a href={src(current.slug)} target="_blank" rel="noreferrer" className="relative block overflow-hidden rounded-md border border-divider" aria-label={`${code ?? "競合"}の${current.fact}を大きく見る`}>
         {/* eslint-disable-next-line @next/next/no-img-element -- 画像の最適化は止めている（next.config.ts） */}
-        <img src={src(current.slug)} alt={`${code ?? "競合"}の${current.fact}`} loading="lazy" className={`aspect-[16/10] w-full ${fit(current.kind)}`} />
+        <img src={src(current.slug)} alt={`${code ?? "競合"}の${current.fact}`} loading="lazy" className={`aspect-[16/9] max-h-44 w-full ${fit(current.kind)}`} />
         <span className="absolute bottom-1.5 left-1.5 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-sub">{current.kind}</span>
       </a>
       {slots.length > 1 && (
