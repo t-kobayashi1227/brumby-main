@@ -109,7 +109,7 @@ export default function CompetitorPicker({ candidates, initialIds, isNew }: { ca
                 />
               </label>
               <div className="text-[11px] text-muted">
-                {isNew ? "販売戦略を作った日が新しい順です。距離は、この物件を登録して位置が決まると出ます。" : "この物件から近い順です（直線距離）。"}
+                {isNew ? "販売戦略を作った日時が新しい順です。距離は、この物件を登録して位置が決まると出ます。" : "この物件から近い順です（直線距離）。"}
               </div>
               <ul className="grid max-h-80 gap-1.5 overflow-y-auto">
                 {shown.map((c) => {

@@ -38,6 +38,11 @@ describe("競合の候補", () => {
     expect(sortCandidates(rows).map((r) => r.id)).toEqual([3, 2, 4, 1]);
   });
 
+  it("位置が無いとき（新しく登録するとき）は、同じ日でも作った時刻が新しい順", () => {
+    const rows = [cand(1, null, "2026-11-05 09:10"), cand(18, null, "2026-11-05 17:36"), cand(19, null, "2026-11-05 12:00"), cand(20, null, "2026-11-04 23:59")];
+    expect(sortCandidates(rows).map((r) => r.id)).toEqual([18, 19, 1, 20]);
+  });
+
   it("物件ID・所在地で絞り込む（全角・空白はそろえる）", () => {
     const rows = [cand(1, null, "x", { code: "AB-001" }), cand(2, null, "x", { area: "新潟市江南区亀田" })];
     expect(filterCandidates(rows, "ab－001").map((r) => r.id)).toEqual([1]);

@@ -23,7 +23,7 @@ export interface CompetitorCandidate {
   building_age: number;
   /** この物件からの直線距離（m）。どちらかの位置がないときは null */
   distance_m: number | null;
-  /** 販売戦略を作った日（YYYY-MM-DD、一番新しいもの） */
+  /** 販売戦略を作った日時（日本時間の YYYY-MM-DD HH:MI、一番新しいもの）。並べ替えにも使うので分まで持つ（2026-11-06） */
   strategy_on: string;
   /** 販売記録の販売状況。記録がなければ「未設定」 */
   sale: SaleState;
@@ -41,7 +41,7 @@ export function addressToChome(address: string): string {
   return rest === "" ? a : rest;
 }
 
-/** 候補の並び：近い順（距離がないものは後ろ）。距離が同じ・どちらもないときは、戦略を作った日が新しい順 */
+/** 候補の並び：近い順（距離がないものは後ろ）。距離が同じ・どちらもないときは、戦略を作った日時が新しい順（分まで。日付だけだと同じ日に作った物件が登録順に並んでいた） */
 export function sortCandidates(rows: CompetitorCandidate[]): CompetitorCandidate[] {
   return [...rows].sort((a, b) => {
     if (a.distance_m !== null && b.distance_m !== null && a.distance_m !== b.distance_m) return a.distance_m - b.distance_m;

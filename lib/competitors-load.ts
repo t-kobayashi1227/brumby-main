@@ -31,7 +31,7 @@ export async function loadCompetitorCandidates(sql: Sql, selfId: number | null):
   >`
     select p.id, p.code, p.property_class, p.address, p.price_man_yen, p.layout, p.building_sqm, p.land_sqm, p.building_age,
       extensions.st_distance(p.geog, (select geog from properties where id = ${self})) as distance_m,
-      to_char(r.finished_at at time zone 'Asia/Tokyo', 'YYYY-MM-DD') as strategy_on,
+      to_char(r.finished_at at time zone 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') as strategy_on,
       s.status as sale_status
     from properties p
     join lateral (
