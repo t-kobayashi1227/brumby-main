@@ -33,6 +33,7 @@ export default function Report({
   areaMap,
   areaPrice,
   records,
+  exteriorImage,
 }: {
   result: StrategyResult;
   facts: Fact[];
@@ -49,6 +50,8 @@ export default function Report({
   areaPrice: AreaPriceResult;
   /** 販売記録の画面で入れた販売の状況と、媒体ごとの実績の合計（販売施策タブに出す） */
   records: SalesRecords;
+  /** 入力画面で添付した外観の写真の URL。無ければ null（販売施策タブは既定の絵を出す） */
+  exteriorImage: string | null;
 }) {
   const [tab, setTab] = useState<ReportTab>("summary");
   const [selectedFact, setSelectedFact] = useState<string | null>(null);
@@ -88,7 +91,7 @@ export default function Report({
       <Legend />
       {tab === "summary" && <SummaryTab r={result} facts={byId} factList={facts} propertyId={propertyId} runId={runId} areaMap={areaMap} areaPrice={areaPrice} />}
       {tab === "target" && <TargetTab r={result} facts={byId} />}
-      {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} records={records} />}
+      {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} records={records} exteriorImage={exteriorImage} />}
       {tab === "price" && <PriceTab r={result} facts={byId} factList={facts} />}
       {tab === "area" && <AreaTab r={result} facts={byId} factList={facts} areaMap={areaMap} />}
       {tab === "evidence" && <EvidenceTab facts={facts} usage={usage} sources={sources} sheetCreatedAt={sheetCreatedAt} selected={selectedFact} onSelect={setSelectedFact} />}
