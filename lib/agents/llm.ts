@@ -35,6 +35,23 @@ export interface CallOptions {
   effort: Effort;
   /** 考える分（thinking・reasoning）も max_tokens に入るので、余裕を持たせる */
   maxTokens: number;
+  /** 最後の user の発言に添える画像（戦略担当に物件の画像を渡すときだけ使う。DB には残さない） */
+  images?: ImageInput[];
+}
+
+/** AI に添える画像。base64 は data: を付けない中身だけ。label は画像の前に置く文（どの事実の画像か） */
+export interface ImageInput {
+  mediaType: "image/png" | "image/jpeg" | "image/webp";
+  base64: string;
+  label?: string;
+}
+
+/** 画像があれば、最後の user の発言を「（ラベル・画像）…＋文字」の形にする。提供元ごとの書き方は toBlock・text で決める */
+export function withImages<I, T>(messages: ChatMessage[], images: ImageInput[] | undefined, toBlock: (img: ImageInput) => I, text: (t: string) => T) {
+  const last = messages.findLastIndex((m) => m.role === "user");
+  if (!images?.length || last < 0) return messages;
+  const parts = images.flatMap((img) => (img.label ? [text(`画像：${img.label}`), toBlock(img)] : [toBlock(img)]));
+  return messages.map((m, i) => (i === last ? { role: m.role, content: [...parts, text(m.content)] } : m));
 }
 
 export const DEFAULT_CALL: CallOptions = { model: MODEL, effort: "medium", maxTokens: 16000 };
@@ -66,7 +83,12 @@ async function callAnthropic(system: string, messages: ChatMessage[], schema: z.
       model: options.model,
       max_tokens: options.maxTokens,
       system,
-      messages,
+      messages: withImages(
+        messages,
+        options.images,
+        (img) => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mediaType, data: img.base64 } }),
+        (t) => ({ type: "text" as const, text: t }),
+      ) as Anthropic.MessageParam[],
       output_config: { format: zodOutputFormat(schema), effort: options.effort },
     })
     .finalMessage();
@@ -90,7 +112,12 @@ async function callOpenAI(system: string, messages: ChatMessage[], schema: z.Zod
       {
         model: options.model,
         instructions: system,
-        input: messages,
+        input: withImages(
+          messages,
+          options.images,
+          (img) => ({ type: "input_image" as const, image_url: `data:${img.mediaType};base64,${img.base64}`, detail: "high" as const }),
+          (t) => ({ type: "input_text" as const, text: t }),
+        ) as OpenAI.Responses.ResponseInput,
         max_output_tokens: options.maxTokens,
         reasoning: { effort: options.effort },
         text: { format: zodTextFormat(schema, "output") },

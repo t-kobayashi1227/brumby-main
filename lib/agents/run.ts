@@ -13,6 +13,7 @@ import { createFactSheet } from "../facts";
 import type { FactSheet } from "../facts/types";
 import { checkProgram, removeSentences, splitWhere, type CheckIssue } from "./checks";
 import { checkInput, mediaInput, strategyInput } from "./input";
+import { toImageInputs } from "../property-images";
 import { STRATEGY_MODEL, type Model } from "./cost";
 import { callModel, DEFAULT_CALL, type CallOptions, type ChatMessage, type Effort } from "./llm";
 import { agentPrompt } from "./prompts";
@@ -88,6 +89,12 @@ export async function runStrategy(
   const { id: factSheetId, sheet } = latest ? { id: Number(latest.id), sheet: latest.content } : await createFactSheet(sql, propertyId);
   const mediaIds = (await sql<{ id: string }[]>`select id from media order by sort`).map((m) => m.id);
   const [{ ad_budget_man_yen: adBudget }] = await sql<{ ad_budget_man_yen: number | null }[]>`select ad_budget_man_yen from properties where id = ${propertyId}`;
+  // 物件の画像（外観・内観・間取り図）は戦略担当の呼び出しにだけ添える（2026-11-05 浩平さん指示。画像を読むためだけの呼び出しは足さない）
+  // 事実シートと食い違わないよう、事実シートに画像の事実があるものだけを、その事実IDを付けて添える
+  const imageRows = await sql<{ kind: string; image: Uint8Array; media_type: string }[]>`
+    select kind, image, media_type from property_images where property_id = ${propertyId}
+  `;
+  const images = toImageInputs([...imageRows], new Map(sheet.事実.map((f) => [f.項目, f.id])));
 
   await sql`
     update strategy_runs set status = 'failed', error = '途中で止まりました（サーバーが止まった可能性があります）', finished_at = now()
@@ -111,10 +118,12 @@ export async function runStrategy(
   const call = async <S extends z.ZodType>(agent: AgentName, input: unknown, schema: S, callOptions: CallOptions = DEFAULT_CALL) => {
     const prompt = agentPrompt(agent);
     const messages: ChatMessage[] = [{ role: "user", content: typeof input === "string" ? input : JSON.stringify(input) }];
+    // 添えた画像は、中身を残さず種類と大きさだけ残す
+    const sent = (callOptions.images ?? []).map((img) => ({ label: img.label ?? null, mediaType: img.mediaType, bytes: Buffer.byteLength(img.base64, "base64") }));
     const [row] = await db(
       () => sql<{ id: string }[]>`
         insert into agent_calls (run_id, agent, attempt, model, effort, prompt_file, prompt_sha256, input)
-        values (${runId}, ${agent}, 1, ${callOptions.model}, ${callOptions.effort}, ${prompt.file}, ${prompt.sha256}, ${sql.json({ messages } as never)})
+        values (${runId}, ${agent}, 1, ${callOptions.model}, ${callOptions.effort}, ${prompt.file}, ${prompt.sha256}, ${sql.json((sent.length ? { messages, images: sent } : { messages }) as never)})
         returning id
       `,
     );
@@ -156,7 +165,11 @@ export async function runStrategy(
 
   try {
     // 1. 戦略（事実シートから、判断に効く事実を表にして渡す。lib/agents/input.ts）
-    const strategyCall = await call("戦略", strategyInput(sheet), strategySchema, { ...options.strategy, maxTokens: STRATEGY_MAX_TOKENS });
+    const strategyCall = await call("戦略", strategyInput(sheet), strategySchema, {
+      ...options.strategy,
+      maxTokens: STRATEGY_MAX_TOKENS,
+      ...(images.length ? { images } : {}),
+    });
     let main: StrategyOutput = strategyCall.output;
 
     // 2. 媒体（P・B・C のうち媒体に使う事実と、戦略のうち分析を除いた部分）

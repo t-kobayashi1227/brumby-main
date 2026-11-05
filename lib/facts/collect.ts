@@ -103,6 +103,7 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
   const [p] = await sql<PropertyRow[]>`
     select code, property_class, price_man_yen, address, layout, rooms, storerooms, building_sqm, land_sqm, parking, building_age,
       floors, has_garden, renovated, renovation_year, renovation_parts, features, ad_budget_man_yen,
+      array(select kind from property_images i where i.property_id = properties.id) as image_kinds,
       extensions.st_x(geog::extensions.geometry) as lon, extensions.st_y(geog::extensions.geometry) as lat
     from properties where id = ${propertyId}
   `;

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSql, type Sql } from "../../../lib/db";
+import { readImageUploads, type ImageUpload } from "../../../lib/property-images";
 import { geocodeAddress, isInNiigata } from "../../../lib/geocode";
 import { FLOORS, parseLayout, parsePropertyId, PROPERTY_CLASSES, RENOVATION_PARTS, TRANSPORT_MODES } from "../../../lib/property";
 
@@ -53,6 +54,20 @@ function oneOf<T extends string>(value: string | null, choices: readonly T[], la
 function yesNoOrNull(value: string | null, label: string): boolean | null {
   if (value === null) return null;
   return oneOf(value, ["あり", "なし"], label) === "あり";
+}
+
+/** 物件の画像（外観・内観・間取り図、任意）。差し替えた枠は入れ直し、外した枠は消す。変えない枠は触らない */
+async function writeImages(tx: Sql, propertyId: number, uploads: ImageUpload[]) {
+  for (const u of uploads) {
+    if (u.action === "remove") {
+      await tx`delete from property_images where property_id = ${propertyId} and kind = ${u.kind}`;
+      continue;
+    }
+    await tx`
+      insert into property_images (property_id, kind, image, media_type) values (${propertyId}, ${u.kind}, ${Buffer.from(u.bytes)}, ${u.mediaType})
+      on conflict (property_id, kind) do update set image = excluded.image, media_type = excluded.media_type
+    `;
+  }
 }
 
 function readProperty(formData: FormData) {
@@ -188,6 +203,7 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
     const sql = getSql();
     // 先に全部の欄を確かめる（誤りがあれば何も保存しない）
     const values = readProperty(formData);
+    const images = await readImageUploads(formData);
     const transports = readTransports(formData);
     const competitors = await competitorsWithLocation(readCompetitors(formData));
     const id = Number(text(formData, "id") ?? 0);
@@ -198,6 +214,7 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
       await sql.begin(async (tx) => {
         await tx`update properties set ${tx(values)} where id = ${id}`;
         await writeChildren(tx as unknown as Sql, id, transports, competitors);
+        await writeImages(tx as unknown as Sql, id, images);
       });
       // 住所を変えたら位置を取り直す（地図で直したピンも、住所が変わったら取り直す）
       const warning = before.address !== values.address ? await geocodeAndStore(sql, id, values.address) : null;
@@ -216,6 +233,7 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
     createdId = await sql.begin(async (tx) => {
       const [row] = await tx<{ id: number }[]>`insert into properties ${tx(values)} returning id`;
       await writeChildren(tx as unknown as Sql, Number(row.id), transports, competitors);
+      await writeImages(tx as unknown as Sql, Number(row.id), images);
       return Number(row.id);
     });
     located = (await geocodeAndStore(sql, createdId, values.address)) === null;
