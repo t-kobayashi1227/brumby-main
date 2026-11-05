@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addressToChome, filterCandidates, formatCompetitorDistance, parseCompetitorIds, sortCandidates, type CompetitorCandidate } from "../lib/competitors";
-import { diffPhrase, firstSentence, parseDiffs, parsePairs } from "../lib/competitor-report";
+import { diffPhrase, firstSentence, parseDiffs, parsePairs, selfColumn } from "../lib/competitor-report";
 import { quoteCompetitorView } from "../lib/facts/competitor-quote";
 import { factOrigin, factUsage, nextCheck, withPlainIds } from "../lib/report";
 import type { MediaOutput, StrategyOutput } from "../lib/agents/schemas";
@@ -45,11 +45,12 @@ describe("競合の候補", () => {
     expect(filterCandidates(rows, " ")).toHaveLength(2);
   });
 
-  it("送られた番号：空は飛ばし、最大3件・自分自身・重なり・数でないものは誤り", () => {
+  it("送られた番号：空は飛ばし、最大2件・自分自身・重なり・数でないものは誤り", () => {
     expect(parseCompetitorIds(["3", "", "5"], 1)).toEqual([3, 5]);
     expect(() => parseCompetitorIds(["1"], 1)).toThrow("この物件自身");
     expect(() => parseCompetitorIds(["2", "2"], 1)).toThrow("同じ物件");
-    expect(() => parseCompetitorIds(["2", "3", "4", "5"], null)).toThrow("3件まで");
+    expect(parseCompetitorIds(["2", "3"], null)).toEqual([2, 3]);
+    expect(() => parseCompetitorIds(["2", "3", "4"], null)).toThrow("2件まで");
     expect(() => parseCompetitorIds(["x"], null)).toThrow("選び直して");
   });
 
@@ -88,6 +89,27 @@ describe("競合のAIの見立ての引用", () => {
   it("総合評価が無い・形が違うときは null", () => {
     expect(quoteCompetitorView(null, facts, "2026-11-01", false)).toBeNull();
     expect(quoteCompetitorView({ appeals: [] }, facts, "2026-11-01", false)).toBeNull();
+  });
+});
+
+describe("販売施策タブの1列目（この物件）", () => {
+  it("競合の列と同じ項目・書き方で、差は出さない。見立ては総合評価の最初の1文", () => {
+    const col = selfColumn({
+      code: "BR-1",
+      area: "新潟市西区寺尾東2丁目",
+      property_class: "中古",
+      price_man_yen: 2310,
+      layout: "7DK",
+      building_sqm: 120.09,
+      land_sqm: 200,
+      building_age: 0,
+      features: "  南向き ",
+      view: { summary: "広さが強み。駅は遠い。", first_target: "親と同居", created_on: "2026-11-05", stale: true },
+    });
+    expect(col.rows.map((r) => `${r.label}:${r.value}`)).toEqual(["区分:中古", "価格:2,310万円", "間取り:7DK", "建物面積:120.09㎡", "土地面積:200㎡", "築年数:新築"]);
+    expect(col.rows.every((r) => r.diff === null)).toBe(true);
+    expect(col).toMatchObject({ features: "南向き", summary: "広さが強み。", firstTarget: "親と同居", createdOn: "2026-11-05", stale: true });
+    expect(selfColumn({ ...col, property_class: "新築", price_man_yen: 1, layout: "1K", building_sqm: 1, land_sqm: 1, building_age: 3, features: " ", view: null })).toMatchObject({ features: null, summary: null, firstTarget: null, stale: false });
   });
 });
 

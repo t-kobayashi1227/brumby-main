@@ -14,7 +14,7 @@ import PriceTab from "./PriceTab";
 import SalesTab, { type MediaInfo, type SalesRecords } from "./SalesTab";
 import SummaryTab from "./SummaryTab";
 import TargetTab from "./TargetTab";
-import type { CompetitorLink } from "../../../../lib/competitor-report";
+import type { CompetitorLink, SelfColumnView } from "../../../../lib/competitor-report";
 
 // ⑤販売戦略レポート（docs/設計まとめ.md「⑤画面の表示」）
 // 2026-11-03 浩平さんの変更仕様で、3タブ（販売戦略・根拠データ・エリア分析）から6タブに組み直した：
@@ -36,6 +36,7 @@ export default function Report({
   records,
   exteriorImage,
   competitorLinks = {},
+  selfColumn = null,
 }: {
   result: StrategyResult;
   facts: Fact[];
@@ -56,6 +57,8 @@ export default function Report({
   exteriorImage: string | null;
   /** 競合の物件ID → その物件の番号（販売施策タブの競合の列から、その物件の販売戦略へ） */
   competitorLinks?: Record<string, CompetitorLink>;
+  /** 比べる3列の1列目（この物件） */
+  selfColumn?: SelfColumnView | null;
 }) {
   const [tab, setTab] = useState<ReportTab>("summary");
   const [selectedFact, setSelectedFact] = useState<string | null>(null);
@@ -95,7 +98,7 @@ export default function Report({
       <Legend />
       {tab === "summary" && <SummaryTab r={result} facts={byId} factList={facts} propertyId={propertyId} runId={runId} areaMap={areaMap} areaPrice={areaPrice} />}
       {tab === "target" && <TargetTab r={result} facts={byId} />}
-      {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} records={records} exteriorImage={exteriorImage} competitorLinks={competitorLinks} />}
+      {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} records={records} exteriorImage={exteriorImage} competitorLinks={competitorLinks} selfColumn={selfColumn} />}
       {tab === "price" && <PriceTab r={result} facts={byId} factList={facts} />}
       {tab === "area" && <AreaTab r={result} facts={byId} factList={facts} areaMap={areaMap} />}
       {tab === "evidence" && <EvidenceTab facts={facts} usage={usage} sources={sources} sheetCreatedAt={sheetCreatedAt} selected={selectedFact} onSelect={setSelectedFact} />}

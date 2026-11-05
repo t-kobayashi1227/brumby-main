@@ -31,7 +31,7 @@ import {
 } from "../../_components/icons";
 import { previewAddress, saveProperty, type PropertyFormState } from "./actions";
 import CompetitorPicker from "./CompetitorPicker";
-import type { CompetitorCandidate } from "../../../lib/competitors";
+import { MAX_COMPETITORS, type CompetitorCandidate } from "../../../lib/competitors";
 import { importDraft } from "./import-actions";
 import { IMAGE_KINDS, IMAGE_MAX_SIDE, IMAGE_SEND_BYTES } from "../../../lib/property-images";
 import { IMPORT_MAX_CHARS, type ImportResult } from "../../../lib/property-import";
@@ -43,7 +43,7 @@ import { IMPORT_MAX_CHARS, type ImportResult } from "../../../lib/property-impor
 // - 交通：「交通手段を追加」で2つ目の欄が出る（最大2つ）
 // - リフォーム：「あり」を選ぶと、年と箇所の欄が出る
 // - 競合物件・広告予算は開閉できる。閉じても入力は消えずに送られる（hidden で隠すだけ）
-// - 競合物件は、本システムで販売戦略を作った別の物件から最大3件選ぶ（2026-11-05。CompetitorPicker.tsx）
+// - 競合物件は、本システムで販売戦略を作った別の物件から最大2件選ぶ（2026-11-05。同日に3件→2件。CompetitorPicker.tsx）
 // - 欄の name は保存の処理（actions.ts）が読む名前のまま変えない
 // - 「AI入力アシスト」：貼った紹介文から AI が書かれたままの文字を抜き出し、システムが数字に直して、空の欄にだけ入れる（import-actions.ts）。
 //   入れた欄は黄色にし、担当者が直すと色を消す。保存はしない。登録は担当者が見比べてから押す（必須項目の確かめは従来どおり）
@@ -923,7 +923,7 @@ export default function PropertyForm({
 
             <SectionCard
               icon={<UsersIcon />}
-              title="競合物件（任意・最大3件）"
+              title={`競合物件（任意・最大${MAX_COMPETITORS}件）`}
               note="販売戦略を作った物件から選ぶと、競合と比べたおすすめポイントと懸念点が出ます。"
               required={false}
               collapsible

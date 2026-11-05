@@ -12,6 +12,7 @@ import {
   formatManYen1,
   formatNearby,
   formatNumber,
+  formatSqm,
   formatPct,
   median,
   type NearbyItem,
@@ -203,7 +204,7 @@ export interface TargetInput {
 }
 
 /**
- * 競合物件：本システムで販売戦略を作った別の物件（2026-11-05 浩平さん依頼。最大3件）
+ * 競合物件：本システムで販売戦略を作った別の物件（2026-11-05 浩平さん依頼。最大2件）
  * 物件情報・特徴はいまの登録の値。AIの見立ては、その物件の一番新しい販売戦略からの引用（事実IDは名前に直してある）
  */
 export interface CompetitorInput {
@@ -302,10 +303,7 @@ function fact(category: FactCategory, 項目: string, 値: string | null, src: {
   return { category, 項目, 値, ...(opts.比較 ? { 比較: opts.比較 } : {}), ...src, 状態: opts.状態 ?? (値 === null ? NOT_FOUND : "取得") };
 }
 
-function sqm(n: number): string {
-  const s = formatNumber(n, Number.isInteger(n) ? 0 : 2);
-  return `${s.includes(".") ? s.replace(/\.?0+$/, "") : s}㎡`;
-}
+const sqm = formatSqm;
 
 // ---- P 物件 ----
 

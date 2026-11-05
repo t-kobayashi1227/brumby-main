@@ -6,7 +6,7 @@ import { formatNumber } from "../../../lib/facts/format";
 import { CloseIcon, PlusIcon, SearchIcon } from "../../_components/icons";
 import { badge, SALE_BADGE } from "../../_lib/ui";
 
-// 競合物件を、本システムで販売戦略を作った別の物件から最大3件選ぶ（2026-11-05 浩平さん依頼）
+// 競合物件を、本システムで販売戦略を作った別の物件から最大2件選ぶ（2026-11-05 浩平さん依頼。同日に3件→2件）
 // 選んだ物件の番号を hidden の competitor_id で送る（選んだ順）。確かめと保存は actions.ts
 // 選んだ物件の物件情報・特徴・販売戦略（AIの見立て）を引用して、この物件と比べる。レポートが変わるのは戦略を作り直したとき
 

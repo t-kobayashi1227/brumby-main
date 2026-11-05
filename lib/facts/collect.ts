@@ -27,7 +27,7 @@ import type {
 } from "./build";
 import { ageBandOf, selectMarket, selectSimilarMarket } from "./build";
 import { quoteCompetitorView } from "./competitor-quote";
-import { addressToChome } from "../competitors";
+import { addressToChome, MAX_COMPETITORS } from "../competitors";
 import type { Fact } from "./types";
 import { todayJst, type NearbyItem } from "./format";
 import { kanjiToNumber, parseAddress, pinAddress, resolveZone, wardFromSourceUrl, type ZoneRow } from "./school-zones";
@@ -177,6 +177,7 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
       left join fact_sheets fs on fs.id = r.fact_sheet_id
       where pc.property_id = ${propertyId}
       order by pc.position
+      limit ${MAX_COMPETITORS}
     `,
     () => sql<{ id: string; name: string; category: string; purpose: string; reach_ages: string }[]>`select id, name, category, purpose, reach_ages from media order by sort`,
   );

@@ -2,7 +2,7 @@
 // 地図は「いまのDB」の位置を出す。レポートを作ったあとに競合や販売記録を直すと、地図には新しい内容が出る
 // 競合は、物件情報の画面で選んだ物件（property_competitors）。成約事例と同じ物件なら、競合のピンだけを出す
 
-import { addressToChome } from "./competitors";
+import { addressToChome, MAX_COMPETITORS } from "./competitors";
 import { inOrder, type Sql } from "./db";
 import { formatNumber } from "./facts/format";
 import { cutFacilities, facilityGroupOf, formatDistance, pickFacilities, RINGS_M, type AreaMapData, type FacilityRow, type MapPoint } from "./area-map";
@@ -24,7 +24,7 @@ export async function loadAreaMap(sql: Sql, propertyId: number): Promise<AreaMap
         extensions.st_x(c.geog::extensions.geometry) as lon, extensions.st_y(c.geog::extensions.geometry) as lat,
         extensions.st_distance(c.geog, ${pt}) as distance_m
       from property_competitors pc join properties c on c.id = pc.competitor_id
-      where pc.property_id = ${propertyId} order by pc.position
+      where pc.property_id = ${propertyId} order by pc.position limit ${MAX_COMPETITORS}
     `,
     // 成約事例：販売記録で「成約」になっている自社の他の物件（3km以内）
     () => sql<{ code: string; address: string; layout: string; building_age: number; contract_price_man_yen: number | null; contracted_on: string | null; lon: number; lat: number; distance_m: number }[]>`
