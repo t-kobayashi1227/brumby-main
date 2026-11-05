@@ -3,18 +3,17 @@
 import type { StrategyResult } from "../../../../lib/agents/run";
 import type { Fact } from "../../../../lib/facts/types";
 import { categoryOf, placeOfAnalysis, unitPriceOf } from "../../../../lib/report";
-import { AlertIcon, BuildingIcon, ChartIcon, ScaleIcon, SparkIcon, YenIcon } from "../../../_components/icons";
-import { Ai, Card, Evidence, FactTiles, useReportNav } from "./parts";
+import { AlertIcon, ChartIcon, ScaleIcon, SparkIcon, YenIcon } from "../../../_components/icons";
+import { Ai, Card, Evidence, FactTiles } from "./parts";
 
 // ④ 価格分析：システムが計算した相場との比較を主にし、AIの見方は添える形にする（2026-11-03 第2版）
 // AIが付けた「割高・相場なみ・割安・判定保留」のラベルは画面に出さない（DBには残る）。売れやすさは販売日数などのデータから出しておらず、2026-11-03に答えの形から外した（以前の答えにだけ残る）。
 // 位置づけも坪単価の中央値1つとの比較なので、ラベルにすると断定に見えるため。代わりに比べた数字と条件をそのまま見せる
-// 類似物件はポータルから集めない（プロジェクトのルール）。比べる物件は入力された競合物件だけ
+// 類似物件はポータルから集めない（プロジェクトのルール）。競合物件との比較は販売施策タブに出す（2026-11-05）
 
 export default function PriceTab({ r, facts, factList }: { r: StrategyResult; facts: Map<string, Fact>; factList: Fact[] }) {
   const pv = r.戦略.price_view;
   const market = factList.filter((f) => categoryOf(f.id) === "M");
-  const competitors = factList.filter((f) => categoryOf(f.id) === "K");
   const analysis = r.戦略.analysis.filter((a) => placeOfAnalysis(a).tab === "price");
 
   // 坪単価と相場比（事実シートの値をそのまま読む。計算は事実シートを作るときに済んでいる）
@@ -81,48 +80,11 @@ export default function PriceTab({ r, facts, factList }: { r: StrategyResult; fa
         ))}
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card title="相場の事実" icon={ChartIcon}>
-          <FactTiles facts={market} initial={6} empty="相場の事実はありません。" />
-        </Card>
-        <Card title="競合物件との比較" icon={BuildingIcon}>
-          <div className="mb-2 text-[12px] text-sub">物件の登録で入力された競合物件です。差はシステムが計算しています。1件だけでは価格の妥当性は判断できないので、近い条件の物件を複数入れてください。</div>
-          {competitors.length === 0 ? (
-            <div className="text-[13px] text-sub">競合物件の入力はありません。物件情報の画面で入力すると、ここに比較が出ます。</div>
-          ) : (
-            <ul className="grid gap-2">
-              {competitors.map((f) => (
-                <Competitor key={f.id} f={f} />
-              ))}
-            </ul>
-          )}
-        </Card>
-      </div>
+      {/* 競合物件の比較は、販売施策タブの「競合と比べたおすすめポイントと懸念点」に移した（2026-11-05 浩平さん依頼） */}
+      <Card title="相場の事実" icon={ChartIcon}>
+        <FactTiles facts={market} initial={6} empty="相場の事実はありません。" />
+      </Card>
     </div>
-  );
-}
-
-/** 競合物件1件。値（価格・建物面積・土地面積・築年数・距離）を切らずに並べ、差は折り返して全部見せる */
-function Competitor({ f }: { f: Fact }) {
-  const { openFact } = useReportNav();
-  const cells = (f.値 ?? "不明").split("・");
-  return (
-    <li>
-      <button type="button" onClick={() => openFact(f.id)} className="w-full rounded-lg border border-line p-2.5 text-left hover:border-primary cursor-pointer">
-        <div className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
-          <BuildingIcon className="size-4 text-primary" />
-          {f.項目}
-        </div>
-        <div className="mt-1 flex flex-wrap gap-1">
-          {cells.map((c, i) => (
-            <span key={i} className={`rounded bg-subtle px-1.5 py-0.5 text-[12px] ${/入力なし|取得できず/.test(c) ? "text-muted" : "text-body"}`}>
-              {c}
-            </span>
-          ))}
-        </div>
-        {f.比較 && <div className="mt-1 break-words text-[12px] text-sub">{f.比較}</div>}
-      </button>
-    </li>
   );
 }
 

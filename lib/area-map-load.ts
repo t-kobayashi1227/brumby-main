@@ -1,6 +1,8 @@
 // エリア分析の地図に出す点をDBから引く（サーバー側だけで使う）。形と色は lib/area-map.ts
 // 地図は「いまのDB」の位置を出す。レポートを作ったあとに競合や販売記録を直すと、地図には新しい内容が出る
+// 競合は、物件情報の画面で選んだ物件（property_competitors）。成約事例と同じ物件なら、競合のピンだけを出す
 
+import { addressToChome } from "./competitors";
 import { inOrder, type Sql } from "./db";
 import { formatNumber } from "./facts/format";
 import { cutFacilities, facilityGroupOf, formatDistance, pickFacilities, RINGS_M, type AreaMapData, type FacilityRow, type MapPoint } from "./area-map";
@@ -16,11 +18,13 @@ export async function loadAreaMap(sql: Sql, propertyId: number): Promise<AreaMap
   const far = RINGS_M[1];
 
   const [competitors, sold, facilities, [station]] = await inOrder(
-    () => sql<{ position: number; price_man_yen: number | null; address: string | null; building_sqm: string | null; land_sqm: string | null; building_age: number | null; lon: number | null; lat: number | null; distance_m: number | null }[]>`
-      select position, price_man_yen, address, building_sqm, land_sqm, building_age,
-        extensions.st_x(geog::extensions.geometry) as lon, extensions.st_y(geog::extensions.geometry) as lat,
-        extensions.st_distance(geog, ${pt}) as distance_m
-      from competitors where property_id = ${propertyId} order by position
+    // 競合：物件情報の画面で選んだ、本システムで販売戦略を作った物件（2026-11-05）。販売済みでも競合として出す
+    () => sql<{ position: number; code: string; address: string; price_man_yen: number; building_sqm: string; land_sqm: string; building_age: number; lon: number | null; lat: number | null; distance_m: number | null }[]>`
+      select pc.position, c.code, c.address, c.price_man_yen, c.building_sqm, c.land_sqm, c.building_age,
+        extensions.st_x(c.geog::extensions.geometry) as lon, extensions.st_y(c.geog::extensions.geometry) as lat,
+        extensions.st_distance(c.geog, ${pt}) as distance_m
+      from property_competitors pc join properties c on c.id = pc.competitor_id
+      where pc.property_id = ${propertyId} order by pc.position
     `,
     // 成約事例：販売記録で「成約」になっている自社の他の物件（3km以内）
     () => sql<{ code: string; address: string; layout: string; building_age: number; contract_price_man_yen: number | null; contracted_on: string | null; lon: number; lat: number; distance_m: number }[]>`
@@ -29,6 +33,7 @@ export async function loadAreaMap(sql: Sql, propertyId: number): Promise<AreaMap
         extensions.st_distance(p.geog, ${pt}) as distance_m
       from sales_records s join properties p on p.id = s.property_id
       where s.status = '成約' and p.id <> ${propertyId} and p.geog is not null and extensions.st_dwithin(p.geog, ${pt}, ${far})
+        and not exists (select 1 from property_competitors pc where pc.property_id = ${propertyId} and pc.competitor_id = p.id)
       order by distance_m
     `,
     () => sql<{ kind: string; name: string; dataset_id: string; lon: number; lat: number; distance_m: number }[]>`
@@ -53,22 +58,22 @@ export async function loadAreaMap(sql: Sql, propertyId: number): Promise<AreaMap
   const picked = pickFacilities(facilityRows);
   const points: MapPoint[] = [
     { kind: "target", lon: Number(p.lon), lat: Number(p.lat), title: `対象物件（${p.code}）`, lines: [p.address, `${formatNumber(p.price_man_yen)}万円`], distance_m: null },
+    // 番号は選んだ順（位置が無い競合を飛ばしても、販売施策タブの「競合N」とそろう）
     ...competitors
+      .map((c, i) => ({ ...c, n: i + 1 }))
       .filter((c) => c.lon !== null && c.lat !== null)
       .map(
         (c): MapPoint => ({
           kind: "competitor",
           lon: Number(c.lon),
           lat: Number(c.lat),
-          title: `競合物件 ${c.position}`,
+          title: `競合${c.n}（${c.code}）`,
           lines: [
-            c.address ?? "住所の入力なし",
-            [c.price_man_yen !== null ? `${formatNumber(c.price_man_yen)}万円` : null, c.building_age !== null ? (c.building_age === 0 ? "新築" : `築${c.building_age}年`) : null]
-              .filter(Boolean)
-              .join("・"),
-            [c.land_sqm !== null ? `土地 ${Number(c.land_sqm)}㎡` : null, c.building_sqm !== null ? `建物 ${Number(c.building_sqm)}㎡` : null].filter(Boolean).join("・"),
+            addressToChome(c.address),
+            `${formatNumber(c.price_man_yen)}万円・${c.building_age === 0 ? "新築" : `築${c.building_age}年`}`,
+            `土地 ${Number(c.land_sqm)}㎡・建物 ${Number(c.building_sqm)}㎡`,
             formatDistance(Number(c.distance_m)),
-          ].filter((l) => l !== ""),
+          ],
           distance_m: Number(c.distance_m),
         }),
       ),

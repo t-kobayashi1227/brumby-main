@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSql, type Sql } from "../../../lib/db";
 import { readImageUploads, type ImageUpload } from "../../../lib/property-images";
+import { parseCompetitorIds } from "../../../lib/competitors";
+import { competitorsWithoutStrategy } from "../../../lib/competitors-load";
 import { geocodeAddress, isInNiigata } from "../../../lib/geocode";
 import { FLOORS, parseLayout, parsePropertyId, PROPERTY_CLASSES, RENOVATION_PARTS, TRANSPORT_MODES } from "../../../lib/property";
 
@@ -119,35 +121,6 @@ function readTransports(formData: FormData) {
   return rows;
 }
 
-interface CompetitorInput {
-  position: number;
-  price_man_yen: number | null;
-  address: string | null;
-  building_sqm: number | null;
-  land_sqm: number | null;
-  building_age: number | null;
-}
-
-/** 競合物件（任意・複数）。全部空の行は無視する */
-function readCompetitors(formData: FormData): CompetitorInput[] {
-  const count = Number(formData.get("competitor_count") ?? 0);
-  const rows: CompetitorInput[] = [];
-  for (let i = 0; i < count; i++) {
-    const c = (k: string) => text(formData, `c${i}_${k}`);
-    if (!c("price_man_yen") && !c("address") && !c("building_sqm") && !c("land_sqm") && !c("building_age")) continue;
-    const label = `競合物件（${rows.length + 1}件目）`;
-    rows.push({
-      position: rows.length + 1,
-      price_man_yen: num(formData, `c${i}_price_man_yen`, `${label}の価格`, { int: true, positive: true }),
-      address: c("address"),
-      building_sqm: num(formData, `c${i}_building_sqm`, `${label}の建物面積`, { positive: true }),
-      land_sqm: num(formData, `c${i}_land_sqm`, `${label}の土地面積`, { positive: true }),
-      building_age: num(formData, `c${i}_building_age`, `${label}の築年数`, { int: true, min: 0 }),
-    });
-  }
-  return rows;
-}
-
 /** 住所から位置を出して保存する。出せなかったときは、その旨の文を返す */
 async function geocodeAndStore(sql: Sql, propertyId: number, address: string): Promise<string | null> {
   let hit;
@@ -166,32 +139,25 @@ async function geocodeAndStore(sql: Sql, propertyId: number, address: string): P
   return null;
 }
 
-/** 競合物件の住所から位置を出す（出せなければ位置なし。直線距離の事実が「取得できず」になる） */
-async function competitorsWithLocation(competitors: ReturnType<typeof readCompetitors>) {
-  const out = [];
-  for (const c of competitors) {
-    const hit = c.address ? await geocodeAddress(c.address).catch(() => null) : null;
-    out.push({ ...c, lon: hit?.lon ?? null, lat: hit?.lat ?? null });
-  }
-  return out;
-}
-
-async function writeChildren(tx: Sql, propertyId: number, transports: ReturnType<typeof readTransports>, competitors: Awaited<ReturnType<typeof competitorsWithLocation>>) {
+/**
+ * 交通と競合を入れ直す。競合は、本システムで販売戦略を作った別の物件から最大3件（2026-11-05 浩平さん依頼）
+ * 手で入れていた競合（competitors 表）は使わない。過去のデータとして残し、消さない
+ */
+async function writeChildren(tx: Sql, propertyId: number, transports: ReturnType<typeof readTransports>, competitorIds: number[]) {
   await tx`delete from property_transports where property_id = ${propertyId}`;
   for (const t of transports) await tx`insert into property_transports ${tx({ property_id: propertyId, ...t })}`;
-  await tx`delete from competitors where property_id = ${propertyId}`;
-  for (const { lon, lat, ...c } of competitors) {
-    await tx`
-      insert into competitors (property_id, position, price_man_yen, address, building_sqm, land_sqm, building_age, geog)
-      values (${propertyId}, ${c.position}, ${c.price_man_yen}, ${c.address}, ${c.building_sqm}, ${c.land_sqm}, ${c.building_age},
-        ${lon !== null && lat !== null ? ewktPoint(lon, lat) : null}::extensions.geography)
-    `;
+  await tx`delete from property_competitors where property_id = ${propertyId}`;
+  for (const [i, competitorId] of competitorIds.entries()) {
+    await tx`insert into property_competitors (property_id, competitor_id, position) values (${propertyId}, ${competitorId}, ${i + 1})`;
   }
 }
 
-/** 経度・緯度を、PostGIS が読める文字（EWKT）にする */
-function ewktPoint(lon: number, lat: number): string {
-  return `SRID=4326;POINT(${lon} ${lat})`;
+/** 選んだ競合を確かめる（数・重なり・自分自身・販売戦略を作った物件か） */
+async function readCompetitorIds(sql: Sql, formData: FormData, selfId: number | null): Promise<number[]> {
+  const ids = parseCompetitorIds(formData.getAll("competitor_id"), selfId);
+  const missing = await competitorsWithoutStrategy(sql, ids);
+  if (missing.length) throw new Error("競合物件に、販売戦略をまだ作っていない物件（または消えた物件）があります。選び直してください");
+  return ids;
 }
 
 export async function saveProperty(_prev: PropertyFormState, formData: FormData): Promise<PropertyFormState> {
@@ -205,8 +171,8 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
     const values = readProperty(formData);
     const images = await readImageUploads(formData);
     const transports = readTransports(formData);
-    const competitors = await competitorsWithLocation(readCompetitors(formData));
     const id = Number(text(formData, "id") ?? 0);
+    const competitors = await readCompetitorIds(sql, formData, id > 0 ? id : null);
 
     if (id > 0) {
       const [before] = await sql<{ address: string }[]>`select address from properties where id = ${id}`;

@@ -17,7 +17,7 @@ export const FACT_CATEGORIES: Record<FactCategory, { name: string; contents: str
   T: { name: "交通", contents: "最寄り駅・バス停" },
   H: { name: "災害", contents: "浸水深、土砂、液状化、盛土" },
   B: { name: "買い手", contents: "返済額、必要年収、買主の年代、媒体の利用率、ターゲット候補の定義" },
-  K: { name: "競合", contents: "競合物件の価格・広さ・築年数・直線距離" },
+  K: { name: "競合", contents: "競合物件（本システムで戦略を作った物件）の物件情報・特徴・AIの見立て" },
   C: { name: "媒体", contents: "媒体一覧" },
 };
 

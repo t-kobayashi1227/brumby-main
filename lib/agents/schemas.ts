@@ -38,6 +38,16 @@ const mainSchema = z.object({
 });
 export type MainOutput = z.infer<typeof mainSchema>;
 
+/**
+ * 競合と比べた、おすすめポイント（1つ）と懸念点（最大2つ）、競合ごとの見え方（2026-11-05 浩平さん依頼）
+ * 競合の事実（K）が無ければ null・空の配列。数の上限と事実IDの組み合わせはプログラムが点検する（checks.ts）
+ */
+const competitorShape = {
+  competitor_edge: z.object({ point: z.string(), cause: z.string(), action: z.string(), why_first: z.string(), evidence }).nullable(),
+  competitor_concerns: z.array(z.object({ rank: z.number().int(), concern: z.string(), cause: z.string(), evidence })),
+  competitors: z.array(z.object({ fact_id: z.string(), buyer_view: sentence, about_edge: z.boolean(), concern_ranks: z.array(z.number().int()) })),
+};
+
 /** 戦略担当の答え。分析（事実 → 買い手にとっての意味 → 販売での使い方）と戦略を1回で作る。分析を先に書かせる */
 export const STRATEGY_TOPICS = ["物件", "立地", "価格", "買い手", "組み合わせ", "その他"] as const;
 export const strategySchema = z.object({
@@ -54,8 +64,13 @@ export const strategySchema = z.object({
   ),
   unknown: z.array(z.string()),
   ...mainSchema.shape,
+  ...competitorShape,
 });
 export type StrategyOutput = z.infer<typeof strategySchema>;
+export type CompetitorEdge = NonNullable<StrategyOutput["competitor_edge"]>;
+export type CompetitorConcern = StrategyOutput["competitor_concerns"][number];
+export type CompetitorNote = StrategyOutput["competitors"][number];
+
 
 /** 戦略の答えから、媒体担当に渡す部分（分析を除いた戦略）だけを取り出す */
 export function mainPart(strategy: StrategyOutput): MainOutput {

@@ -1,5 +1,6 @@
 // ⑤レポート画面の組み立て（docs/設計まとめ.md「根拠と出典」）。表示だけを行い、AI は動かさない
 
+import { competitorPart } from "./agents/competitor-part";
 import type { MediaOutput, StrategyOutput } from "./agents/schemas";
 import { sourceOf, type DatasetInfo } from "./facts/build";
 import { FACT_CATEGORIES, type Fact, type FactCategory } from "./facts/types";
@@ -122,6 +123,13 @@ export function factUsage(main: StrategyOutput, media: MediaOutput, mediaName: (
   media.media.forEach((m) => add(m.evidence, { tab: "sales", where: `媒体 ${mediaName(m.id, m.name)}`, text: m.reason }));
   media.cautions.forEach((c, i) => add(c.evidence, { tab: "sales", where: `媒体の注意点${i + 1}`, text: c.text }));
   add(main.price_view.evidence, { tab: "price", where: "価格の見方", text: main.price_view.text });
+  // 競合と比べた部分（2026-11-05）。以前の答えには無い
+  const comp = competitorPart(main);
+  if (comp) {
+    if (comp.competitor_edge) add(comp.competitor_edge.evidence, { tab: "sales", where: "競合と比べたおすすめポイント", text: comp.competitor_edge.point });
+    comp.competitor_concerns.forEach((c, i) => add(c.evidence, { tab: "sales", where: `競合と比べた懸念点${i + 1}`, text: c.concern }));
+    comp.competitors.forEach((c) => add(c.buyer_view.evidence, { tab: "sales", where: "競合ごとの見え方", text: c.buyer_view.text }));
+  }
   for (const a of main.analysis) {
     const place = placeOfAnalysis(a);
     const where = place.tab === "area" ? `分析（${AREA_CARDS.find((c) => c.key === place.card)!.title}）` : `分析（${a.topic}）`;
@@ -138,6 +146,8 @@ export type FactOrigin = "入力" | "公的・調査データ" | "地図デー�
 const RAW_LAND_PRICE = /^近くの(公示地|基準地)/;
 export function factOrigin(f: Fact): FactOrigin {
   if (f.出典.startsWith("入力")) return "入力";
+  // 競合（K）は本システムに登録した物件の値と、その物件の販売戦略の引用（2026-11-05）
+  if (categoryOf(f.id) === "K") return "入力";
   if (f.出典.includes("計算") || (categoryOf(f.id) === "M" && !RAW_LAND_PRICE.test(f.項目))) return "システム計算";
   if (f.出典.includes("一覧（")) return "設定値";
   if (f.出典.includes("OpenStreetMap")) return "地図データ（OSM）";
@@ -229,7 +239,12 @@ export function groupByAspect(evidence: string[], facts: Map<string, Fact>): { k
 export function nextCheck(f: Fact): { who: string; what: string } {
   const c = categoryOf(f.id);
   const name = shortLabel(f.項目);
-  if (factOrigin(f) === "入力" || c === "P" || c === "K") return { who: "売主・物件資料", what: `${name}を確認し、物件情報に入力する` };
+  if (c === "K") {
+    return f.項目.endsWith("AIの見立て")
+      ? { who: "競合の物件の画面", what: `${name}は、競合の物件情報を直す前の戦略からの引用なので、競合の戦略を作り直してから比べ直す` }
+      : { who: "競合の物件の画面", what: `${name}を、競合の物件の画面で確かめる` };
+  }
+  if (factOrigin(f) === "入力" || c === "P") return { who: "売主・物件資料", what: `${name}を確認し、物件情報に入力する` };
   if (c === "H" || c === "R") return { who: "ハザードマップ・都市計画図", what: `物件の位置で${name}を確かめる` };
   if (c === "S") return { who: "市の通学区域", what: `住所から${name}を確かめる` };
   if (f.状態 === "要確認" && /^データは.+時点/.test(f.比較 ?? "")) return { who: "市の一覧・現地", what: `近くの${name}を、最新の一覧か現地で確かめる（データの時点より後の閉所・新設は入っていない）` };
@@ -289,7 +304,7 @@ export function plainIds(text: string, facts: Map<string, Fact>): string {
 /** 答えの文の中の事実IDを全部 plainIds で直す。evidence・id は事実IDそのものなので触らない */
 export function withPlainIds<T>(value: T, facts: Map<string, Fact>): T {
   const walk = (v: unknown, key?: string): unknown => {
-    if (key === "evidence" || key === "id") return v;
+    if (key === "evidence" || key === "id" || key === "fact_id") return v;
     if (typeof v === "string") return plainIds(v, facts);
     if (Array.isArray(v)) return v.map((x) => walk(x));
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));

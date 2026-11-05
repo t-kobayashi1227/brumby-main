@@ -7,10 +7,11 @@ import type { Fact } from "../../../../lib/facts/types";
 import { SALE_STATUS_LABEL, SALE_STATUSES, grandTotal, type MediaResultTotal, type PartialSum } from "../../../../lib/records";
 import { defaultBudgetIndex, groupMedia, MEDIA_NOTES, placeOfAnalysis, PORTAL_CATEGORY, PORTAL_DIFF_NOTE, type DisplayMedia } from "../../../../lib/report";
 import { AlertIcon, ChartIcon, ClipboardIcon, MegaphoneIcon, SparkIcon } from "../../../_components/icons";
+import CompetitorCompare from "./CompetitorCompare";
 import { Ai, Card, Evidence, HypothesisBadge, InfoTip, Num, useReportNav } from "./parts";
 
 // ③ 販売施策（2026-11-04 浩平さんの依頼で、B案「実行の流れ」を軸に作り直し。構成案は Claude Doc「販売施策タブの構成案」）
-//   方針と4つの要点 → 掲載前に確かめること → 実行の4ステップ → 媒体の順位と配分（予算を切り替えて金額） → 販売記録の実績
+//   方針と4つの要点 → 競合と比べたおすすめポイントと懸念点（2026-11-05） → 掲載前に確かめること → 実行の4ステップ → 媒体の順位と配分（予算を切り替えて金額） → 販売記録の実績
 // 画面では AI を動かさず、保存済みの答え（方針・訴求・媒体・伝え方・注意点）を並べ直すだけ。新しい中身はAIに作らせない
 // 出さないもの：問い合わせ見込み・想定反響・成約までの期間・「推奨」の予算（根拠のある数字が無い）、予算ごとに媒体が変わるプラン
 //   （今の試算は同じ配分×総額。媒体の最低料金・相性表をいただいてから）、保存しないチェックリスト（進み具合を記録する仕組みが無い）、円グラフ
@@ -49,6 +50,7 @@ export default function SalesTab({
   propertyId,
   records,
   exteriorImage,
+  competitorLinks,
 }: {
   r: StrategyResult;
   facts: Map<string, Fact>;
@@ -57,6 +59,8 @@ export default function SalesTab({
   records: SalesRecords;
   /** 添付した外観の写真。あれば方針の右の絵の代わりに出す（2026-11-05 浩平さん依頼）。無ければ既定の絵 */
   exteriorImage: string | null;
+  /** 競合の物件ID → その物件の番号（競合の販売戦略へのリンク） */
+  competitorLinks: Record<string, number>;
 }) {
   const m = r.戦略;
   // 不動産ポータル（SUUMO・アットホームなど）は1行にまとめる（2026-11-04 浩平さん指摘。lib/report.ts の groupMedia）
@@ -133,6 +137,9 @@ export default function SalesTab({
           )}
         </div>
       </section>
+
+      {/* 競合と比べたおすすめポイントと懸念点、競合ごとの列（2026-11-05 浩平さん依頼。掲載前に確かめることの上） */}
+      <CompetitorCompare strategy={m} facts={facts} propertyId={propertyId} competitorLinks={competitorLinks} />
 
       {/* 掲載前に確かめること（媒体担当の注意点）。対策案（action）は出さない決まり（懸念点と同じ） */}
       {r.媒体.cautions.length > 0 && (

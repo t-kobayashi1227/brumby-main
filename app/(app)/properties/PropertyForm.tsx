@@ -29,6 +29,8 @@ import {
   SpinnerIcon,
 } from "../../_components/icons";
 import { previewAddress, saveProperty, type PropertyFormState } from "./actions";
+import CompetitorPicker from "./CompetitorPicker";
+import type { CompetitorCandidate } from "../../../lib/competitors";
 import { importDraft } from "./import-actions";
 import { IMAGE_KINDS, IMAGE_MAX_SIDE, IMAGE_SEND_BYTES } from "../../../lib/property-images";
 import { IMPORT_MAX_CHARS, type ImportResult } from "../../../lib/property-import";
@@ -40,6 +42,7 @@ import { IMPORT_MAX_CHARS, type ImportResult } from "../../../lib/property-impor
 // - 交通：「交通手段を追加」で2つ目の欄が出る（最大2つ）
 // - リフォーム：「あり」を選ぶと、年と箇所の欄が出る
 // - 競合物件・広告予算は開閉できる。閉じても入力は消えずに送られる（hidden で隠すだけ）
+// - 競合物件は、本システムで販売戦略を作った別の物件から最大3件選ぶ（2026-11-05。CompetitorPicker.tsx）
 // - 欄の name は保存の処理（actions.ts）が読む名前のまま変えない
 // - 「AI入力アシスト」：貼った紹介文から AI が書かれたままの文字を抜き出し、システムが数字に直して、空の欄にだけ入れる（import-actions.ts）。
 //   入れた欄は黄色にし、担当者が直すと色を消す。保存はしない。登録は担当者が見比べてから押す（必須項目の確かめは従来どおり）
@@ -49,14 +52,6 @@ export interface TransportValues {
   line: string | null;
   stop_name: string;
   walk_min: number;
-}
-
-export interface CompetitorValues {
-  price_man_yen: number | null;
-  address: string | null;
-  building_sqm: number | null;
-  land_sqm: number | null;
-  building_age: number | null;
 }
 
 export interface PropertyValues {
@@ -79,7 +74,8 @@ export interface PropertyValues {
   image_kinds?: string[];
   ad_budget_man_yen: number | null;
   transports: TransportValues[];
-  competitors: CompetitorValues[];
+  /** 競合に選んだ物件（properties.id、選んだ順） */
+  competitor_ids: number[];
 }
 
 const EMPTY: PropertyValues = {
@@ -99,12 +95,8 @@ const EMPTY: PropertyValues = {
   features: null,
   ad_budget_man_yen: null,
   transports: [],
-  competitors: [],
+  competitor_ids: [],
 };
-
-const EMPTY_COMPETITOR: CompetitorValues = { price_man_yen: null, address: null, building_sqm: null, land_sqm: null, building_age: null };
-
-const COMPETITOR_FIELDS = ["price_man_yen", "address", "building_sqm", "land_sqm", "building_age"] as const;
 
 /** 特徴ピックアップの入力例。押すと欄の末尾に足す（2026-10-29 BRUMBY様から「一般的な例」としていただいたもの） */
 const FEATURE_EXAMPLES = ["カーポート付き", "小学校近く", "南向き", "前面道路6m以上", "角地"];
@@ -156,8 +148,6 @@ function valuesToFormData(v: PropertyValues): FormData {
     set("t1_stop_name", t.stop_name);
     set("t1_walk_min", t.walk_min);
   }
-  set("competitor_count", v.competitors.length);
-  v.competitors.forEach((c, i) => COMPETITOR_FIELDS.forEach((k) => set(`c${i}_${k}`, c[k])));
   return fd;
 }
 
@@ -588,9 +578,12 @@ export default function PropertyForm({
   values = EMPTY,
   heading,
   rebuild = false,
+  competitorCandidates = [],
 }: {
   values?: PropertyValues;
   heading?: React.ReactNode;
+  /** 競合に選べる物件（販売戦略を作った別の物件。近い順） */
+  competitorCandidates?: CompetitorCandidate[];
   /** 販売戦略の画面の「戦略を作り直す」から開いたとき。保存したら販売戦略の画面へ移り、作り直しを始める（2026-11-04） */
   rebuild?: boolean;
 }) {
@@ -605,9 +598,8 @@ export default function PropertyForm({
   // 2つ目の交通。消したあとにもう一度足したときは、空の欄にする
   const [secondTransport, setSecondTransport] = useState<{ key: number; values?: TransportValues } | null>(v.transports[1] ? { key: 0, values: v.transports[1] } : null);
   const [renovated, setRenovated] = useState(v.renovated === true);
-  const [competitors, setCompetitors] = useState<(CompetitorValues & { key: number })[]>(v.competitors.map((c, i) => ({ ...c, key: i })));
-  const [nextKey, setNextKey] = useState(v.competitors.length);
-  const [competitorsOpen, setCompetitorsOpen] = useState(v.competitors.length > 0);
+  const [nextKey, setNextKey] = useState(0);
+  const [competitorsOpen, setCompetitorsOpen] = useState(v.competitor_ids.length > 0);
   const [budgetOpen, setBudgetOpen] = useState(v.ad_budget_man_yen !== null);
   // 住所の確認の結果。確かめた住所も持ち、欄の住所と違う結果（確認中に書き換えたとき）は出さない
   const [addressCheck, setAddressCheck] = useState<PropertyFormState & { address?: string }>({});
@@ -923,62 +915,14 @@ export default function PropertyForm({
 
             <SectionCard
               icon={<UsersIcon />}
-              title="競合物件（任意）"
-              note="周辺の競合物件を追加すると、競合とも比べられます。"
+              title="競合物件（任意・最大3件）"
+              note="販売戦略を作った物件から選ぶと、競合と比べたおすすめポイントと懸念点が出ます。"
               required={false}
               collapsible
               open={showCompetitors}
               onToggle={() => setCompetitorsOpen(!showCompetitors)}
             >
-              <input type="hidden" name="competitor_count" value={competitors.length} />
-              {competitors.length > 0 && (
-                <div className="overflow-x-auto">
-                  <div className="min-w-[640px] grid gap-2">
-                    <div className="grid grid-cols-[32px_100px_minmax(0,1fr)_100px_100px_80px_32px] gap-3 rounded-md bg-subtle px-2 py-2 text-xs font-bold text-sub">
-                      <span>No.</span>
-                      <span>価格（万円）</span>
-                      <span>住所</span>
-                      <span>建物面積（㎡）</span>
-                      <span>土地面積（㎡）</span>
-                      <span>築年数（年）</span>
-                      <span className="sr-only">操作</span>
-                    </div>
-                    {competitors.map((c, i) => (
-                      <div key={c.key} className="grid grid-cols-[32px_100px_minmax(0,1fr)_100px_100px_80px_32px] gap-3 items-center px-2">
-                        <span className="text-[13px] text-sub tabular-nums">{i + 1}</span>
-                        <input name={`c${i}_price_man_yen`} aria-label={`競合物件${i + 1}の価格（万円）`} inputMode="numeric" defaultValue={str(c.price_man_yen)} className={`${field} mt-0!`} />
-                        <input name={`c${i}_address`} aria-label={`競合物件${i + 1}の住所`} defaultValue={str(c.address)} placeholder="例：新潟市西区寺尾東2丁目" className={`${field} mt-0!`} />
-                        <input name={`c${i}_building_sqm`} aria-label={`競合物件${i + 1}の建物面積（㎡）`} inputMode="decimal" defaultValue={str(c.building_sqm)} className={`${field} mt-0!`} />
-                        <input name={`c${i}_land_sqm`} aria-label={`競合物件${i + 1}の土地面積（㎡）`} inputMode="decimal" defaultValue={str(c.land_sqm)} className={`${field} mt-0!`} />
-                        <input name={`c${i}_building_age`} aria-label={`競合物件${i + 1}の築年数（年）`} inputMode="numeric" defaultValue={str(c.building_age)} className={`${field} mt-0!`} />
-                        <button
-                          type="button"
-                          aria-label={`競合物件${i + 1}を消す`}
-                          onClick={() => {
-                            setCompetitors(competitors.filter((x) => x.key !== c.key));
-                            recountLater();
-                          }}
-                          className="h-10 flex items-center justify-center text-muted hover:text-[#e5484d] cursor-pointer"
-                        >
-                          <TrashIcon className="size-4.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setCompetitors([...competitors, { ...EMPTY_COMPETITOR, key: nextKey }]);
-                  setNextKey(nextKey + 1);
-                }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-[#9dbaf0] py-2.5 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft"
-              >
-                <PlusIcon className="size-4" />
-                競合物件を追加
-              </button>
-              <p className="text-[11px] text-muted">住所から位置を出し、物件との直線距離も比べます。空の行は保存しません。</p>
+              <CompetitorPicker candidates={competitorCandidates} initialIds={v.competitor_ids} isNew={!v.id} />
             </SectionCard>
 
             <SectionCard
