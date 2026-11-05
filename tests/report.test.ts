@@ -50,7 +50,7 @@ const media: MediaOutput = { media: [], cautions: [] };
 
 describe("レポートの根拠と出典", () => {
   it("使った事実ID（使用箇所と同じ集め方。分析は含め、画面に出さない合わない層は含めない）", () => {
-    expect(usedFactIds(main, media)).toEqual(["P-09", "P-02", "A-03", "H-02", "L-11", "T-03"]);
+    expect(usedFactIds(main, media)).toEqual(["P-02", "A-03", "H-02", "L-11", "T-03"]);
   });
 
   it("根拠の書き方。取れなかった事実は「不明」", () => {
@@ -95,8 +95,8 @@ describe("6タブへの振り分け", () => {
     };
     const u = factUsage(strategy, { media: [{ id: "C-01", name: "SUUMO", purpose: "p", target: "t", share: 100, share_reason: "s", reason: "mr", evidence: ["A-03"] }], cautions: [] });
     expect(u.get("P-02")?.map((x) => x.tab)).toEqual(["summary", "price", "price"]);
-    // この物件でいちばん大事なこと（2026-11-05）はサマリー
-    expect(u.get("P-09")?.map((x) => `${x.tab}:${x.where}`)).toEqual(["summary:いちばん大事なこと"]);
+    // この物件でいちばん大事なこと（sales_focus）は画面に出さないので数えない（2026-11-05 浩平さん指示）
+    expect(u.has("P-09")).toBe(false);
     expect(u.get("A-03")?.map((x) => `${x.tab}:${x.where}`)).toEqual(["summary:推奨方針（総合評価）", "target:第1候補 x", "sales:販売の方向性", "sales:媒体 SUUMO"]);
     expect(u.get("L-11")?.map((x) => x.tab)).toEqual(["target", "area"]);
     expect(u.has("T-03")).toBe(false);
