@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MediaOutput } from "../lib/agents/schemas";
-import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex, firstSentence, aspectLine, pickAspectFact, MEDIA_NOTES, groupMedia } from "../lib/report";
+import { compactValue, concernTopic, evidenceText, factOrigin, factUsage, focusToCheck, groupByAspect, factsToCheck, nextCheck, placeOfAnalysis, plainIds, unknownToShow, withPlainIds, shortLabel, sourceList, splitValue, unitPriceOf, usedFactIds, summaryFeatures, featureText, targetDefinition, TARGET_IMAGES, targetPoints, TARGET_POINTS, MAX_TARGET_POINTS, defaultBudgetIndex, firstSentence, aspectLine, pickAspectFact, MEDIA_NOTES, groupMedia } from "../lib/report";
 import type { StrategyOutput } from "../lib/agents/schemas";
 import type { Fact } from "../lib/facts/types";
 
@@ -95,8 +95,12 @@ describe("6タブへの振り分け", () => {
     };
     const u = factUsage(strategy, { media: [{ id: "C-01", name: "SUUMO", purpose: "p", target: "t", share: 100, share_reason: "s", reason: "mr", evidence: ["A-03"] }], cautions: [] });
     expect(u.get("P-02")?.map((x) => x.tab)).toEqual(["summary", "price", "price"]);
-    // この物件でいちばん大事なこと（2026-11-05）はサマリー
-    expect(u.get("P-09")?.map((x) => `${x.tab}:${x.where}`)).toEqual(["summary:いちばん大事なこと"]);
+    // sales_focus は枠では出さず、「確かめる」のときだけデータの注意点に出すので、そのときだけ数える（2026-11-05 浩平さん指示）
+    expect(u.get("P-09")?.map((x) => `${x.tab}:${x.where}`)).toEqual(["summary:データの注意点（掲載前に確かめること）"]);
+    const strong = { ...main, sales_focus: { ...main.sales_focus, kind: "強みを伝える" as const } };
+    expect(factUsage(strong, media, (id) => id).has("P-09")).toBe(false);
+    expect(focusToCheck(strong)).toBeNull();
+    expect(focusToCheck(main)).toEqual({ action: "a", evidence: ["P-09"] });
     expect(u.get("A-03")?.map((x) => `${x.tab}:${x.where}`)).toEqual(["summary:推奨方針（総合評価）", "target:第1候補 x", "sales:販売の方向性", "sales:媒体 SUUMO"]);
     expect(u.get("L-11")?.map((x) => x.tab)).toEqual(["target", "area"]);
     expect(u.has("T-03")).toBe(false);

@@ -10,6 +10,15 @@ import { FACT_CATEGORIES, type Fact, type FactCategory } from "./facts/types";
 export const FIXED_CREDITS = ["地図：国土地理院 淡色地図（地理院タイル）", "住所検索：国土地理院 地理院地図の住所検索"];
 
 /** 画面に出す文に付いた事実ID（重なりなし）。根拠データタブの「使用箇所」と同じ集め方（factUsage）にそろえる。画面に出さない合わない層は含めない */
+/**
+ * AIの sales_focus のうち、画面に出すもの（2026-11-05 浩平さん指示）。枠は出さず、種類が「確かめる」のときだけ
+ * 「最初にやること」をサマリーの「データの注意点」に1件として出す。ほかの種類と以前の答えは null
+ */
+export function focusToCheck(main: StrategyOutput): { action: string; evidence: string[] } | null {
+  const focus = salesFocusOf(main);
+  return focus && focus.kind === "確かめる" ? { action: focus.action, evidence: focus.evidence } : null;
+}
+
 export function usedFactIds(main: StrategyOutput, media: MediaOutput): string[] {
   return [...factUsage(main, media).keys()];
 }
@@ -116,9 +125,8 @@ export function factUsage(main: StrategyOutput, media: MediaOutput, mediaName: (
       out.set(id, list);
     }
   };
-  // この物件でいちばん大事なこと（2026-11-05）。以前の答えには無い
-  const focus = salesFocusOf(main);
-  if (focus) add(focus.evidence, { tab: "summary", where: "いちばん大事なこと", text: focus.point });
+  const check = focusToCheck(main);
+  if (check) add(check.evidence, { tab: "summary", where: "データの注意点（掲載前に確かめること）", text: check.action });
   add(main.summary.evidence, { tab: "summary", where: "推奨方針（総合評価）", text: main.summary.text });
   main.concerns.forEach((c, i) => add(c.evidence, { tab: "summary", where: `買い手が気にしそうな点${i + 1}`, text: c.text }));
   [...main.targets].sort((a, b) => a.rank - b.rank).forEach((t) => add(t.evidence, { tab: "target", where: `第${t.rank}候補 ${t.name}`, text: t.reason }));
