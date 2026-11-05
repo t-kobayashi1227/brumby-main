@@ -339,7 +339,7 @@ function TargetSlides({ image, name, propertyId, kinds }: { image: string | unde
 
   return (
     <div
-      className="relative"
+      className="group relative"
       onTouchStart={(e) => (touchX.current = e.touches[0].clientX)}
       onTouchEnd={(e) => {
         if (touchX.current === null || count < 2) return;
@@ -371,21 +371,22 @@ function TargetSlides({ image, name, propertyId, kinds }: { image: string | unde
           <span className="pointer-events-none absolute left-2 top-2 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-sub">
             {photo ? `この物件の${photo.kind}` : "ターゲットのイメージ"}
           </span>
+          {/* 矢印は控えめに（2026-11-06 浩平さん指摘）。マウスでは画像に乗せたときだけ出し、タッチでは薄く出したまま（スワイプと点でも切り替えられる） */}
           <button
             type="button"
             onClick={() => go(at - 1)}
             aria-label="前の画像"
-            className="absolute left-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-ink shadow cursor-pointer hover:bg-white print:hidden"
+            className="absolute left-2 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-full bg-white/60 text-ink/70 cursor-pointer transition-opacity hover:bg-white/85 hover:text-ink pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 focus-visible:opacity-100 print:hidden"
           >
-            <ChevronRightIcon className="size-4 rotate-180" />
+            <ChevronRightIcon className="size-3.5 rotate-180" />
           </button>
           <button
             type="button"
             onClick={() => go(at + 1)}
             aria-label="次の画像"
-            className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-ink shadow cursor-pointer hover:bg-white print:hidden"
+            className="absolute right-2 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-full bg-white/60 text-ink/70 cursor-pointer transition-opacity hover:bg-white/85 hover:text-ink pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 focus-visible:opacity-100 print:hidden"
           >
-            <ChevronRightIcon className="size-4" />
+            <ChevronRightIcon className="size-3.5" />
           </button>
           <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5 print:hidden">
             {Array.from({ length: count }, (_, i) => (
