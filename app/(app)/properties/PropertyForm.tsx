@@ -1,6 +1,7 @@
 "use client";
 
-import { startTransition, useActionState, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { startTransition, useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { flushSync } from "react-dom";
 import { FLOORS, PROPERTY_CLASSES, RENOVATION_PARTS, TRANSPORT_MODES } from "../../../lib/property";
 import {
@@ -588,6 +589,13 @@ export default function PropertyForm({
   rebuild?: boolean;
 }) {
   const [state, formAction, pending] = useActionState<PropertyFormState, FormData>(saveProperty, {});
+  const router = useRouter();
+  // 保存が終わったら、ここで次の画面へ移る（サーバーの redirect だと、移った先を作り終えるまで画面が切り替わらない）
+  // 移った先の販売戦略の画面は、loading.tsx がすぐ出て、そのあと戦略づくりの進み具合を出す
+  useEffect(() => {
+    if (state.redirectTo) router.push(state.redirectTo);
+  }, [state, router]);
+  const moving = Boolean(state.redirectTo);
   const v = values;
   const formRef = useRef<HTMLFormElement>(null);
   const featuresRef = useRef<HTMLTextAreaElement>(null);
@@ -944,14 +952,26 @@ export default function PropertyForm({
             <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center justify-end gap-3 rounded-xl border border-line bg-white/95 px-4 py-3 backdrop-blur">
               {state.error && <div role="alert" className="mr-auto rounded-md border border-[#f3c4c4] bg-[#fdecec] px-3 py-2 text-xs text-[#b91c1c]">{state.error}</div>}
               {state.ok && <div role="status" className="mr-auto rounded-md border border-[#bfe5c6] bg-[#e9f8ec] px-3 py-2 text-xs text-[#157347]">{state.ok}</div>}
-              {!state.error && !state.ok && (
+              {moving && (
+                <div role="status" className="mr-auto flex items-center gap-2 rounded-md border border-[#cfe0fa] bg-primary-soft px-3 py-2 text-xs text-primary">
+                  <SpinnerIcon className="size-4 animate-spin" />
+                  保存しました。販売戦略の画面に移ります…
+                </div>
+              )}
+              {pending && !moving && (
+                <div role="status" className="mr-auto flex items-center gap-2 text-xs text-sub">
+                  <SpinnerIcon className="size-4 animate-spin text-primary" />
+                  保存しています。{rebuild || !v.id ? "終わると販売戦略の画面に移り、戦略づくりを始めます。" : ""}
+                </div>
+              )}
+              {!state.error && !state.ok && !moving && !pending && (
                 <div className="mr-auto text-xs text-sub">
                   必須項目 <span className="font-bold text-ink tabular-nums">{doneCount}</span> / {REQUIRED_TOTAL}
                 </div>
               )}
-              <button type="submit" disabled={pending || imagesBusy} className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-bold text-white shadow-sm cursor-pointer hover:bg-[#2459b0] disabled:opacity-60">
-                {pending ? "保存中…" : v.id ? (rebuild ? "保存して戦略を作り直す" : "保存する") : "登録して位置を確認"}
-                {!pending && (!v.id || rebuild) && <ArrowRightIcon className="size-4" />}
+              <button type="submit" disabled={pending || moving || imagesBusy} className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-bold text-white shadow-sm cursor-pointer hover:bg-[#2459b0] disabled:opacity-60">
+                {moving ? "移動中…" : pending ? "保存中…" : v.id ? (rebuild ? "保存して戦略を作り直す" : "保存する") : "登録して位置を確認"}
+                {!pending && !moving && (!v.id || rebuild) && <ArrowRightIcon className="size-4" />}
               </button>
             </div>
           </div>

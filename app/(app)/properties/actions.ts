@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { getSql, type Sql } from "../../../lib/db";
 import { readImageUploads, type ImageUpload } from "../../../lib/property-images";
 import { parseCompetitorIds } from "../../../lib/competitors";
@@ -16,6 +15,11 @@ import { FLOORS, parseLayout, parsePropertyId, PROPERTY_CLASSES, RENOVATION_PART
 export interface PropertyFormState {
   ok?: string;
   error?: string;
+  /**
+   * 保存のあとに移る画面。サーバーで redirect すると、移った先の画面を作り終えるまで「保存中」のまま切り替わらないので、
+   * 画面（PropertyForm）で移る。移った先は loading.tsx がすぐ出る（2026-11-05 浩平さん指摘）
+   */
+  redirectTo?: string;
 }
 
 function text(formData: FormData, name: string): string | null {
@@ -194,24 +198,24 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
         return { ok: before.address !== values.address ? "保存しました。住所が変わったので、位置を取り直しました。地図のピンを確かめてください。" : "保存しました。" };
       }
       rebuildId = id;
+    } else {
+      // 新しく登録するときだけ物件を足す（作り直しで保存したときに、同じ物件の複製ができていた。2026-11-05 修正）
+      createdId = await sql.begin(async (tx) => {
+        const [row] = await tx<{ id: number }[]>`insert into properties ${tx(values)} returning id`;
+        await writeChildren(tx as unknown as Sql, Number(row.id), transports, competitors);
+        await writeImages(tx as unknown as Sql, Number(row.id), images);
+        return Number(row.id);
+      });
+      located = (await geocodeAndStore(sql, createdId, values.address)) === null;
+      revalidatePath("/properties");
     }
-
-    createdId = await sql.begin(async (tx) => {
-      const [row] = await tx<{ id: number }[]>`insert into properties ${tx(values)} returning id`;
-      await writeChildren(tx as unknown as Sql, Number(row.id), transports, competitors);
-      await writeImages(tx as unknown as Sql, Number(row.id), images);
-      return Number(row.id);
-    });
-    located = (await geocodeAndStore(sql, createdId, values.address)) === null;
-    revalidatePath("/properties");
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
-  // redirect は例外で移るので、try の外で呼ぶ
-  if (rebuildId !== null) redirect(`/strategy/${rebuildId}?auto=1`);
+  if (rebuildId !== null) return { redirectTo: `/strategy/${rebuildId}?auto=1` };
   // 登録したら、そのまま販売戦略の画面で戦略づくりを始める（周辺情報の取得と事実シートの作成も、その中で行う）
   // 住所から位置を出せなかったときだけ、物件の画面（地図でピンを置く）へ
-  redirect(located ? `/strategy/${createdId}?auto=1` : `/properties/${createdId}?created=1`);
+  return { redirectTo: located ? `/strategy/${createdId}?auto=1` : `/properties/${createdId}?created=1` };
 }
 
 /** 地図で置き直したピンの位置を保存する */
