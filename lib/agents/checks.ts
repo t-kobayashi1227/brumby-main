@@ -9,7 +9,7 @@
 //    競合ごとの見え方が「物件情報」の事実を指しているか → 外す。懸念点の rank の並びと、競合ごとの見え方の数 → 記録だけ
 // 8. この物件でいちばん大事なこと（2026-11-05）：根拠に物件（P）の事実があるか → 作り直し。
 //    新築・リフォーム・交通の事実が sales_focus・appeals・direction のどの根拠にも無いか、direction が「問い合わせ→内見」の型か、
-//    vs_next が第1だけにあるか → 記録だけ（改修の前後を数で比べるため）
+//    vs_next が第1だけにあるか、「不安を取り除く」「確かめる」の根拠が築年数・リフォーム・要確認の事実だけでないか → 記録だけ（改修の前後を数で比べるため）
 // PoC では作り直さない（docs/設計まとめ.md「処理の流れ」）。action は点検が求める扱いのまま check_results に残す
 
 import type { Fact } from "../facts/types";
@@ -137,6 +137,11 @@ export function strengthFacts(facts: Fact[]): { label: string; ids: string[] }[]
   return out;
 }
 
+/** 築年数・リフォームの事実か、状態が「要確認」の事実か（「築古だけが理由」で見る。2026-11-05 A/B比較のレビューから） */
+function isAgeOrUnconfirmed(f: Fact): boolean {
+  return f.状態 === "要確認" || (f.id.startsWith("P-") && (f.項目 === "築年数" || f.項目 === "リフォーム"));
+}
+
 /** 「問い合わせ→内見」の案内の流れになっているか（direction の型を数える） */
 export function isGuideFlow(text: string): boolean {
   return text.includes("問い合わせ") && (text.includes("内見") || text.includes("内覧"));
@@ -150,9 +155,13 @@ export function checkSalesFocus(main: StrategyOutput, facts: Fact[]): CheckIssue
 
   const focus = salesFocusOf(main);
   if (!focus) return issues;
-  const known = new Set(facts.map((f) => f.id));
+  const byId = new Map(facts.map((f) => [f.id, f]));
+  const known = new Set(byId.keys());
   const focusIds = focus.evidence.map((e) => e.trim()).filter((id) => known.has(id));
   if (!focusIds.some((id) => id.startsWith("P-"))) add("sales_focus", "いちばん大事なことに物件の根拠がない", "根拠に物件（P）の事実がありません", "作り直し");
+  if (focus.kind !== "強みを伝える" && focusIds.length > 0 && focusIds.every((id) => isAgeOrUnconfirmed(byId.get(id)!))) {
+    add("sales_focus", "築古だけが理由", `「${focus.kind}」の根拠が、築年数・リフォームと「要確認」の事実だけです`, "記録だけ");
+  }
 
   const used = new Set([...focus.evidence, ...main.appeals.flatMap((a) => a.evidence), ...main.direction.evidence].map((e) => e.trim()));
   for (const s of strengthFacts(facts)) {

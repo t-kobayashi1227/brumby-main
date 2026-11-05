@@ -413,6 +413,15 @@ describe("この物件でいちばん大事なこと・第1と第2の差（2026-
     expect(issues).toContainEqual(expect.objectContaining({ location: "sales_focus", check_name: "いちばん大事なことに物件の根拠がない", action: "作り直し" }));
   });
 
+  it("「不安を取り除く」「確かめる」の根拠が築年数・リフォーム・要確認だけなら記録だけ", () => {
+    const facts = [...FACTS, { ...fact("P-07"), 項目: "築年数", 値: "築46年" }, { ...fact("P-12"), 項目: "リフォーム", 値: "不明（入力なし）", 状態: "要確認" as const }, { ...fact("H-01"), 項目: "液状化", 値: "非常に液状化しやすい" }];
+    const focus = (kind: "強みを伝える" | "不安を取り除く" | "確かめる", evidence: string[]) => main({ sales_focus: { ...main().sales_focus, kind, evidence } });
+    const old = checkSalesFocus(focus("確かめる", ["P-07", "P-12", "S-02"]), facts);
+    expect(old).toContainEqual(expect.objectContaining({ location: "sales_focus", check_name: "築古だけが理由", action: "記録だけ" }));
+    expect(names(checkSalesFocus(focus("不安を取り除く", ["P-07", "H-01"]), facts))).not.toContain("築古だけが理由");
+    expect(names(checkSalesFocus(focus("強みを伝える", ["P-07"]), facts))).not.toContain("築古だけが理由");
+  });
+
   it("vs_next は第1候補だけ。第1に無い・第2以降にあるときは記録だけ", () => {
     expect(names(checkSalesFocus(main({ targets: [target(1, "間取りが4LDK"), target(2, null)] }), FACTS))).toEqual([]);
     expect(names(checkSalesFocus(main({ targets: [target(1, "はっきりした差なし"), target(2, null)] }), FACTS))).toEqual([]);
