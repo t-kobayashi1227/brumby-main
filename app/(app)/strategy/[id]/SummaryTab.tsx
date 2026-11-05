@@ -306,6 +306,7 @@ const FOCUS_KIND_STYLE: Record<SalesFocus["kind"], string> = {
  * この物件でいちばん大事なこと（2026-11-05 妥当性チェックの結果から。AIの sales_focus）
  * 1文の結論と最初にやることを大きく出し、「なぜこの物件で」「なぜ先に」は開いて見る（印刷では開いたまま）
  * 2026-11-05 より前の答えには無いので、枠ごと出さない（作り直すと出る）
+ * 見出し「この物件でいちばん大事なこと」は出さない（2026-11-05 浩平さん指示）。種類の札と「仮説」だけを付ける
  */
 function SalesFocusBox({ focus, facts }: { focus: SalesFocus; facts: Map<string, Fact> }) {
   const reasons = (
@@ -330,7 +331,6 @@ function SalesFocusBox({ focus, facts }: { focus: SalesFocus; facts: Map<string,
   return (
     <div className="mb-5 rounded-lg border border-[#d9cff3] bg-[#f8f6fd] px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[12px] font-bold text-[#5b3fa8]">この物件でいちばん大事なこと</span>
         <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${FOCUS_KIND_STYLE[focus.kind] ?? "bg-subtle text-sub"}`}>{focus.kind}</span>
         <HypothesisBadge />
       </div>
