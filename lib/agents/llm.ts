@@ -46,7 +46,7 @@ export interface ImageInput {
 }
 
 /** 画像があれば、最後の user の発言を「画像＋文字」の形にする。提供元ごとの書き方は toBlock で決める */
-function withImages<I, T>(messages: ChatMessage[], images: ImageInput[] | undefined, toBlock: (img: ImageInput) => I, text: (t: string) => T) {
+export function withImages<I, T>(messages: ChatMessage[], images: ImageInput[] | undefined, toBlock: (img: ImageInput) => I, text: (t: string) => T) {
   const last = messages.findLastIndex((m) => m.role === "user");
   if (!images?.length || last < 0) return messages;
   return messages.map((m, i) => (i === last ? { role: m.role, content: [...images.map(toBlock), text(m.content)] } : m));

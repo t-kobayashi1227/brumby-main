@@ -1,7 +1,5 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { readPrompt } from "../lib/agents/prompts";
-import { detectImageType, readFloorPlanImage, toFloorPlanNotes } from "../lib/floor-plan";
+import { detectImageType, readFloorPlanUpload, toImageInput } from "../lib/floor-plan";
 
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0];
 const JPEG = [0xff, 0xd8, 0xff, 0xe0, 0, 0];
@@ -18,37 +16,48 @@ describe("間取り図の画像の種類", () => {
     expect(detectImageType(new TextEncoder().encode("%PDF-1.7"))).toBeNull();
     expect(detectImageType(new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x41, 0x56, 0x45]))).toBeNull(); // WAV
   });
+});
 
-  it("画面から送られた画像を base64 にする。空・大きすぎ・違う種類は理由を返す", async () => {
-    const fd = (blob?: Blob) => {
-      const f = new FormData();
-      if (blob) f.set("image", blob, "x");
-      return f;
-    };
-    const ok = await readFloorPlanImage(fd(new Blob([new Uint8Array(JPEG)])));
-    expect(ok).toEqual({ mediaType: "image/jpeg", base64: Buffer.from(JPEG).toString("base64") });
-    expect(await readFloorPlanImage(fd())).toHaveProperty("error");
-    expect(await readFloorPlanImage(fd(new Blob([new TextEncoder().encode("%PDF-1.7")])))).toHaveProperty("error");
-    expect(await readFloorPlanImage(fd(new Blob([new Uint8Array(3 * 1024 * 1024 + 1)])))).toHaveProperty("error");
+describe("保存のときの間取り図の扱い", () => {
+  const fd = (action?: string, blob?: Blob) => {
+    const f = new FormData();
+    if (action) f.set("floor_plan_action", action);
+    if (blob) f.set("floor_plan_image", blob, "x");
+    return f;
+  };
+
+  it("差し替えのときだけ画像を確かめて返す。指定なしはそのまま、remove は外す", async () => {
+    expect(await readFloorPlanUpload(fd())).toEqual({ action: "keep" });
+    expect(await readFloorPlanUpload(fd("keep", new Blob([new Uint8Array(JPEG)])))).toEqual({ action: "keep" });
+    expect(await readFloorPlanUpload(fd("remove"))).toEqual({ action: "remove" });
+    const r = await readFloorPlanUpload(fd("replace", new Blob([new Uint8Array(JPEG)])));
+    expect(r).toMatchObject({ action: "replace", image: { mediaType: "image/jpeg" } });
+  });
+
+  it("差し替えで、空・大きすぎ・違う種類は保存しない（例外で理由を返す）", async () => {
+    await expect(readFloorPlanUpload(fd("replace"))).rejects.toThrow("選んで");
+    await expect(readFloorPlanUpload(fd("replace", new Blob([new TextEncoder().encode("%PDF-1.7")])))).rejects.toThrow("PNG");
+    await expect(readFloorPlanUpload(fd("replace", new Blob([new Uint8Array(3 * 1024 * 1024 + 1)])))).rejects.toThrow("3MB");
   });
 });
 
-describe("読み取った特徴を欄の文にする", () => {
-  it("1行1項目。空白をそろえ、空と重複を除き、12項目まで", () => {
-    const items = ["1階：LDK 18帖", "  1階：LDK  18帖 ", "", ...Array.from({ length: 15 }, (_, i) => `項目${i}`)];
-    const notes = toFloorPlanNotes({ readable: true, reason: null, items });
-    const lines = notes.split("\n");
-    expect(lines[0]).toBe("1階：LDK 18帖");
-    expect(lines).toHaveLength(12);
-    expect(new Set(lines).size).toBe(12);
+describe("DB の画像を AI に添える形にする", () => {
+  it("種類を先頭のバイトで確かめ、base64 にする。無い・種類が合わないものは添えない", () => {
+    expect(toImageInput(new Uint8Array(PNG), "image/png")).toEqual({ mediaType: "image/png", base64: Buffer.from(PNG).toString("base64") });
+    expect(toImageInput(null, null)).toBeNull();
+    expect(toImageInput(new Uint8Array(PNG), "image/jpeg")).toBeNull();
+    expect(toImageInput(new TextEncoder().encode("%PDF-1.7"), "image/png")).toBeNull();
   });
 });
 
-describe("間取り図の指示文は設計まとめと一字一句同じ", () => {
-  it("prompts/floor-plan.txt", () => {
-    const doc = readFileSync("docs/設計まとめ.md", "utf8").replace(/\r\n/g, "\n");
-    const section = doc.slice(doc.indexOf("### 間取り図の読み取り"), doc.indexOf("### 項目ごとの扱い"));
-    const block = /```text\n([\s\S]*?)\n```/.exec(section)?.[1];
-    expect(readPrompt("floor-plan.txt")).toBe(block);
+describe("AI に画像を添える形", async () => {
+  const { withImages } = await import("../lib/agents/llm");
+  const img = { mediaType: "image/jpeg" as const, base64: "AAAA" };
+  it("最後の user の発言だけを「画像＋文字」にし、画像がなければそのまま", () => {
+    const msgs = [{ role: "user" as const, content: "事実" }];
+    expect(withImages(msgs, undefined, (i) => i.base64, (t) => t)).toBe(msgs);
+    expect(withImages(msgs, [img], (i) => ({ type: "image", data: i.base64 }), (t) => ({ type: "text", text: t }))).toEqual([
+      { role: "user", content: [{ type: "image", data: "AAAA" }, { type: "text", text: "事実" }] },
+    ]);
   });
 });

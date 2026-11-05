@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSql, type Sql } from "../../../lib/db";
-import { FLOOR_PLAN_NOTES_MAX_CHARS } from "../../../lib/floor-plan";
+import { readFloorPlanUpload } from "../../../lib/floor-plan";
 import { geocodeAddress, isInNiigata } from "../../../lib/geocode";
 import { FLOORS, parseLayout, parsePropertyId, PROPERTY_CLASSES, RENOVATION_PARTS, TRANSPORT_MODES } from "../../../lib/property";
 
@@ -56,13 +56,11 @@ function yesNoOrNull(value: string | null, label: string): boolean | null {
   return oneOf(value, ["あり", "なし"], label) === "あり";
 }
 
-/** 間取り図から読み取った特徴（任意）。AI の下書きを担当者が直した文。行の端の空白と空行は除く */
-function floorPlanNotes(formData: FormData): string | null {
-  const raw = text(formData, "floor_plan_notes");
-  if (raw === null) return null;
-  const notes = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join("\n");
-  if (notes.length > FLOOR_PLAN_NOTES_MAX_CHARS) throw new Error(`間取り図から読み取った特徴は${FLOOR_PLAN_NOTES_MAX_CHARS.toLocaleString()}文字までにしてください`);
-  return notes === "" ? null : notes;
+/** 間取り図の画像（任意）。差し替え・削除のときだけ列に入れる。そのままのときは列を書かない */
+function floorPlanValues(upload: Awaited<ReturnType<typeof readFloorPlanUpload>>) {
+  if (upload.action === "replace") return { floor_plan_image: Buffer.from(upload.image.bytes), floor_plan_image_type: upload.image.mediaType };
+  if (upload.action === "remove") return { floor_plan_image: null, floor_plan_image_type: null };
+  return {};
 }
 
 function readProperty(formData: FormData) {
@@ -90,7 +88,6 @@ function readProperty(formData: FormData) {
     renovation_year: renovationYear,
     renovation_parts: renovated === true && parts.length > 0 ? parts : null,
     features: text(formData, "features"),
-    floor_plan_notes: floorPlanNotes(formData),
     ad_budget_man_yen: num(formData, "ad_budget_man_yen", "広告予算の総額", { int: true, positive: true }),
   };
 }
@@ -198,7 +195,7 @@ export async function saveProperty(_prev: PropertyFormState, formData: FormData)
   try {
     const sql = getSql();
     // 先に全部の欄を確かめる（誤りがあれば何も保存しない）
-    const values = readProperty(formData);
+    const values = { ...readProperty(formData), ...floorPlanValues(await readFloorPlanUpload(formData)) };
     const transports = readTransports(formData);
     const competitors = await competitorsWithLocation(readCompetitors(formData));
     const id = Number(text(formData, "id") ?? 0);
