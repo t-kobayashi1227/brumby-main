@@ -2,6 +2,7 @@
 // 値はシステムが作った事実の文字（lib/facts/build.ts の competitorFacts）を読み分けるだけ。新しい数字は作らない
 
 import type { Fact } from "./facts/types";
+import { formatManYen, formatSqm } from "./facts/format";
 import type { ImageKind } from "./property-images";
 
 /** 競合の物件ID → その物件の番号（販売戦略へのリンク）と、添付されている画像の枠（並びは IMAGE_KINDS の順）。消えた物件は無い */
@@ -18,7 +19,7 @@ export interface CompetitorRow {
 }
 
 export interface CompetitorColumn {
-  /** 競合の番号（競合1〜3） */
+  /** 競合の番号（競合1・2。上限を2件にする前の戦略では3もある） */
   n: number;
   /** 「物件情報」の事実ID。AIの答えの competitors[].fact_id と結び付ける */
   infoId: string;
@@ -121,4 +122,58 @@ export function competitorColumns(facts: Fact[]): CompetitorColumn[] {
     });
   }
   return cols.sort((a, b) => a.n - b.n);
+}
+
+/** 比べる3列の1列目に出す、この物件（2026-11-05 浩平さん指示）。値はいまの登録で、見立てはこの画面の販売戦略 */
+export interface SelfColumn {
+  code: string;
+  area: string;
+  rows: CompetitorRow[];
+  features: string | null;
+  firstTarget: string | null;
+  /** 総合評価の最初の1文（事実IDを外したもの） */
+  summary: string | null;
+  createdOn: string | null;
+  /** 戦略を作ったあとに物件情報が直されている */
+  stale: boolean;
+}
+
+/** 画面に渡す形：この物件の番号と、添付されている画像の枠 */
+export type SelfColumnView = SelfColumn & CompetitorLink;
+
+export interface SelfColumnInput {
+  code: string;
+  area: string;
+  property_class: string;
+  price_man_yen: number;
+  layout: string;
+  building_sqm: number;
+  land_sqm: number;
+  building_age: number;
+  features: string | null;
+  /** lib/facts/competitor-quote.ts の quoteCompetitorView でこの物件の戦略から作ったもの */
+  view: { summary: string; first_target: string | null; created_on: string; stale: boolean } | null;
+}
+
+/** この物件の列。並びと書き方は競合の列（lib/facts/build.ts の competitorFacts）にそろえる */
+export function selfColumn(p: SelfColumnInput): SelfColumn {
+  const rows: CompetitorRow[] = [
+    { label: "区分", value: p.property_class, diff: null },
+    { label: "価格", value: formatManYen(p.price_man_yen * 10_000), diff: null },
+    { label: "間取り", value: p.layout, diff: null },
+    { label: "建物面積", value: formatSqm(p.building_sqm), diff: null },
+    { label: "土地面積", value: formatSqm(p.land_sqm), diff: null },
+    { label: "築年数", value: p.building_age === 0 ? "新築" : `築${p.building_age}年`, diff: null },
+  ];
+  const features = p.features?.trim() ? p.features.trim() : null;
+  return {
+    code: p.code,
+    area: p.area,
+    rows,
+    features,
+    firstTarget: p.view?.first_target ?? null,
+    summary: p.view ? firstSentence(p.view.summary) : null,
+    createdOn: p.view?.created_on ?? null,
+    stale: p.view?.stale ?? false,
+  };
 }

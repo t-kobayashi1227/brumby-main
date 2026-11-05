@@ -5,8 +5,8 @@ import type { SaleState } from "./listView";
 import { normalizeForSearch } from "./listView";
 import { formatDistance } from "./facts/format";
 
-/** 1物件に選べる競合の数 */
-export const MAX_COMPETITORS = 3;
+/** 1物件に選べる競合の数（2026-11-05 浩平さん指示で3件→2件。比べる3列の1列目はこの物件） */
+export const MAX_COMPETITORS = 2;
 
 /** 競合の候補（入力画面の「競合を選ぶ」の一覧の1行） */
 export interface CompetitorCandidate {
@@ -59,7 +59,7 @@ export function filterCandidates(rows: CompetitorCandidate[], query: string): Co
 }
 
 /**
- * フォームから送られた競合の物件番号を読む（選んだ順）。数でないもの・重なり・自分自身は誤り、最大3件
+ * フォームから送られた競合の物件番号を読む（選んだ順）。数でないもの・重なり・自分自身は誤り、最大 MAX_COMPETITORS 件
  * 戦略を作った物件かどうかは、保存の処理（actions.ts）が DB で確かめる
  */
 export function parseCompetitorIds(values: unknown[], selfId: number | null): number[] {

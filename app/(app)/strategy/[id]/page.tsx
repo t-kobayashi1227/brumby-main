@@ -2,12 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { StrategyResult } from "../../../../lib/agents/run";
 import { loadAreaMap } from "../../../../lib/area-map-load";
-import { competitorColumns } from "../../../../lib/competitor-report";
-import { IMAGE_KINDS } from "../../../../lib/property-images";
+import { addressToChome } from "../../../../lib/competitors";
+import { competitorColumns, selfColumn } from "../../../../lib/competitor-report";
+import { quoteCompetitorView } from "../../../../lib/facts/competitor-quote";
+import { IMAGE_KINDS, type ImageKind } from "../../../../lib/property-images";
 import { loadAreaPrice } from "../../../../lib/area-price-load";
 import { getSql, inOrder } from "../../../../lib/db";
 import type { DatasetInfo } from "../../../../lib/facts/build";
-import { formatJstDateTime, formatNumber } from "../../../../lib/facts/format";
+import { formatJstDateTime, formatNumber, nowJstIso } from "../../../../lib/facts/format";
 import type { FactSheet } from "../../../../lib/facts/types";
 import { parsePropertyId } from "../../../../lib/property";
 import { totalsByMedia } from "../../../../lib/records";
@@ -25,6 +27,9 @@ import StrategyRunner, { type RunStatus } from "./StrategyRunner";
 
 export const dynamic = "force-dynamic";
 
+/** 添付されている画像の枠を、画面に出す順（IMAGE_KINDS の順）にする */
+const imageKindsOf = (kinds: string[]): ImageKind[] => IMAGE_KINDS.filter((k) => kinds.includes(k.kind)).map((k) => k.kind);
+
 interface PropertyRow {
   code: string;
   property_class: string;
@@ -37,6 +42,9 @@ interface PropertyRow {
   building_age: number;
   has_location: boolean;
   has_exterior: boolean;
+  features: string | null;
+  image_kinds: string[];
+  updated_at: Date;
 }
 
 export default async function StrategyDetailPage({ params, searchParams }: PageProps<"/strategy/[id]">) {
@@ -48,7 +56,8 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
   const sql = getSql();
   const [p] = await sql<PropertyRow[]>`
     select code, property_class, price_man_yen, address, layout, building_sqm, land_sqm, parking, building_age, geog is not null as has_location,
-      exists(select 1 from property_images i where i.property_id = properties.id and i.kind = '外観') as has_exterior
+      exists(select 1 from property_images i where i.property_id = properties.id and i.kind = '外観') as has_exterior,
+      features, array(select kind from property_images i where i.property_id = properties.id) as image_kinds, updated_at
     from properties where id = ${propertyId}
   `;
   if (!p) return <div className={emptyState}>物件 {propertyId} が見つかりません。</div>;
@@ -129,8 +138,24 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
           areaPrice={areaPrice}
           records={records}
           exteriorImage={p.has_exterior ? `/properties/${propertyId}/images/exterior` : null}
+          selfColumn={{
+            ...selfColumn({
+              code: p.code,
+              area: addressToChome(p.address),
+              property_class: p.property_class,
+              price_man_yen: p.price_man_yen,
+              layout: p.layout,
+              building_sqm: Number(p.building_sqm),
+              land_sqm: Number(p.land_sqm),
+              building_age: p.building_age,
+              features: p.features,
+              view: quoteCompetitorView(done.result.戦略, facts, nowJstIso(new Date(done.finished_at)).slice(0, 10), p.updated_at > done.finished_at),
+            }),
+            id: propertyId,
+            images: imageKindsOf(p.image_kinds),
+          }}
           competitorLinks={Object.fromEntries(
-            competitorRows.map((c) => [c.code, { id: Number(c.id), images: IMAGE_KINDS.filter((k) => c.image_kinds.includes(k.kind)).map((k) => k.kind) }]),
+            competitorRows.map((c) => [c.code, { id: Number(c.id), images: imageKindsOf(c.image_kinds) }]),
           )}
         />
       </>

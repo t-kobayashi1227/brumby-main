@@ -144,7 +144,7 @@ async function geocodeAndStore(sql: Sql, propertyId: number, address: string): P
 }
 
 /**
- * 交通と競合を入れ直す。競合は、本システムで販売戦略を作った別の物件から最大3件（2026-11-05 浩平さん依頼）
+ * 交通と競合を入れ直す。競合は、本システムで販売戦略を作った別の物件から最大2件（2026-11-05 浩平さん依頼。同日に3件→2件）
  * 手で入れていた競合（competitors 表）は使わない。過去のデータとして残し、消さない
  */
 async function writeChildren(tx: Sql, propertyId: number, transports: ReturnType<typeof readTransports>, competitorIds: number[]) {

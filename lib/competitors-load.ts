@@ -1,7 +1,7 @@
 // 競合物件の候補と、選んだ競合をDBから引く（サーバー側だけで使う）。形と並びは lib/competitors.ts
 
 import type { Sql } from "./db";
-import { addressToChome, sortCandidates, type CompetitorCandidate } from "./competitors";
+import { addressToChome, MAX_COMPETITORS, sortCandidates, type CompetitorCandidate } from "./competitors";
 import { saleState } from "./listView";
 
 /** 戦略を作り終えた物件の条件（3回の形で、戦略の答えがあるもの）。SQL の where に埋め込む */
@@ -58,10 +58,10 @@ export async function loadCompetitorCandidates(sql: Sql, selfId: number | null):
   );
 }
 
-/** この物件で選んでいる競合の物件番号（選んだ順） */
+/** この物件で選んでいる競合の物件番号（選んだ順）。上限を3件から2件にする前に選んだ3件目は読まない */
 export async function loadCompetitorIds(sql: Sql, propertyId: number): Promise<number[]> {
   const rows = await sql<{ competitor_id: string }[]>`
-    select competitor_id from property_competitors where property_id = ${propertyId} order by position
+    select competitor_id from property_competitors where property_id = ${propertyId} order by position limit ${MAX_COMPETITORS}
   `;
   return rows.map((r) => Number(r.competitor_id));
 }

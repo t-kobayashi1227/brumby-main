@@ -47,6 +47,12 @@ export function formatNumber(n: number, digits = 0): string {
   return n.toLocaleString("ja-JP", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+/** 面積 → 「100㎡」「120.09㎡」（小数は2桁まで、末尾の0は付けない） */
+export function formatSqm(n: number): string {
+  const s = formatNumber(n, Number.isInteger(n) ? 0 : 2);
+  return `${s.includes(".") ? s.replace(/\.?0+$/, "") : s}㎡`;
+}
+
 /** 円 → 「2,480万円」（1万円単位で四捨五入） */
 export function formatManYen(yen: number): string {
   return `${formatNumber(Math.round(yen / 10_000))}万円`;
