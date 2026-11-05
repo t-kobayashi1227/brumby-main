@@ -7,7 +7,7 @@ import { matchesQuery, paginate, saleStateOrder, SALE_STATES, type RecordState, 
 import type { PartialSum } from "../../../lib/records";
 import { FilterSelect, Pagination, SearchBox } from "../../_components/ListToolbar";
 import { ChevronRightIcon, PencilIcon } from "../../_components/icons";
-import { badge, btnRow, btnRowPrimary, card } from "../../_lib/ui";
+import { badge, btnRow, btnRowPrimary, card, SALE_BADGE } from "../../_lib/ui";
 
 export interface RecordRow {
   id: string;
@@ -26,14 +26,6 @@ export interface RecordRow {
 const MIN_W = "min-w-[1040px]";
 
 const COLS = "grid-cols-[2.4fr_0.9fr_0.9fr_1fr_0.8fr_0.7fr_0.9fr_1.2fr_auto]";
-
-const SALE_BADGE: Record<SaleState, string> = {
-  販売中: "bg-primary-soft text-primary",
-  販売前: "bg-[#e6f6f7] text-[#0f6e78]",
-  販売済み: "bg-[#e9f8ec] text-[#157347]",
-  販売中止: "bg-[#eceef2] text-[#5b6476]",
-  未設定: "bg-[#f1f3f6] text-muted",
-};
 
 const RECORD_BADGE: Record<RecordState, string> = {
   記録あり: "bg-primary-soft text-primary",

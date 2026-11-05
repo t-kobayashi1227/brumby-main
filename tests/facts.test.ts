@@ -18,6 +18,7 @@ import { sumMismatches } from "../scripts/ingest/jobs/buyers";
 import { groupBusStops, toD10TownName } from "../lib/facts/collect";
 import { ageBand, formatChange, formatDistance, formatManYen1, formatNearby, median } from "../lib/facts/format";
 import { numberFacts, type Fact } from "../lib/facts/types";
+import { competitorColumns } from "../lib/competitor-report";
 
 // 物件・施設名・数値は架空（設計まとめ「見本：架空の物件」に合わせた 2,480万円の中古）
 
@@ -178,7 +179,36 @@ function sample(overrides: Partial<Collected> = {}): Collected {
       { name: "60歳以上", representative_age: 65, definition: null, uses_resale_down_payment: true },
       { name: "単身", representative_age: 35, definition: null },
     ],
-    competitors: [{ position: 1, price_man_yen: 2380, address: "新潟市西区架空町", building_sqm: 100, land_sqm: null, building_age: 18, distance_m: 1234 }],
+    competitors: [
+      {
+        position: 1,
+        code: "K0001",
+        area: "新潟市西区架空町2丁目",
+        property_class: "中古",
+        price_man_yen: 2380,
+        layout: "4LDK",
+        building_sqm: 100,
+        land_sqm: 210.5,
+        building_age: 18,
+        distance_m: 1234,
+        features: "南向き、カーポート付き",
+        view: { summary: "駅に近い中古戸建て。", appeals: ["駅まで直線800m", "南向きの庭"], first_target: "若い夫婦", created_on: "2026-11-01", stale: false },
+      },
+      {
+        position: 2,
+        code: "K0002",
+        area: "新潟市西区架空町3丁目",
+        property_class: "新築",
+        price_man_yen: 2480,
+        layout: "3LDK",
+        building_sqm: 94.5,
+        land_sqm: 150,
+        building_age: 0,
+        distance_m: null,
+        features: null,
+        view: null,
+      },
+    ],
     media: [{ id: "C-01", name: "SUUMO", category: "不動産ポータル", purpose: "問い合わせ", reach_ages: "30〜40代" }],
     ...overrides,
   };
@@ -732,10 +762,65 @@ describe("事実シートの組み立て", () => {
     expect(resale.出典).toMatch(/^ローン計算（頭金1,223万円：住宅市場動向調査 二次取得者の平均の自己資金（三大都市圏）・完済80歳まで）/);
   });
 
-  it("競合（K）：入力のない値はそう書き、この物件との差を比較に入れる", () => {
-    const k = find(facts, "競合物件1");
-    expect(k.値).toBe("価格2,380万円・建物面積100㎡・土地面積 入力なし・築18年・物件から直線1.2km");
-    expect(k.比較).toBe("この物件との差（この物件−競合）：価格 +100万円、建物面積 +5.5㎡、築年数 +4年");
+  it("競合（K）：競合1件につき物件情報・特徴・AIの見立ての3行。差は物件情報の比較に入れる", () => {
+    const info = find(facts, "競合1：物件情報");
+    expect(info.id).toMatch(/^K-/);
+    expect(info.値).toBe(
+      "物件ID：K0001、所在地：新潟市西区架空町2丁目、区分：中古、価格：2,380万円、間取り：4LDK、建物面積：100㎡、土地面積：210.5㎡、築年数：築18年、この物件からの距離：直線1.2km",
+    );
+    expect(info.比較).toBe("この物件との差（この物件−競合）：価格 +100万円、建物面積 +5.5㎡、土地面積 -10.5㎡、築年数 +4年");
+    expect(info.出典).toBe("本システムの登録情報（物件ID K0001）");
+    expect(find(facts, "競合1：特徴").値).toBe("南向き、カーポート付き");
+    const view = find(facts, "競合1：AIの見立て");
+    expect(view.値).toBe("まとめ：駅に近い中古戸建て。　訴求：①駅まで直線800m ②南向きの庭　第1ターゲット：若い夫婦");
+    expect(view.出典).toMatch(/^本システムの販売戦略（物件ID K0001、2026-11-01作成）。その物件のためにAIが書いた文の引用で、確かめた事実ではない$/);
+    expect(view.時点).toBe("2026-11");
+    expect(view.状態).toBe("取得");
+  });
+
+  it("競合（K）：位置・特徴・戦略が無い競合は、取得できず・入力なしと書く。新築は「新築」", () => {
+    const info = find(facts, "競合2：物件情報");
+    expect(info.値).toContain("築年数：新築");
+    expect(info.値).toContain("この物件からの距離：取得できず（競合の位置がない）");
+    expect(find(facts, "競合2：特徴").値).toBe("入力なし");
+    expect(find(facts, "競合2：AIの見立て")).toMatchObject({ 値: null, 状態: "取得できず" });
+    // 3行ずつ、競合の順に並ぶ
+    expect(facts.filter((f) => f.id.startsWith("K-")).map((f) => f.項目)).toEqual([
+      "競合1：物件情報",
+      "競合1：特徴",
+      "競合1：AIの見立て",
+      "競合2：物件情報",
+      "競合2：特徴",
+      "競合2：AIの見立て",
+    ]);
+  });
+
+  it("競合（K）：戦略を作ったあとに物件情報が直されていれば、AIの見立ては要確認", () => {
+    const base = sample();
+    const f = buildFacts(sample({ competitors: [{ ...base.competitors[0], view: { ...base.competitors[0].view!, stale: true } }] }));
+    const view = find(f, "競合1：AIの見立て");
+    expect(view.状態).toBe("要確認");
+    expect(view.出典).toMatch(/戦略を作ったあとに物件情報が直されている$/);
+  });
+
+  it("競合（K）：販売施策タブの列に読み分けられる（lib/competitor-report.ts）", () => {
+    const [c1, c2] = competitorColumns(facts);
+    expect(c1).toMatchObject({ n: 1, code: "K0001", area: "新潟市西区架空町2丁目", distance: "直線1.2km" });
+    expect(c1.rows).toEqual([
+      { label: "区分", value: "中古", diff: null },
+      { label: "価格", value: "2,380万円", diff: "この物件が100万円高い" },
+      { label: "間取り", value: "4LDK", diff: null },
+      { label: "建物面積", value: "100㎡", diff: "この物件が5.5㎡広い" },
+      { label: "土地面積", value: "210.5㎡", diff: "この物件が10.5㎡狭い" },
+      { label: "築年数", value: "築18年", diff: "この物件が4年古い" },
+    ]);
+    expect(c1.view).toMatchObject({ firstTarget: "若い夫婦", summary: "駅に近い中古戸建て。", createdOn: "2026-11-01", stale: false });
+    expect(c1.features?.値).toBe("南向き、カーポート付き");
+    expect(c2).toMatchObject({ n: 2, code: "K0002", distance: "取得できず（競合の位置がない）", view: null });
+  });
+
+  it("競合（K）：選んでいなければ K は空", () => {
+    expect(buildFacts(sample({ competitors: [] })).some((f) => f.id.startsWith("K-"))).toBe(false);
   });
 
   it("媒体（C）：一覧の ID をそのまま使う", () => {

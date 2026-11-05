@@ -26,6 +26,9 @@ import type {
   ZoneHit,
 } from "./build";
 import { ageBandOf, selectMarket, selectSimilarMarket } from "./build";
+import { quoteCompetitorView } from "./competitor-quote";
+import { addressToChome } from "../competitors";
+import type { Fact } from "./types";
 import { todayJst, type NearbyItem } from "./format";
 import { kanjiToNumber, parseAddress, pinAddress, resolveZone, wardFromSourceUrl, type ZoneRow } from "./school-zones";
 import type { FactStepKey } from "./steps";
@@ -80,6 +83,24 @@ export function toD10TownName(name: string): string {
     const n = kanjiToNumber(k);
     return n === null ? all : `${String(n).replace(/\d/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xfee0))}丁目`;
   });
+}
+
+interface CompetitorRow {
+  position: number;
+  code: string;
+  address: string;
+  property_class: string;
+  price_man_yen: number;
+  layout: string;
+  building_sqm: string;
+  land_sqm: string;
+  building_age: number;
+  features: string | null;
+  distance_m: number | null;
+  strategy: unknown;
+  created_on: string | null;
+  stale: boolean | null;
+  facts: Fact[] | null;
 }
 
 interface PropertyRow extends Omit<PropertyInput, "building_sqm" | "land_sqm"> {
@@ -140,9 +161,22 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
       where effective_from <= ${today}::date order by key, effective_from desc
     `),
     () => sql<TargetInput[]>`select name, representative_age, definition, uses_resale_down_payment from target_candidates order by id`,
-    () => sql<{ position: number; price_man_yen: number | null; address: string | null; building_sqm: string | null; land_sqm: string | null; building_age: number | null; distance_m: number | null }[]>`
-      select position, price_man_yen, address, building_sqm, land_sqm, building_age, extensions.st_distance(geog, ${pt}) as distance_m
-      from competitors where property_id = ${propertyId} order by position
+    // 競合：本システムで販売戦略を作った別の物件（property_competitors）。物件情報はいまの登録、見立ては一番新しい戦略から
+    () => sql<CompetitorRow[]>`
+      select pc.position, c.code, c.address, c.property_class, c.price_man_yen, c.layout, c.building_sqm, c.land_sqm, c.building_age, c.features,
+        extensions.st_distance(c.geog, ${pt}) as distance_m,
+        r.result -> '戦略' as strategy, to_char(r.finished_at at time zone 'Asia/Tokyo', 'YYYY-MM-DD') as created_on,
+        (c.updated_at > r.finished_at) as stale, fs.content -> '事実' as facts
+      from property_competitors pc
+      join properties c on c.id = pc.competitor_id
+      left join lateral (
+        select result, finished_at, fact_sheet_id from strategy_runs
+        where property_id = c.id and status = 'succeeded' and form = '3回' and result -> '戦略' is not null
+        order by finished_at desc limit 1
+      ) r on true
+      left join fact_sheets fs on fs.id = r.fact_sheet_id
+      where pc.property_id = ${propertyId}
+      order by pc.position
     `,
     () => sql<{ id: string; name: string; category: string; purpose: string; reach_ages: string }[]>`select id, name, category, purpose, reach_ages from media order by sort`,
   );
@@ -171,12 +205,21 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
       definition: t.definition,
       uses_resale_down_payment: t.uses_resale_down_payment ?? null,
     })),
+    // 1件目から番号を振り直す（途中の競合を外したときも「競合1」から並ぶように）
     competitors: competitors.map(
-      (c): CompetitorInput => ({
-        ...c,
-        building_sqm: c.building_sqm === null ? null : Number(c.building_sqm),
-        land_sqm: c.land_sqm === null ? null : Number(c.land_sqm),
+      (c, i): CompetitorInput => ({
+        position: i + 1,
+        code: c.code,
+        area: addressToChome(c.address),
+        property_class: c.property_class,
+        price_man_yen: c.price_man_yen,
+        layout: c.layout,
+        building_sqm: Number(c.building_sqm),
+        land_sqm: Number(c.land_sqm),
+        building_age: c.building_age,
         distance_m: c.distance_m === null ? null : Number(c.distance_m),
+        features: c.features,
+        view: c.created_on === null ? null : quoteCompetitorView(c.strategy, c.facts ?? [], c.created_on, c.stale === true),
       }),
     ),
     media: [...media],

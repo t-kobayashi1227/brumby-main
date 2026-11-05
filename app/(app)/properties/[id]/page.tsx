@@ -4,7 +4,8 @@ import { getSql, inOrder } from "../../../../lib/db";
 import { parsePropertyId } from "../../../../lib/property";
 import { emptyState } from "../../../_lib/ui";
 import LocationMap from "../LocationMap";
-import PropertyForm, { type CompetitorValues, type PropertyValues, type TransportValues } from "../PropertyForm";
+import PropertyForm, { type PropertyValues, type TransportValues } from "../PropertyForm";
+import { loadCompetitorCandidates, loadCompetitorIds } from "../../../../lib/competitors-load";
 
 // 物件の画面：登録した内容の変更と、地図での位置の確認（docs/設計まとめ.md「入力画面の動き」）
 // 販売戦略の画面の「物件情報を直す」（保存してもこの画面に残る）と「戦略を作り直す」（?rebuild=1、保存すると作り直しへ進む）から開く
@@ -55,11 +56,10 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
   `;
   if (!p) return <div className={emptyState}>物件 {propertyId} が見つかりません。</div>;
 
-  const [transports, competitors] = await inOrder(
+  const [transports, competitorIds, candidates] = await inOrder(
     () => sql<TransportValues[]>`select mode, line, stop_name, walk_min from property_transports where property_id = ${propertyId} order by position`,
-    () => sql<(Omit<CompetitorValues, "building_sqm" | "land_sqm"> & { building_sqm: string | null; land_sqm: string | null })[]>`
-      select price_man_yen, address, building_sqm, land_sqm, building_age from competitors where property_id = ${propertyId} order by position
-    `,
+    () => loadCompetitorIds(sql, propertyId),
+    () => loadCompetitorCandidates(sql, propertyId),
   );
 
   // numeric の列は文字で返るので、数にする
@@ -83,7 +83,7 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
     image_kinds: p.image_kinds,
     ad_budget_man_yen: p.ad_budget_man_yen,
     transports: [...transports],
-    competitors: competitors.map((c) => ({ ...c, building_sqm: toNum(c.building_sqm), land_sqm: toNum(c.land_sqm) })),
+    competitor_ids: competitorIds,
   };
 
   return (
@@ -111,7 +111,7 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
         </div>
       )}
       <LocationMap propertyId={propertyId} lon={p.lon} lat={p.lat} source={p.location_source} geocodeTitle={p.geocode_title} />
-      <PropertyForm values={values} rebuild={rebuild} />
+      <PropertyForm values={values} rebuild={rebuild} competitorCandidates={candidates} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 // ⑤レポート画面の組み立て（docs/設計まとめ.md「根拠と出典」）。表示だけを行い、AI は動かさない
 
+import { competitorPart } from "./agents/competitor-part";
 import type { MediaOutput, StrategyOutput } from "./agents/schemas";
 import { sourceOf, type DatasetInfo } from "./facts/build";
 import { FACT_CATEGORIES, type Fact, type FactCategory } from "./facts/types";
@@ -122,6 +123,13 @@ export function factUsage(main: StrategyOutput, media: MediaOutput, mediaName: (
   media.media.forEach((m) => add(m.evidence, { tab: "sales", where: `媒体 ${mediaName(m.id, m.name)}`, text: m.reason }));
   media.cautions.forEach((c, i) => add(c.evidence, { tab: "sales", where: `媒体の注意点${i + 1}`, text: c.text }));
   add(main.price_view.evidence, { tab: "price", where: "価格の見方", text: main.price_view.text });
+  // 競合と比べた部分（2026-11-05）。以前の答えには無い
+  const comp = competitorPart(main);
+  if (comp) {
+    if (comp.competitor_edge) add(comp.competitor_edge.evidence, { tab: "sales", where: "競合と比べたおすすめポイント", text: comp.competitor_edge.point });
+    comp.competitor_concerns.forEach((c, i) => add(c.evidence, { tab: "sales", where: `競合と比べた懸念点${i + 1}`, text: c.concern }));
+    comp.competitors.forEach((c) => add(c.buyer_view.evidence, { tab: "sales", where: "競合ごとの見え方", text: c.buyer_view.text }));
+  }
   for (const a of main.analysis) {
     const place = placeOfAnalysis(a);
     const where = place.tab === "area" ? `分析（${AREA_CARDS.find((c) => c.key === place.card)!.title}）` : `分析（${a.topic}）`;
@@ -289,7 +297,7 @@ export function plainIds(text: string, facts: Map<string, Fact>): string {
 /** 答えの文の中の事実IDを全部 plainIds で直す。evidence・id は事実IDそのものなので触らない */
 export function withPlainIds<T>(value: T, facts: Map<string, Fact>): T {
   const walk = (v: unknown, key?: string): unknown => {
-    if (key === "evidence" || key === "id") return v;
+    if (key === "evidence" || key === "id" || key === "fact_id") return v;
     if (typeof v === "string") return plainIds(v, facts);
     if (Array.isArray(v)) return v.map((x) => walk(x));
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));

@@ -202,14 +202,40 @@ export interface TargetInput {
   uses_resale_down_payment?: boolean | null;
 }
 
+/**
+ * 競合物件：本システムで販売戦略を作った別の物件（2026-11-05 浩平さん依頼。最大3件）
+ * 物件情報・特徴はいまの登録の値。AIの見立ては、その物件の一番新しい販売戦略からの引用（事実IDは名前に直してある）
+ */
 export interface CompetitorInput {
   position: number;
-  price_man_yen: number | null;
-  address: string | null;
-  building_sqm: number | null;
-  land_sqm: number | null;
-  building_age: number | null;
+  /** 競合の物件ID（properties.code） */
+  code: string;
+  /** 所在地（丁目まで。番地は出さない） */
+  area: string;
+  property_class: string;
+  price_man_yen: number;
+  layout: string;
+  building_sqm: number;
+  land_sqm: number;
+  building_age: number;
+  /** この物件からの直線距離（m）。競合の位置がないときは null */
   distance_m: number | null;
+  features: string | null;
+  /** 競合の販売戦略からの引用。戦略が見つからないときは null */
+  view: CompetitorView | null;
+}
+
+export interface CompetitorView {
+  /** 総合評価の文 */
+  summary: string;
+  /** 訴求（rank の順） */
+  appeals: string[];
+  /** 第1ターゲットの名前 */
+  first_target: string | null;
+  /** 戦略を作った日（YYYY-MM-DD） */
+  created_on: string;
+  /** 戦略を作ったあとに、競合の物件情報が直されている（引用が今の物件情報と合わないことがある） */
+  stale: boolean;
 }
 
 interface MediaRow {
@@ -943,25 +969,61 @@ export function listShares(rows: StatRow[]): { text: string; needsCheck: boolean
 
 // ---- K 競合 ----
 
+/** 競合の「AIの見立て」の値。まとめ・訴求・第1ターゲットを1行に */
+export function competitorViewText(v: CompetitorView): string {
+  const marks = ["①", "②", "③"];
+  const appeals = v.appeals.slice(0, 3).map((a, i) => `${marks[i]}${a}`);
+  return [`まとめ：${v.summary}`, appeals.length ? `訴求：${appeals.join(" ")}` : null, v.first_target ? `第1ターゲット：${v.first_target}` : null]
+    .filter((x): x is string => x !== null)
+    .join("　");
+}
+
+/**
+ * 競合1件につき3行：物件情報（比較の列に、この物件との差）・特徴・AIの見立て（引用）
+ * 競合を選んでいなければ K は空
+ */
 function competitorFacts(c: Collected): FactDraft[] {
   const p = c.property;
-  const src = { 出典: "入力", 時点: c.today.slice(0, 7) };
-  return c.competitors.map((k) => {
-    const parts = [
-      k.price_man_yen !== null ? `価格${formatManYen(k.price_man_yen * 10_000)}` : "価格 入力なし",
-      k.building_sqm !== null ? `建物面積${sqm(k.building_sqm)}` : "建物面積 入力なし",
-      k.land_sqm !== null ? `土地面積${sqm(k.land_sqm)}` : "土地面積 入力なし",
-      k.building_age !== null ? (k.building_age === 0 ? "新築" : `築${k.building_age}年`) : "築年数 入力なし",
-      k.distance_m !== null ? `物件から${formatDistance(k.distance_m)}` : k.address ? "物件からの直線距離 取得できず（住所から位置を出せず）" : "住所 入力なし",
+  const month = c.today.slice(0, 7);
+  const signed = (n: number, unit: string) => `${n > 0 ? "+" : ""}${formatNumber(n, Number.isInteger(n) ? 0 : 1)}${unit}`;
+  return c.competitors.flatMap((k) => {
+    const name = `競合${k.position}`;
+    // 「項目：値」を「、」でつなぐ（画面は lib/competitor-report.ts で読み分ける）
+    const info = [
+      `物件ID：${k.code}`,
+      `所在地：${k.area}`,
+      `区分：${k.property_class}`,
+      `価格：${formatManYen(k.price_man_yen * 10_000)}`,
+      `間取り：${k.layout}`,
+      `建物面積：${sqm(k.building_sqm)}`,
+      `土地面積：${sqm(k.land_sqm)}`,
+      `築年数：${k.building_age === 0 ? "新築" : `築${k.building_age}年`}`,
+      `この物件からの距離：${k.distance_m !== null ? formatDistance(k.distance_m) : "取得できず（競合の位置がない）"}`,
     ];
-    const signed = (n: number, unit: string) => `${n > 0 ? "+" : ""}${formatNumber(n, Number.isInteger(n) ? 0 : 1)}${unit}`;
     const diffs = [
-      k.price_man_yen !== null ? `価格 ${signed(p.price_man_yen - k.price_man_yen, "万円")}` : null,
-      k.building_sqm !== null ? `建物面積 ${signed(Math.round((p.building_sqm - k.building_sqm) * 10) / 10, "㎡")}` : null,
-      k.land_sqm !== null ? `土地面積 ${signed(Math.round((p.land_sqm - k.land_sqm) * 10) / 10, "㎡")}` : null,
-      k.building_age !== null ? `築年数 ${signed(p.building_age - k.building_age, "年")}` : null,
-    ].filter((d): d is string => d !== null);
-    return fact("K", `競合物件${k.position}`, parts.join("・"), src, { 比較: diffs.length ? `この物件との差（この物件−競合）：${diffs.join("、")}` : undefined });
+      `価格 ${signed(p.price_man_yen - k.price_man_yen, "万円")}`,
+      `建物面積 ${signed(Math.round((p.building_sqm - k.building_sqm) * 10) / 10, "㎡")}`,
+      `土地面積 ${signed(Math.round((p.land_sqm - k.land_sqm) * 10) / 10, "㎡")}`,
+      `築年数 ${signed(p.building_age - k.building_age, "年")}`,
+    ];
+    const registered = { 出典: `本システムの登録情報（物件ID ${k.code}）`, 時点: month };
+    const view = k.view
+      ? fact(
+          "K",
+          `${name}：AIの見立て`,
+          competitorViewText(k.view),
+          {
+            出典: `本システムの販売戦略（物件ID ${k.code}、${k.view.created_on}作成）。その物件のためにAIが書いた文の引用で、確かめた事実ではない${k.view.stale ? "。戦略を作ったあとに物件情報が直されている" : ""}`,
+            時点: k.view.created_on.slice(0, 7),
+          },
+          k.view.stale ? { 状態: "要確認" } : {},
+        )
+      : fact("K", `${name}：AIの見立て`, null, { 出典: `本システムの販売戦略（物件ID ${k.code}）`, 時点: month });
+    return [
+      fact("K", `${name}：物件情報`, info.join("、"), registered, { 比較: `この物件との差（この物件−競合）：${diffs.join("、")}` }),
+      fact("K", `${name}：特徴`, k.features ?? "入力なし", { 出典: `物件資料（物件ID ${k.code}の入力）`, 時点: month }),
+      view,
+    ];
   });
 }
 

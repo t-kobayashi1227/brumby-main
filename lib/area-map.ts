@@ -1,5 +1,5 @@
 // エリア分析の地図（2026-11-03 浩平さん依頼「分析結果のエリアの位置をカラフルな地図で」）
-// 対象物件・競合物件（販売中）・成約事例・生活施設を色分けしたピンで出し、1km・3kmの円を重ねる
+// 対象物件・競合物件（物件情報の画面で選んだ物件）・成約事例・生活施設を色分けしたピンで出し、1km・3kmの円を重ねる
 // 位置はすべてDBにあるもの（物件の登録時の位置、競合の住所から出した位置、取り込み済みの公的データ）。ポータルからは集めない
 // この表は画面（ブラウザ）でも読むので、DBに触る処理は lib/area-map-load.ts に分ける
 
@@ -31,7 +31,7 @@ export const MAP_COLORS: Record<MapPointKind, string> = {
 
 export const MAP_LABELS: Record<MapPointKind, string> = {
   target: "対象物件",
-  competitor: "競合物件（販売中）",
+  competitor: "競合物件",
   sold: "成約事例",
   facility: "生活施設",
 };
@@ -57,7 +57,7 @@ export interface AreaMapData {
   datasetIds: string[];
   /** 種類ごとの上限で地図に出さなかった施設（種類と、1km以内の件数） */
   cut: { kind: string; total: number }[];
-  /** 競合物件のうち、住所から位置が出ず地図に置けなかった件数 */
+  /** 競合物件のうち、位置が無く地図に置けなかった件数 */
   competitorsWithoutLocation: number;
 }
 

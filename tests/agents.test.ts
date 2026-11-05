@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { bannedWords, checkProgram, removeSentences, splitWhere } from "../lib/agents/checks";
+import { bannedWords, checkCompetitors, checkProgram, removeSentences, splitWhere } from "../lib/agents/checks";
+import { competitorPart } from "../lib/agents/competitor-part";
 import { z } from "zod/v4";
 import { costUsd, providerOf, resolveModels } from "../lib/agents/cost";
 import { parseJson } from "../lib/agents/llm";
@@ -56,6 +57,9 @@ function main(overrides: Partial<StrategyOutput> = {}): StrategyOutput {
     price_view: { position: "相場なみ", text: "価格", evidence: ["P-02"] },
     concerns: [{ text: "駅の乗降客数", action: "説明する", evidence: ["T-03"] }],
     direction: { text: "方向性", evidence: ["S-02"] },
+    competitor_edge: null,
+    competitor_concerns: [],
+    competitors: [],
     ...overrides,
   };
 }
@@ -165,6 +169,81 @@ describe("戦略担当の分析", () => {
     const forMedia = mainPart(r.main);
     expect("analysis" in forMedia || "unknown" in forMedia).toBe(false);
     expect(forMedia.targets[0].name).toBe("若い夫婦");
+  });
+});
+
+describe("競合と比べた部分（2026-11-05）", () => {
+  const k = (id: string, 項目: string): Fact => ({ id, 項目, 値: "x", 出典: "x", 時点: "x", 状態: "取得" });
+  const KF = [...FACTS, k("K-01", "競合1：物件情報"), k("K-02", "競合1：特徴"), k("K-03", "競合1：AIの見立て"), k("K-04", "競合2：物件情報"), k("K-05", "競合2：特徴"), k("K-06", "競合2：AIの見立て")];
+  const edge = (evidence: string[]) => ({ point: "広い庭", cause: "競合1より土地が広い", action: "庭の写真を先頭に", why_first: "第1ターゲットに効く", evidence });
+  const concern = (rank: number, evidence: string[]) => ({ rank, concern: "価格が高く見える", cause: "競合2より高い", evidence });
+  const note = (fact_id: string, about_edge = false, concern_ranks: number[] = []) => ({ fact_id, buyer_view: { text: "見え方", evidence: [fact_id, "P-02"] }, about_edge, concern_ranks });
+  const ok = () =>
+    main({
+      competitor_edge: edge(["K-01", "P-02"]),
+      competitor_concerns: [concern(1, ["K-04", "P-02"])],
+      competitors: [note("K-01", true), note("K-04", false, [1])],
+    });
+  const compIssues = (m: StrategyOutput) => checkCompetitors(m, KF);
+
+  it("形が合っていれば何も挙げない", () => {
+    expect(compIssues(ok())).toEqual([]);
+  });
+
+  it("根拠に競合とこの物件の事実が両方なければ外す", () => {
+    const issues = compIssues(main({ ...ok(), competitor_edge: edge(["P-02"]), competitor_concerns: [concern(1, ["K-04", "K-05"])] }));
+    expect(issues.map((i) => [i.location, i.check_name, i.action])).toEqual([
+      ["competitor_edge", "競合と比べた根拠がそろっていない", "外す"],
+      ["competitor_concerns[0]", "競合と比べた根拠がそろっていない", "外す"],
+    ]);
+  });
+
+  it("懸念点は2つまで。rank の並びが違えば記録だけ", () => {
+    const issues = compIssues(main({ ...ok(), competitor_concerns: [concern(1, ["K-04", "P-02"]), concern(3, ["K-04", "P-02"]), concern(4, ["K-01", "P-02"])] }));
+    expect(issues.map((i) => [i.location, i.check_name, i.action])).toEqual([
+      ["competitor_concerns[2]", "懸念点が多すぎる", "外す"],
+      ["competitor_concerns", "懸念点の順番", "記録だけ"],
+    ]);
+  });
+
+  it("競合ごとの見え方は「物件情報」の事実を指す。重なり・足りない競合・無い rank を挙げる", () => {
+    const issues = compIssues(main({ ...ok(), competitors: [note("K-02"), note("K-01", true, [5]), note("K-01")] }));
+    expect(issues.map((i) => [i.location, i.check_name, i.action])).toEqual([
+      ["competitors[0]", "競合の事実IDが違う", "外す"],
+      ["competitors[1]", "懸念点の rank が無い", "記録だけ"],
+      ["competitors[2]", "同じ競合が2回ある", "外す"],
+      ["competitors", "競合の見え方が足りない", "記録だけ"],
+    ]);
+  });
+
+  it("checkProgram でも点検し、外した文は答えから取り除く（おすすめポイントは null）", () => {
+    const m = main({ ...ok(), competitor_edge: edge(["K-01"]), competitors: [note("K-02"), note("K-01", true), note("K-04")] });
+    const issues = checkProgram(m, media(), KF, MEDIA_IDS);
+    const r = removeSentences(m, media(), issues);
+    expect(r.main.competitor_edge).toBeNull();
+    expect(r.main.competitors.map((c) => c.fact_id)).toEqual(["K-01", "K-04"]);
+    expect(r.main.competitor_concerns).toHaveLength(1);
+  });
+
+  it("以前の答え（競合の部分が無い）は点検しない", () => {
+    const old = main();
+    const legacy = { ...old } as Partial<StrategyOutput>;
+    delete legacy.competitor_edge;
+    delete legacy.competitor_concerns;
+    delete legacy.competitors;
+    expect(competitorPart(legacy as StrategyOutput)).toBeNull();
+    expect(compIssues(legacy as StrategyOutput)).toEqual([]);
+    expect("competitor_edge" in removeSentences(legacy as StrategyOutput, media(), []).main).toBe(false);
+  });
+
+  it("媒体担当には競合と比べた部分を渡さない", () => {
+    const forMedia = mainPart(ok());
+    expect("competitor_edge" in forMedia || "competitor_concerns" in forMedia || "competitors" in forMedia).toBe(false);
+  });
+
+  it("答えの形：おすすめポイントは null にできる", () => {
+    expect(strategySchema.shape.competitor_edge.parse(null)).toBeNull();
+    expect(() => strategySchema.shape.competitors.parse([{ fact_id: "K-01", buyer_view: { text: "t", evidence: [] }, about_edge: "yes", concern_ranks: [] }])).toThrow();
   });
 });
 

@@ -5,9 +5,12 @@
 // 4. 媒体が C-01〜C-16 の中から3〜6件で、配分の合計が100か → 媒体を作り直し
 // 5. 禁止語がないか → 記録だけ（言葉の一致で見るので、問題のない文にも当たる。どのくらい当たるかを数える）
 // 6. 「要確認」の事実だけを根拠にしていないか → 記録だけ（戦略の守ること5。確かめが要ると書き添えてあれば問題ないので、外さない）
+// 7. 競合と比べた部分（2026-11-05）：おすすめポイント・懸念点の根拠に競合（K）とこの物件の事実が両方あるか、懸念点は2つまでか、
+//    競合ごとの見え方が「物件情報」の事実を指しているか → 外す。懸念点の rank の並びと、競合ごとの見え方の数 → 記録だけ
 // PoC では作り直さない（docs/設計まとめ.md「処理の流れ」）。action は点検が求める扱いのまま check_results に残す
 
 import type { Fact } from "../facts/types";
+import { competitorPart } from "./competitor-part";
 import type { MediaOutput, StrategyOutput } from "./schemas";
 
 type CheckTarget = "戦略" | "媒体";
@@ -52,9 +55,67 @@ function sentences(main: StrategyOutput, media: MediaOutput): Sentence[] {
     one("price_view", main.price_view),
     ...list("戦略", "concerns", main.concerns),
     one("direction", main.direction),
+    ...competitorSentences(main),
     ...list("媒体", "media", media.media),
     ...list("媒体", "cautions", media.cautions),
   ];
+}
+
+/** 競合と比べた部分の文。おすすめポイントは1つだけだが、外せる（無しにする） */
+function competitorSentences(main: StrategyOutput): Sentence[] {
+  const part = competitorPart(main);
+  if (!part) return [];
+  const removable = (location: string, text: string, evidence: string[]): Sentence => ({ target: "戦略", location, text, evidence, removable: true });
+  return [
+    ...(part.competitor_edge ? [removable("competitor_edge", textOf(part.competitor_edge), part.competitor_edge.evidence)] : []),
+    ...part.competitor_concerns.map((c, i) => removable(`competitor_concerns[${i}]`, textOf(c), c.evidence)),
+    ...part.competitors.map((c, i) => removable(`competitors[${i}]`, c.buyer_view.text, c.buyer_view.evidence)),
+  ];
+}
+
+/** 競合の「物件情報」の事実（競合1件に1つ） */
+export function competitorInfoFacts(facts: Fact[]): Fact[] {
+  return facts.filter((f) => f.id.startsWith("K-") && f.項目.endsWith("：物件情報"));
+}
+
+const COMPETITOR_CONCERNS_MAX = 2;
+
+/** 7. 競合と比べた部分の形の点検 */
+export function checkCompetitors(main: StrategyOutput, facts: Fact[]): CheckIssue[] {
+  const part = competitorPart(main);
+  if (!part) return [];
+  const issues: CheckIssue[] = [];
+  const add = (location: string, check_name: string, problem: string, action: CheckAction) => issues.push({ target: "戦略", location, check_name, problem, action });
+  const known = new Set(facts.map((f) => f.id));
+  // 競合（K）とこの物件（K 以外）の事実が、両方根拠にあるか。どちらかだけだと「競合と比べて」の根拠にならない
+  const bothSides = (evidence: string[]) => {
+    const ids = evidence.map((e) => e.trim()).filter((id) => known.has(id));
+    return ids.some((id) => id.startsWith("K-")) && ids.some((id) => !id.startsWith("K-"));
+  };
+  const BOTH = "競合と比べた根拠がそろっていない";
+  const BOTH_PROBLEM = "根拠に、競合（K）の事実とこの物件の事実の両方がありません";
+  if (part.competitor_edge && !bothSides(part.competitor_edge.evidence)) add("competitor_edge", BOTH, BOTH_PROBLEM, "外す");
+  part.competitor_concerns.forEach((c, i) => {
+    if (i >= COMPETITOR_CONCERNS_MAX) add(`competitor_concerns[${i}]`, "懸念点が多すぎる", `競合と比べた懸念点は${COMPETITOR_CONCERNS_MAX}つまでです`, "外す");
+    else if (!bothSides(c.evidence)) add(`competitor_concerns[${i}]`, BOTH, BOTH_PROBLEM, "外す");
+  });
+  const ranks = part.competitor_concerns.map((c) => c.rank);
+  if (ranks.some((r, i) => r !== i + 1)) add("competitor_concerns", "懸念点の順番", `rank が1からの連番ではありません：${ranks.join("、")}`, "記録だけ");
+
+  const infos = competitorInfoFacts(facts);
+  const infoIds = new Set(infos.map((f) => f.id));
+  const seen = new Set<string>();
+  part.competitors.forEach((c, i) => {
+    const id = c.fact_id.trim();
+    if (!infoIds.has(id)) add(`competitors[${i}]`, "競合の事実IDが違う", `fact_id が競合の「物件情報」の事実ではありません：${id}`, "外す");
+    else if (seen.has(id)) add(`competitors[${i}]`, "同じ競合が2回ある", `同じ競合です：${id}`, "外す");
+    seen.add(id);
+    const missing = c.concern_ranks.filter((r) => !ranks.includes(r));
+    if (missing.length) add(`competitors[${i}]`, "懸念点の rank が無い", `concern_ranks に無い懸念点の rank があります：${missing.join("、")}`, "記録だけ");
+  });
+  const without = infos.filter((f) => !seen.has(f.id));
+  if (without.length) add("competitors", "競合の見え方が足りない", `見え方が書かれていない競合があります：${without.map((f) => f.id).join("、")}`, "記録だけ");
+  return issues;
 }
 
 const MEDIA_MIN = 3;
@@ -92,6 +153,8 @@ export function checkProgram(main: StrategyOutput, media: MediaOutput, facts: Fa
     }
   }
 
+  issues.push(...checkCompetitors(main, facts));
+
   const ids = media.media.map((m) => m.id);
   const unknownMedia = ids.filter((id) => !mediaIds.includes(id));
   const dup = ids.filter((id, i) => ids.indexOf(id) !== i);
@@ -123,6 +186,13 @@ export function removeSentences(main: StrategyOutput, media: MediaOutput, issues
       not_fit: keep("戦略", "not_fit", main.not_fit),
       appeals: keep("戦略", "appeals", main.appeals),
       concerns: keep("戦略", "concerns", main.concerns),
+      ...(competitorPart(main)
+        ? {
+            competitor_edge: drop.has("戦略:competitor_edge") ? null : main.competitor_edge,
+            competitor_concerns: keep("戦略", "competitor_concerns", main.competitor_concerns),
+            competitors: keep("戦略", "competitors", main.competitors),
+          }
+        : {}),
     },
     media: { ...media, media: keep("媒体", "media", media.media), cautions: keep("媒体", "cautions", media.cautions) },
   };

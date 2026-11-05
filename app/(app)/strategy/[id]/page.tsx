@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { StrategyResult } from "../../../../lib/agents/run";
 import { loadAreaMap } from "../../../../lib/area-map-load";
+import { competitorColumns } from "../../../../lib/competitor-report";
 import { loadAreaPrice } from "../../../../lib/area-price-load";
 import { getSql, inOrder } from "../../../../lib/db";
 import type { DatasetInfo } from "../../../../lib/facts/build";
@@ -71,7 +72,7 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
   // 以前はここに「まだ販売戦略がありません。上の『戦略を作る』を押してください」を出していたが、登録後の自動作成中にも出て進み具合と食い違うため外した
   let report: React.ReactNode = latestSheet ? <LatestFactSheet sheet={latestSheet.content} /> : null;
   if (done) {
-    const [datasets, media, areaMap, areaPrice, saleRows, resultRows] = await inOrder(
+    const [datasets, media, areaMap, areaPrice, saleRows, resultRows, competitorRows] = await inOrder(
       () => sql<(DatasetInfo & { attribution: string | null })[]>`select id, name, provider, as_of, row_count, attribution from datasets`,
       () => sql<{ id: string; name: string; category: string; purpose: string; reach_ages: string }[]>`select id, name, category, purpose, reach_ages from media`,
       () => loadAreaMap(sql, propertyId),
@@ -83,6 +84,11 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
         from media_results r left join media m on m.id = r.media_id
         where r.property_id = ${propertyId} order by r.started_on, r.id
       `,
+      // 販売施策タブの競合の列から、その物件の販売戦略へ移るための番号（事実シートには物件IDだけがある。消えた物件は出ない）
+      async () => {
+        const codes = competitorColumns(done.content.事実).flatMap((c) => (c.code ? [c.code] : []));
+        return codes.length ? await sql<{ id: string; code: string }[]>`select id, code from properties where code in ${sql(codes)}` : [];
+      },
     );
     const records = {
       status: saleRows[0]?.status ?? null,
@@ -117,6 +123,7 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
           areaPrice={areaPrice}
           records={records}
           exteriorImage={p.has_exterior ? `/properties/${propertyId}/images/exterior` : null}
+          competitorLinks={Object.fromEntries(competitorRows.map((c) => [c.code, Number(c.id)]))}
         />
       </>
     );

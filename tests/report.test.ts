@@ -41,6 +41,9 @@ const main: StrategyOutput = {
   price_view: { position: "相場なみ", ...s(["P-02"]) },
   concerns: [{ ...s(["H-02"]), action: "a" }],
   direction: s([" A-03 "]),
+  competitor_edge: null,
+  competitor_concerns: [],
+  competitors: [],
 };
 const media: MediaOutput = { media: [], cautions: [] };
 

@@ -7,7 +7,7 @@ import { circleRing, FACILITY_GROUPS, PER_KIND_LIMIT, MAP_COLORS, MAP_LABELS, po
 import { MapIcon } from "../../../_components/icons";
 import { Card } from "./parts";
 
-// エリア分析の地図（2026-11-03）。対象物件・競合物件（販売中）・成約事例・生活施設を色分けしたピンで出し、1km・3kmの円を重ねる
+// エリア分析の地図（2026-11-03）。対象物件・競合物件・成約事例・生活施設を色分けしたピンで出し、1km・3kmの円を重ねる
 // 地図は MapLibre GL＋国土地理院の淡色地図（出典を表示する）。点の選び方と色は lib/area-map.ts、DBから引くのは lib/area-map-load.ts
 
 type Layer = "competitor" | "sold" | FacilityGroup;
@@ -198,13 +198,13 @@ export default function AreaMap({ data, compact = false }: { data: AreaMapData; 
         {compact ? (
           <div>
             色分けの決め方と注意点は、エリア分析タブの地図の下に書いています。
-            {data.competitorsWithoutLocation > 0 && ` 住所から位置が出なかった競合物件 ${data.competitorsWithoutLocation}件は地図に出ていません。`}
+            {data.competitorsWithoutLocation > 0 && ` 位置が無い競合物件 ${data.competitorsWithoutLocation}件は地図に出ていません。`}
           </div>
         ) : (
           <div>
             競合物件は入力された住所の位置、成約事例は販売記録で販売の状況を「販売済み」にした自社の物件（3km以内）、生活施設は取り込み済みの公的データ（種類ごとに1km以内を近い順に{PER_KIND_LIMIT}件まで、無ければ3km以内の最寄り）です。ボタンの数字は地図に出した件数で、バス停は乗り場（ポール）ごとに数えるため、事実シートの件数と違うことがあります。
             {data.cut.length > 0 && ` 1km以内に多いため近い${PER_KIND_LIMIT}件だけ出した種類：${data.cut.map((c) => `${c.kind}（${c.total}件）`).join("、")}。`}
-          {data.competitorsWithoutLocation > 0 && ` 住所から位置が出なかった競合物件 ${data.competitorsWithoutLocation}件は地図に出ていません。`}
+          {data.competitorsWithoutLocation > 0 && ` 位置が無い競合物件 ${data.competitorsWithoutLocation}件は地図に出ていません。`}
           </div>
         )}
         {!compact && <div>地図はいまの登録内容で描いています。レポートを作ったあとに競合や販売記録を直した場合は、レポートの数字と違うことがあります。地図：国土地理院 淡色地図</div>}
