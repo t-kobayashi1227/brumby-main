@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getSql } from "../../../lib/db";
-import { strategyState } from "../../../lib/listView";
+import { JUST_REGISTERED_MINUTES, strategyState } from "../../../lib/listView";
 import { PlusIcon } from "../../_components/icons";
 import { btnAction, emptyState } from "../../_lib/ui";
 import PropertyTable, { type PropertyRow } from "./PropertyTable";
@@ -9,6 +9,7 @@ import PropertyTable, { type PropertyRow } from "./PropertyTable";
 // 検索（物件ID・住所）と販売戦略の状態での絞り込み、価格・最終更新での並び替えは画面の中で行う（PropertyTable）
 // 2026-11-05 浩平さんの UI/UX レビューで、「完了」を「戦略作成済み」に、区分は物件IDの横に小さく、最終更新を追加
 // 新しい物件は右上の「新規登録」から入力する（/properties/new）
+// 「登録して販売戦略を作成」を押すと物件はその時点で保存されるので、戦略づくりの途中で一覧に戻っても出る。並びの既定は新しく登録した順
 
 export const dynamic = "force-dynamic";
 
@@ -22,11 +23,13 @@ export default async function PropertyListPage() {
       price_man_yen: number;
       layout: string;
       latest: string | null;
+      just_registered: boolean;
       first_target: string | null;
       updated_at: Date;
     }[]
   >`
     select p.id, p.code, p.property_class, p.address, p.price_man_yen, p.layout, r.status as latest,
+      (r.status is null and p.geog is not null and p.created_at > now() - make_interval(mins => ${JUST_REGISTERED_MINUTES})) as just_registered,
       (select done.result -> '戦略' -> 'targets' -> 0 ->> 'name' from strategy_runs done
         where done.property_id = p.id and done.status = 'succeeded' and done.form = '3回' order by done.finished_at desc limit 1) as first_target,
       greatest(p.updated_at, r.created_at, r.finished_at) as updated_at
@@ -42,7 +45,7 @@ export default async function PropertyListPage() {
     address: p.address,
     priceManYen: p.price_man_yen,
     layout: p.layout,
-    strategy: strategyState(p.latest),
+    strategy: strategyState(p.latest, p.just_registered),
     firstTarget: p.first_target,
     updatedAt: p.updated_at.toISOString(),
   }));

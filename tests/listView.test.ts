@@ -8,6 +8,9 @@ describe("strategyState", () => {
     expect(strategyState("running")).toBe("作成中");
     expect(strategyState("failed")).toBe("作成失敗");
     expect(strategyState(null)).toBe("未作成");
+    // 登録の直後（周辺情報を集めていて、まだ実行の行が無い）は作成中
+    expect(strategyState(null, true)).toBe("作成中");
+    expect(strategyState("succeeded", true)).toBe("戦略作成済み");
   });
 });
 

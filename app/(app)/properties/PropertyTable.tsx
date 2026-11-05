@@ -37,7 +37,8 @@ type SortKey = "id" | "price" | "updated";
 export default function PropertyTable({ rows }: { rows: PropertyRow[] }) {
   const [query, setQuery] = useState("");
   const [state, setState] = useState<StrategyState | "">("");
-  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "id", dir: "asc" });
+  // 既定は新しく登録した順。登録した物件が、10件ずつのページ送りの最後のページに隠れないように（2026-11-05 浩平さん指摘）
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "id", dir: "desc" });
   const [page, setPage] = useState(1);
   // 検索・絞り込み・並び替えを変えたら1ページ目に戻す
   const reset = <T,>(set: (v: T) => void) => (v: T) => {

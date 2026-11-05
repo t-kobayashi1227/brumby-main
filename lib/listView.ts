@@ -5,14 +5,21 @@
 export const STRATEGY_STATES = ["戦略作成済み", "作成中", "作成失敗", "未作成"] as const;
 export type StrategyState = (typeof STRATEGY_STATES)[number];
 
+/** 登録してから、実行の行ができるまでを「作成中」とみなす時間（分）。周辺情報の取得の上限（60秒）に余裕を持たせた */
+export const JUST_REGISTERED_MINUTES = 3;
+
 /**
  * 一番新しい実行（strategy_runs.status）から、作成状態を決める
+ * justRegistered：実行がまだ1つも無く、位置が出ていて、登録から JUST_REGISTERED_MINUTES 以内の物件
  * 「完了」だと販売が終わったのかAIの作成が終わったのか分かりにくいため、「戦略作成済み」と言い切る
  */
-export function strategyState(latest: string | null): StrategyState {
+export function strategyState(latest: string | null, justRegistered = false): StrategyState {
   if (latest === "succeeded") return "戦略作成済み";
   if (latest === "queued" || latest === "running") return "作成中";
   if (latest === "failed") return "作成失敗";
+  // 登録の直後は、まず周辺情報を集めて事実シートを作り、そのあとで実行（strategy_runs）の行ができる
+  // その間（十数秒〜1分ほど）も「作成中」と出す。登録から JUST_REGISTERED_MINUTES を過ぎても実行が無ければ「未作成」（2026-11-05 浩平さん指摘）
+  if (justRegistered) return "作成中";
   return "未作成";
 }
 
