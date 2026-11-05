@@ -15,6 +15,7 @@ import SalesTab, { type MediaInfo, type SalesRecords } from "./SalesTab";
 import SummaryTab from "./SummaryTab";
 import TargetTab from "./TargetTab";
 import type { CompetitorLink, SelfColumnView } from "../../../../lib/competitor-report";
+import type { ImageKind } from "../../../../lib/property-images";
 
 // ⑤販売戦略レポート（docs/設計まとめ.md「⑤画面の表示」）
 // 2026-11-03 浩平さんの変更仕様で、3タブ（販売戦略・根拠データ・エリア分析）から6タブに組み直した：
@@ -37,6 +38,7 @@ export default function Report({
   exteriorImage,
   competitorLinks = {},
   selfColumn = null,
+  propertyImages = [],
 }: {
   result: StrategyResult;
   facts: Fact[];
@@ -59,6 +61,8 @@ export default function Report({
   competitorLinks?: Record<string, CompetitorLink>;
   /** 比べる3列の1列目（この物件） */
   selfColumn?: SelfColumnView | null;
+  /** 入力画面で添付した物件の画像の枠（サマリーのターゲットの絵の2枚目以降） */
+  propertyImages?: ImageKind[];
 }) {
   const [tab, setTab] = useState<ReportTab>("summary");
   const [selectedFact, setSelectedFact] = useState<string | null>(null);
@@ -96,7 +100,7 @@ export default function Report({
         <UnderlineTabs tabs={[...REPORT_TABS]} active={tab} onChange={(k) => setTab(k as ReportTab)} />
       </div>
       <Legend />
-      {tab === "summary" && <SummaryTab r={result} facts={byId} factList={facts} propertyId={propertyId} runId={runId} areaMap={areaMap} areaPrice={areaPrice} />}
+      {tab === "summary" && <SummaryTab r={result} facts={byId} factList={facts} propertyId={propertyId} runId={runId} areaMap={areaMap} areaPrice={areaPrice} propertyImages={propertyImages} />}
       {tab === "target" && <TargetTab r={result} facts={byId} />}
       {tab === "sales" && <SalesTab r={result} facts={byId} mediaInfo={mediaInfo} propertyId={propertyId} records={records} exteriorImage={exteriorImage} competitorLinks={competitorLinks} selfColumn={selfColumn} />}
       {tab === "price" && <PriceTab r={result} facts={byId} factList={facts} />}

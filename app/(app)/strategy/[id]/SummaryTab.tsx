@@ -1,11 +1,13 @@
 "use client";
 
+import { useRef, useState } from "react";
 import type { StrategyResult } from "../../../../lib/agents/run";
 import type { AreaMapData } from "../../../../lib/area-map";
 import type { AreaPriceResult } from "../../../../lib/area-price";
 import type { Fact } from "../../../../lib/facts/types";
+import { IMAGE_KINDS, type ImageKind } from "../../../../lib/property-images";
 import { concernTopic, factsToCheck, featureText, focusToCheck, nextCheck, shortLabel, summaryFeatures, TARGET_IMAGES, targetDefinition, targetPoints, usedFactIds } from "../../../../lib/report";
-import { AlertIcon, ClipboardIcon, HomeIcon, MegaphoneIcon, SearchIcon, SparkIcon, UsersIcon } from "../../../_components/icons";
+import { AlertIcon, ChevronRightIcon, ClipboardIcon, HomeIcon, MegaphoneIcon, SearchIcon, SparkIcon, UsersIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, factIcon, HypothesisBadge, Num, useReportNav } from "./parts";
 import AreaMap from "./AreaMap";
 import AreaPrice from "./AreaPrice";
@@ -26,6 +28,7 @@ export default function SummaryTab({
   runId,
   areaMap,
   areaPrice,
+  propertyImages = [],
 }: {
   r: StrategyResult;
   facts: Map<string, Fact>;
@@ -34,6 +37,8 @@ export default function SummaryTab({
   runId: number;
   areaMap: AreaMapData | null;
   areaPrice: AreaPriceResult;
+  /** 入力画面で添付した物件の画像の枠（並びは IMAGE_KINDS の順）。ターゲットの絵の2枚目以降に出す */
+  propertyImages?: ImageKind[];
 }) {
   const { openFact } = useReportNav();
   const m = r.戦略;
@@ -48,7 +53,7 @@ export default function SummaryTab({
 
   return (
     <div className="grid gap-4">
-      <BasicStrategy r={r} facts={facts} factList={factList} notes={notes} />
+      <BasicStrategy r={r} facts={facts} factList={factList} notes={notes} propertyId={propertyId} propertyImages={propertyImages} />
 
       {/* 地図（左）と区の価格相場（右）。狭い画面では縦に並べる。地図が無いときは相場だけを横幅いっぱいに */}
       <div className={`grid gap-4 ${areaMap ? "lg:grid-cols-2" : ""}`}>
@@ -158,7 +163,21 @@ const RANK_NAME = ["メイン", "第二", "第三", "第四", "第五"];
  * 見本から変えたところ：右の「メインターゲット」は左と同じなので出さない。代表年齢は返済の計算に使う仮の値で、単身の「年代は問わない」と食い違うので出さない。
  * 物件のポイントに価格の割高・割安は入れない（価格の位置づけのラベルは6タブでは出さない決まり。価格は推奨方針の文と価格分析タブで見る）
  */
-function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts: Map<string, Fact>; factList: Fact[]; notes: number }) {
+function BasicStrategy({
+  r,
+  facts,
+  factList,
+  notes,
+  propertyId,
+  propertyImages,
+}: {
+  r: StrategyResult;
+  facts: Map<string, Fact>;
+  factList: Fact[];
+  notes: number;
+  propertyId: number;
+  propertyImages: ImageKind[];
+}) {
   const { goTab, openFact } = useReportNav();
   const m = r.戦略;
   const targets = [...m.targets].sort((a, b) => a.rank - b.rank);
@@ -186,14 +205,7 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
       <div className="grid gap-5 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)_minmax(0,1fr)]">
         {/* ターゲット像（2026-11-06 浩平さん指示で「想定するメインの買い手」から変更。対象以外も買う余地があるため） */}
         <div className="min-w-0">
-          {image ? (
-            // eslint-disable-next-line @next/next/no-img-element -- public/ の絵をそのまま出す（next.config.ts で画像の最適化を止めている）
-            <img src={image} alt={`${main?.name}のイメージ`} className="aspect-[2/1] w-full rounded-lg border border-line bg-[#e3f0fd] object-cover" />
-          ) : (
-            <div className="grid aspect-[2/1] w-full place-items-center rounded-lg border border-line bg-primary-soft/50 text-primary">
-              <UsersIcon className="size-12" />
-            </div>
-          )}
+          <TargetSlides image={image} name={main?.name ?? null} propertyId={propertyId} kinds={propertyImages} />
           <div className="mt-3">
             <span className="inline-block rounded bg-[#f1ecfb] px-2 py-0.5 text-[11px] font-bold text-[#5b3fa8]">ターゲット像</span>
           </div>
@@ -309,4 +321,86 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
 function TopicTag({ topic }: { topic: string | null }) {
   if (!topic) return null;
   return <span className="mb-1 inline-block rounded bg-[#fdebd9] px-1.5 py-0.5 text-[11px] font-bold text-[#9a4a12]">{topic}</span>;
+}
+
+/**
+ * ターゲット像の絵のスライド（2026-11-06 浩平さん依頼）。1枚目はターゲットの絵（AIが加えた候補は人の形）、
+ * 2枚目以降は入力画面で添付した物件の画像（外観→内観→間取り図）。画像が無ければ1枚目だけで、切り替えは出さない
+ */
+function TargetSlides({ image, name, propertyId, kinds }: { image: string | undefined; name: string | null; propertyId: number; kinds: ImageKind[] }) {
+  const photos = IMAGE_KINDS.filter((k) => kinds.includes(k.kind));
+  const count = 1 + photos.length;
+  const [index, setIndex] = useState(0);
+  const touchX = useRef<number | null>(null);
+  const at = Math.min(index, count - 1);
+  const go = (n: number) => setIndex((n + count) % count);
+  const photo = at > 0 ? photos[at - 1] : null;
+  const frame = "aspect-[2/1] w-full rounded-lg border border-line";
+
+  return (
+    <div
+      className="relative"
+      onTouchStart={(e) => (touchX.current = e.touches[0].clientX)}
+      onTouchEnd={(e) => {
+        if (touchX.current === null || count < 2) return;
+        const dx = e.changedTouches[0].clientX - touchX.current;
+        touchX.current = null;
+        if (Math.abs(dx) > 40) go(at + (dx < 0 ? 1 : -1));
+      }}
+    >
+      {photo ? (
+        <a href={`/properties/${propertyId}/images/${photo.slug}`} target="_blank" rel="noreferrer" aria-label={`この物件の${photo.fact}を大きく見る`} className="block">
+          {/* eslint-disable-next-line @next/next/no-img-element -- 画像の最適化は止めている（next.config.ts） */}
+          <img
+            src={`/properties/${propertyId}/images/${photo.slug}`}
+            alt={`この物件の${photo.fact}`}
+            className={`${frame} ${photo.kind === "間取り図" ? "bg-white object-contain" : "bg-subtle object-cover"}`}
+          />
+        </a>
+      ) : image ? (
+        // eslint-disable-next-line @next/next/no-img-element -- public/ の絵をそのまま出す（next.config.ts で画像の最適化を止めている）
+        <img src={image} alt={`${name}のイメージ`} className={`${frame} bg-[#e3f0fd] object-cover`} />
+      ) : (
+        <div className={`${frame} grid place-items-center bg-primary-soft/50 text-primary`}>
+          <UsersIcon className="size-12" />
+        </div>
+      )}
+
+      {count > 1 && (
+        <>
+          <span className="pointer-events-none absolute left-2 top-2 rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-bold text-sub">
+            {photo ? `この物件の${photo.kind}` : "ターゲットのイメージ"}
+          </span>
+          <button
+            type="button"
+            onClick={() => go(at - 1)}
+            aria-label="前の画像"
+            className="absolute left-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-ink shadow cursor-pointer hover:bg-white print:hidden"
+          >
+            <ChevronRightIcon className="size-4 rotate-180" />
+          </button>
+          <button
+            type="button"
+            onClick={() => go(at + 1)}
+            aria-label="次の画像"
+            className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-ink shadow cursor-pointer hover:bg-white print:hidden"
+          >
+            <ChevronRightIcon className="size-4" />
+          </button>
+          <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5 print:hidden">
+            {Array.from({ length: count }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setIndex(i)}
+                aria-label={i === 0 ? "ターゲットのイメージを見る" : `この物件の${photos[i - 1].fact}を見る`}
+                aria-current={i === at}
+                className={`h-2 rounded-full shadow cursor-pointer ${i === at ? "w-5 bg-primary" : "w-2 bg-white/90 ring-1 ring-black/15 hover:bg-white"}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }

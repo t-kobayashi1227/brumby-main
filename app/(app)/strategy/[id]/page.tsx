@@ -154,6 +154,7 @@ export default async function StrategyDetailPage({ params, searchParams }: PageP
             id: propertyId,
             images: imageKindsOf(p.image_kinds),
           }}
+          propertyImages={imageKindsOf(p.image_kinds)}
           competitorLinks={Object.fromEntries(
             competitorRows.map((c) => [c.code, { id: Number(c.id), images: imageKindsOf(c.image_kinds) }]),
           )}
