@@ -35,21 +35,23 @@ export interface CallOptions {
   effort: Effort;
   /** 考える分（thinking・reasoning）も max_tokens に入るので、余裕を持たせる */
   maxTokens: number;
-  /** 最後の user の発言に添える画像（間取り図の読み取りだけで使う。DB には残さない） */
+  /** 最後の user の発言に添える画像（戦略担当に物件の画像を渡すときだけ使う。DB には残さない） */
   images?: ImageInput[];
 }
 
-/** AI に添える画像。base64 は data: を付けない中身だけ */
+/** AI に添える画像。base64 は data: を付けない中身だけ。label は画像の前に置く文（どの事実の画像か） */
 export interface ImageInput {
   mediaType: "image/png" | "image/jpeg" | "image/webp";
   base64: string;
+  label?: string;
 }
 
-/** 画像があれば、最後の user の発言を「画像＋文字」の形にする。提供元ごとの書き方は toBlock で決める */
+/** 画像があれば、最後の user の発言を「（ラベル・画像）…＋文字」の形にする。提供元ごとの書き方は toBlock・text で決める */
 export function withImages<I, T>(messages: ChatMessage[], images: ImageInput[] | undefined, toBlock: (img: ImageInput) => I, text: (t: string) => T) {
   const last = messages.findLastIndex((m) => m.role === "user");
   if (!images?.length || last < 0) return messages;
-  return messages.map((m, i) => (i === last ? { role: m.role, content: [...images.map(toBlock), text(m.content)] } : m));
+  const parts = images.flatMap((img) => (img.label ? [text(`画像：${img.label}`), toBlock(img)] : [toBlock(img)]));
+  return messages.map((m, i) => (i === last ? { role: m.role, content: [...parts, text(m.content)] } : m));
 }
 
 export const DEFAULT_CALL: CallOptions = { model: MODEL, effort: "medium", maxTokens: 16000 };

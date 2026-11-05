@@ -13,8 +13,8 @@ const nextConfig: NextConfig = {
     "/api/properties/*/strategy/prompts": ["./prompts/**"],
     "/properties/**": ["./prompts/**"],
   },
-  // 間取り図の画像をサーバーアクションで送る。画面で縮めてから送るが、上限（既定 1MB）を lib/floor-plan.ts の 3MB に合わせる
-  experimental: { serverActions: { bodySizeLimit: "4mb" } },
+  // 物件の画像（最大3枚）を保存のサーバーアクションで送る。画面で1枚 IMAGE_SEND_BYTES（1.4MB）までに縮めるので、3枚でも Vercel の上限（4.5MB）に収まる
+  experimental: { serverActions: { bodySizeLimit: "4.5mb" } },
   // トップの画面は持たず、物件一覧へ送る。アクセス制限は Basic認証（proxy.ts）
   async redirects() {
     return [{ source: "/", destination: "/properties", permanent: false }];

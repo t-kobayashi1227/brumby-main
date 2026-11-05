@@ -30,7 +30,7 @@ import {
 } from "../../_components/icons";
 import { previewAddress, saveProperty, type PropertyFormState } from "./actions";
 import { importDraft } from "./import-actions";
-import { FLOOR_PLAN_MAX_BYTES, FLOOR_PLAN_MAX_SIDE } from "../../../lib/floor-plan";
+import { IMAGE_KINDS, IMAGE_MAX_SIDE, IMAGE_SEND_BYTES } from "../../../lib/property-images";
 import { IMPORT_MAX_CHARS, type ImportResult } from "../../../lib/property-import";
 
 // ①物件情報の入力フォーム（docs/設計まとめ.md「①物件情報の入力」の15項目）
@@ -75,8 +75,8 @@ export interface PropertyValues {
   renovation_year: number | null;
   renovation_parts: string[] | null;
   features: string | null;
-  /** 間取り図の画像が添付されているか（画像は /properties/[id]/floor-plan で読む） */
-  has_floor_plan?: boolean;
+  /** 添付されている画像の枠（外観・内観・間取り図）。画像は /properties/[id]/images/[slug] で読む */
+  image_kinds?: string[];
   ad_budget_man_yen: number | null;
   transports: TransportValues[];
   competitors: CompetitorValues[];
@@ -416,10 +416,10 @@ function AiAssistPanel({ onImported, onBusyChange }: { onImported: (r: ImportRes
   );
 }
 
-/** 画像を、長い辺が FLOOR_PLAN_MAX_SIDE までの JPEG に縮める（送る量を減らすため。透明な部分は白にする） */
+/** 画像を、長い辺が IMAGE_MAX_SIDE までの JPEG に縮める（送る量を減らすため。透明な部分は白にする） */
 async function shrinkImage(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, FLOOR_PLAN_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(bitmap.width * scale);
   canvas.height = Math.round(bitmap.height * scale);
@@ -429,24 +429,29 @@ async function shrinkImage(file: File): Promise<Blob> {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
-  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob"))), "image/jpeg", 0.9));
+  const toJpeg = (q: number) => new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob"))), "image/jpeg", q));
+  // 大きい写真は画質を少しずつ下げて、IMAGE_SEND_BYTES までに収める
+  for (const q of [0.9, 0.8, 0.7, 0.6]) {
+    const blob = await toJpeg(q);
+    if (blob.size <= IMAGE_SEND_BYTES) return blob;
+  }
+  throw new Error("size");
 }
 
-type FloorPlanAction = "keep" | "replace" | "remove";
+type ImageAction = "keep" | "replace" | "remove";
 
 /**
- * 間取り図：画像を添付する。保存すると物件と一緒に DB に入り、戦略を作るときに戦略担当の AI にだけ添えて送る
- * - 新しく AI を呼ぶことはしない（2026-11-05 浩平さん指示）
+ * 物件の画像の1枠（外観・内観・間取り図）。保存すると物件と一緒に DB に入り、戦略を作るときに戦略担当の AI にだけ添えて送る
+ * - 新しく AI を呼ぶことはしない（2026-11-05 浩平さん指示）。どの枠も任意
  * - 選んだ画像は、その場で長い辺 2,000px の JPEG に縮め、縮めたものを送る（送る量と AI の入力を減らすため）
  */
-function FloorPlanSection({ propertyId, hasImage, onBusyChange }: { propertyId?: number; hasImage: boolean; onBusyChange: (busy: boolean) => void }) {
+function ImageSlot({ kind, slug, savedUrl, onBusyChange }: { kind: string; slug: string; savedUrl: string | null; onBusyChange: (busy: boolean) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [action, setAction] = useState<FloorPlanAction>("keep");
+  const [action, setAction] = useState<ImageAction>("keep");
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const saved = hasImage && propertyId ? `/properties/${propertyId}/floor-plan` : null;
-  const shown = action === "replace" ? preview : action === "keep" ? saved : null;
+  const shown = action === "replace" ? preview : action === "keep" ? savedUrl : null;
 
   const clearFile = () => {
     if (fileRef.current) fileRef.current.value = "";
@@ -461,17 +466,16 @@ function FloorPlanSection({ propertyId, hasImage, onBusyChange }: { propertyId?:
     onBusyChange(true);
     try {
       const blob = await shrinkImage(file);
-      if (blob.size > FLOOR_PLAN_MAX_BYTES) throw new Error("size");
       // 縮めた画像をファイル欄に入れ直し、保存のときにほかの欄と一緒に送る
       const dt = new DataTransfer();
-      dt.items.add(new File([blob], "floor-plan.jpg", { type: "image/jpeg" }));
+      dt.items.add(new File([blob], `${slug}.jpg`, { type: "image/jpeg" }));
       if (fileRef.current) fileRef.current.files = dt.files;
       if (preview) URL.revokeObjectURL(preview);
       setPreview(URL.createObjectURL(blob));
       setAction("replace");
     } catch {
       clearFile();
-      setError("この画像は読み込めませんでした。PNG・JPEG・WebP の画像を選んでください（PDF には対応していません）");
+      setError("読み込めませんでした。PNG・JPEG・WebP の画像を選んでください");
     } finally {
       setBusy(false);
       onBusyChange(false);
@@ -480,19 +484,20 @@ function FloorPlanSection({ propertyId, hasImage, onBusyChange }: { propertyId?:
 
   const remove = () => {
     clearFile();
-    setAction(saved ? "remove" : "keep");
+    setAction(savedUrl ? "remove" : "keep");
   };
 
   return (
-    <div className="grid lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-4 items-start">
-      <input type="hidden" name="floor_plan_action" value={action} />
+    <div className="grid content-start gap-2 min-w-0">
+      <div className="text-[13px] font-medium text-ink">{kind}</div>
+      <input type="hidden" name={`image_${slug}_action`} value={action} />
       <input
         ref={fileRef}
         type="file"
-        name="floor_plan_image"
+        name={`image_${slug}`}
         accept="image/png,image/jpeg,image/webp"
         className="sr-only"
-        aria-label="間取り図の画像"
+        aria-label={`${kind}の画像`}
         onChange={(e) => choose(e.target.files?.[0])}
         disabled={busy}
       />
@@ -500,38 +505,61 @@ function FloorPlanSection({ propertyId, hasImage, onBusyChange }: { propertyId?:
         type="button"
         onClick={() => fileRef.current?.click()}
         disabled={busy}
-        className="flex min-h-40 items-center justify-center overflow-hidden rounded-lg border border-dashed border-field bg-subtle text-[13px] text-sub cursor-pointer hover:border-primary hover:text-primary disabled:cursor-wait disabled:opacity-60"
+        aria-label={shown ? `${kind}の画像を差し替える` : `${kind}の画像を添付`}
+        className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg border border-dashed border-field bg-subtle text-[13px] text-sub cursor-pointer hover:border-primary hover:text-primary disabled:cursor-wait disabled:opacity-60"
       >
         {shown ? (
           // eslint-disable-next-line @next/next/no-img-element -- 添付した画像をその場で見せるだけ（最適化しない）
-          <img src={shown} alt="添付した間取り図" className="max-h-64 w-full object-contain bg-white" />
+          <img src={shown} alt={`添付した${kind}の画像`} className="h-full w-full object-contain bg-white" />
         ) : (
-          <span className="flex flex-col items-center gap-1.5 py-8">
-            {busy ? <SpinnerIcon className="size-6 animate-spin" /> : <FloorPlanIcon className="size-6" />}
-            {busy ? "画像を読み込み中…" : "間取り図の画像を添付"}
-            <span className="text-[11px] text-muted">PNG・JPEG・WebP</span>
+          <span className="flex flex-col items-center gap-1.5">
+            {busy ? <SpinnerIcon className="size-6 animate-spin" /> : <PlusIcon className="size-6" />}
+            {busy ? "読み込み中…" : "画像を添付"}
           </span>
         )}
       </button>
-      <div className="grid content-start gap-2 text-[12px] leading-relaxed text-body">
-        {shown && (
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} className="rounded-lg border border-line bg-white px-3 py-1.5 text-[13px] font-bold text-primary cursor-pointer hover:bg-primary-soft disabled:opacity-60">
-              画像を差し替える
-            </button>
-            <button type="button" onClick={remove} disabled={busy} className="flex items-center gap-1 rounded-lg border border-line bg-white px-3 py-1.5 text-[13px] text-sub cursor-pointer hover:text-[#b91c1c] disabled:opacity-60">
-              <TrashIcon className="size-4" />
-              外す
-            </button>
-          </div>
-        )}
-        {action === "replace" && <p className="text-[#6b4e00]">まだ保存していません。登録（保存）すると添付されます。</p>}
-        {action === "remove" && <p className="text-[#6b4e00]">保存すると、添付していた間取り図を外します。</p>}
-        <p className="text-muted">
-          添付した間取り図は、販売戦略をつくるAIに物件の情報と一緒に渡し、間取りの特徴を戦略に生かします。画像だけを読むためにAIを使うことはしません。
-        </p>
-        {error && <p role="alert" className="rounded-md border border-[#f3c4c4] bg-[#fdecec] px-3 py-2 text-xs text-[#b91c1c]">{error}</p>}
+      {shown && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} className="font-bold text-primary cursor-pointer hover:underline disabled:opacity-60">
+            差し替える
+          </button>
+          <button type="button" onClick={remove} disabled={busy} className="flex items-center gap-0.5 text-sub cursor-pointer hover:text-[#b91c1c] disabled:opacity-60">
+            <TrashIcon className="size-3.5" />
+            外す
+          </button>
+        </div>
+      )}
+      {action === "replace" && <p className="text-[11px] text-[#6b4e00]">保存すると添付されます。</p>}
+      {action === "remove" && <p className="text-[11px] text-[#6b4e00]">保存すると外します。</p>}
+      {error && <p role="alert" className="text-[11px] text-[#b91c1c]">{error}</p>}
+    </div>
+  );
+}
+
+/** 物件の画像（外観・内観・間取り図）。3枠を並べる */
+function ImagesSection({ propertyId, kinds, onBusyChange }: { propertyId?: number; kinds: string[]; onBusyChange: (busy: boolean) => void }) {
+  // 枠ごとの読み込み中を数え、どれかが読み込み中なら登録できないようにする
+  const busyCount = useRef(0);
+  const onSlotBusy = (busy: boolean) => {
+    busyCount.current += busy ? 1 : -1;
+    onBusyChange(busyCount.current > 0);
+  };
+  return (
+    <div className="grid gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {IMAGE_KINDS.map(({ kind, slug }) => (
+          <ImageSlot
+            key={slug}
+            kind={kind}
+            slug={slug}
+            savedUrl={propertyId && kinds.includes(kind) ? `/properties/${propertyId}/images/${slug}` : null}
+            onBusyChange={onSlotBusy}
+          />
+        ))}
       </div>
+      <p className="text-[11px] leading-relaxed text-muted">
+        どれも任意です。添付した画像は、販売戦略をつくるAIに物件の情報と一緒に渡し、戦略の精度を上げるために使います。画像だけを読むためにAIを使うことはしません。人の顔や車のナンバー、表札などが写らない画像にしてください。
+      </p>
     </div>
   );
 }
@@ -566,8 +594,8 @@ export default function PropertyForm({
   const [checkingAddress, startAddressCheck] = useTransition();
   // AI入力アシストの解析中か。解析中は下の欄をロックする
   const [analyzing, setAnalyzing] = useState(false);
-  // 間取り図の画像を縮めている途中か。途中は登録できないようにする
-  const [floorPlanBusy, setFloorPlanBusy] = useState(false);
+  // 物件の画像を縮めている途中か。途中は登録できないようにする
+  const [imagesBusy, setImagesBusy] = useState(false);
 
   // 入力のたびに数え直す。行の追加・削除のあとは、描画が終わってから数える
   const recount = () => {
@@ -869,8 +897,8 @@ export default function PropertyForm({
               </div>
             </SectionCard>
 
-            <SectionCard icon={<FloorPlanIcon />} title="間取り図（任意）" note="間取り図の画像を添付すると、販売戦略に間取りの特徴が生かされます。" required={false}>
-              <FloorPlanSection propertyId={v.id} hasImage={v.has_floor_plan === true} onBusyChange={setFloorPlanBusy} />
+            <SectionCard icon={<FloorPlanIcon />} title="物件の画像（任意）" note="外観・内観・間取り図を添付すると、画像も見て戦略をつくります。" required={false}>
+              <ImagesSection propertyId={v.id} kinds={v.image_kinds ?? []} onBusyChange={setImagesBusy} />
             </SectionCard>
 
             <SectionCard
@@ -957,7 +985,7 @@ export default function PropertyForm({
                   必須項目 <span className="font-bold text-ink tabular-nums">{doneCount}</span> / {REQUIRED_TOTAL}
                 </div>
               )}
-              <button type="submit" disabled={pending || floorPlanBusy} className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-bold text-white shadow-sm cursor-pointer hover:bg-[#2459b0] disabled:opacity-60">
+              <button type="submit" disabled={pending || imagesBusy} className="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-[13px] font-bold text-white shadow-sm cursor-pointer hover:bg-[#2459b0] disabled:opacity-60">
                 {pending ? "保存中…" : v.id ? (rebuild ? "保存して戦略を作り直す" : "保存する") : "登録して位置を確認"}
                 {!pending && (!v.id || rebuild) && <ArrowRightIcon className="size-4" />}
               </button>

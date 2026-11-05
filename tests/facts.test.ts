@@ -435,14 +435,14 @@ describe("事実シートの組み立て", () => {
     expect(find(partial, "リフォーム").値).toBe("年は不明：箇所は不明");
   });
 
-  it("物件（P）：間取り図は、画像があるときだけ P の最後に置き、ほかの ID を変えない", () => {
+  it("物件（P）：画像は、添付した枠ごとに P の最後に外観・内観・間取り図の順で置き、ほかの ID を変えない", () => {
     const base = sample();
-    expect(facts.some((f) => f.項目 === "間取り図")).toBe(false);
-    const withPlan = buildFacts({ ...base, property: { ...base.property, has_floor_plan: true } });
-    const plan = find(withPlan, "間取り図");
-    expect(plan).toMatchObject({ 値: "画像あり（戦略担当に画像で渡す）", 出典: "入力", 状態: "取得" });
-    expect(withPlan.filter((f) => f.id.startsWith("P-")).at(-1)?.id).toBe(plan.id);
-    for (const f of facts) expect(withPlan.find((g) => g.項目 === f.項目 && g.値 === f.値)?.id).toBe(f.id);
+    expect(facts.some((f) => /の写真$|^間取り図$/.test(f.項目))).toBe(false);
+    const withImages = buildFacts({ ...base, property: { ...base.property, image_kinds: ["間取り図", "外観"] } });
+    const p = withImages.filter((f) => f.id.startsWith("P-"));
+    expect(p.slice(-2).map((f) => f.項目)).toEqual(["外観の写真", "間取り図"]);
+    expect(find(withImages, "間取り図")).toMatchObject({ 値: "画像あり（戦略担当に画像で渡す）", 出典: "入力", 状態: "取得" });
+    for (const f of facts) expect(withImages.find((g) => g.項目 === f.項目 && g.値 === f.値)?.id).toBe(f.id);
   });
 
   it("相場（M）：物件の値を「値」、区×築年数の中央値を「比較」に入れ、相場比を出す", () => {

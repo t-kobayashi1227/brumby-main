@@ -13,7 +13,7 @@ import { createFactSheet } from "../facts";
 import type { FactSheet } from "../facts/types";
 import { checkProgram, removeSentences, splitWhere, type CheckIssue } from "./checks";
 import { checkInput, mediaInput, strategyInput } from "./input";
-import { toImageInput } from "../floor-plan";
+import { toImageInputs } from "../property-images";
 import { STRATEGY_MODEL, type Model } from "./cost";
 import { callModel, DEFAULT_CALL, type CallOptions, type ChatMessage, type Effort } from "./llm";
 import { agentPrompt } from "./prompts";
@@ -88,12 +88,13 @@ export async function runStrategy(
   `;
   const { id: factSheetId, sheet } = latest ? { id: Number(latest.id), sheet: latest.content } : await createFactSheet(sql, propertyId);
   const mediaIds = (await sql<{ id: string }[]>`select id from media order by sort`).map((m) => m.id);
-  const [{ ad_budget_man_yen: adBudget, floor_plan_image: floorPlanBytes, floor_plan_image_type: floorPlanType }] = await sql<
-    { ad_budget_man_yen: number | null; floor_plan_image: Uint8Array | null; floor_plan_image_type: string | null }[]
-  >`select ad_budget_man_yen, floor_plan_image, floor_plan_image_type from properties where id = ${propertyId}`;
-  // 間取り図は戦略担当の呼び出しにだけ添える（2026-11-05 浩平さん指示。画像を読むためだけの呼び出しは足さない）
-  // 事実シートの「間取り図」と食い違わないよう、事実シートに「間取り図」があるときだけ添える
-  const floorPlan = sheet.事実.some((f) => f.項目 === "間取り図") ? toImageInput(floorPlanBytes, floorPlanType) : null;
+  const [{ ad_budget_man_yen: adBudget }] = await sql<{ ad_budget_man_yen: number | null }[]>`select ad_budget_man_yen from properties where id = ${propertyId}`;
+  // 物件の画像（外観・内観・間取り図）は戦略担当の呼び出しにだけ添える（2026-11-05 浩平さん指示。画像を読むためだけの呼び出しは足さない）
+  // 事実シートと食い違わないよう、事実シートに画像の事実があるものだけを、その事実IDを付けて添える
+  const imageRows = await sql<{ kind: string; image: Uint8Array; media_type: string }[]>`
+    select kind, image, media_type from property_images where property_id = ${propertyId}
+  `;
+  const images = toImageInputs([...imageRows], new Map(sheet.事実.map((f) => [f.項目, f.id])));
 
   await sql`
     update strategy_runs set status = 'failed', error = '途中で止まりました（サーバーが止まった可能性があります）', finished_at = now()
@@ -118,11 +119,11 @@ export async function runStrategy(
     const prompt = agentPrompt(agent);
     const messages: ChatMessage[] = [{ role: "user", content: typeof input === "string" ? input : JSON.stringify(input) }];
     // 添えた画像は、中身を残さず種類と大きさだけ残す
-    const images = (callOptions.images ?? []).map((img) => ({ mediaType: img.mediaType, bytes: Buffer.byteLength(img.base64, "base64") }));
+    const sent = (callOptions.images ?? []).map((img) => ({ label: img.label ?? null, mediaType: img.mediaType, bytes: Buffer.byteLength(img.base64, "base64") }));
     const [row] = await db(
       () => sql<{ id: string }[]>`
         insert into agent_calls (run_id, agent, attempt, model, effort, prompt_file, prompt_sha256, input)
-        values (${runId}, ${agent}, 1, ${callOptions.model}, ${callOptions.effort}, ${prompt.file}, ${prompt.sha256}, ${sql.json((images.length ? { messages, images } : { messages }) as never)})
+        values (${runId}, ${agent}, 1, ${callOptions.model}, ${callOptions.effort}, ${prompt.file}, ${prompt.sha256}, ${sql.json((sent.length ? { messages, images: sent } : { messages }) as never)})
         returning id
       `,
     );
@@ -167,7 +168,7 @@ export async function runStrategy(
     const strategyCall = await call("戦略", strategyInput(sheet), strategySchema, {
       ...options.strategy,
       maxTokens: STRATEGY_MAX_TOKENS,
-      ...(floorPlan ? { images: [floorPlan] } : {}),
+      ...(images.length ? { images } : {}),
     });
     let main: StrategyOutput = strategyCall.output;
 
