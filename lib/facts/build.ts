@@ -46,6 +46,8 @@ export interface PropertyInput {
   renovation_year: number | null;
   renovation_parts: string[] | null;
   features: string | null;
+  /** 間取り図から読み取った特徴（AI の下書きを担当者が確かめた文、1行1項目）。null・省略は入力なし */
+  floor_plan_notes?: string | null;
   ad_budget_man_yen: number | null;
 }
 
@@ -307,6 +309,10 @@ function propertyFacts(c: Collected): FactDraft[] {
     fact("P", "特徴ピックアップ（物件資料のまま）", p.features ?? "入力なし", src),
     fact("P", "所在地", p.address, src),
     fact("P", "広告予算の総額", p.ad_budget_man_yen ? formatManYen(p.ad_budget_man_yen * 10_000) : "入力なし", src),
+    // 入力があるときだけ。ほかの P の事実の ID を変えないよう、最後に置く（2026-11-05）
+    ...(p.floor_plan_notes
+      ? [fact("P", "間取り図から読み取った特徴", p.floor_plan_notes.split("\n").map((l) => l.trim()).filter(Boolean).join("／"), { 出典: "入力（間取り図をAIが読み取り、担当者が確認）", 時点: src.時点 })]
+      : []),
   ];
 }
 

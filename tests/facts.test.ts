@@ -435,6 +435,17 @@ describe("事実シートの組み立て", () => {
     expect(find(partial, "リフォーム").値).toBe("年は不明：箇所は不明");
   });
 
+  it("物件（P）：間取り図から読み取った特徴は、入力があるときだけ P の最後に置き、ほかの ID を変えない", () => {
+    const base = sample();
+    expect(facts.some((f) => f.項目 === "間取り図から読み取った特徴")).toBe(false);
+    const withPlan = buildFacts({ ...base, property: { ...base.property, floor_plan_notes: "1階：LDK 18帖\n 2階：洋室6帖×3 " } });
+    const plan = find(withPlan, "間取り図から読み取った特徴");
+    expect(plan).toMatchObject({ 値: "1階：LDK 18帖／2階：洋室6帖×3", 出典: "入力（間取り図をAIが読み取り、担当者が確認）", 状態: "取得" });
+    const p = withPlan.filter((f) => f.id.startsWith("P-"));
+    expect(p.at(-1)?.id).toBe(plan.id);
+    for (const f of facts) expect(withPlan.find((g) => g.項目 === f.項目 && g.値 === f.値)?.id).toBe(f.id);
+  });
+
   it("相場（M）：物件の値を「値」、区×築年数の中央値を「比較」に入れ、相場比を出す", () => {
     expect(find(facts, /^延床の坪単価（西区・築20〜29年の戸建の相場と比べる）/)).toMatchObject({
       id: "M-01",

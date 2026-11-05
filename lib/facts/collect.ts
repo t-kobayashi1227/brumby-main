@@ -102,7 +102,7 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
   onStep?.("property");
   const [p] = await sql<PropertyRow[]>`
     select code, property_class, price_man_yen, address, layout, rooms, storerooms, building_sqm, land_sqm, parking, building_age,
-      floors, has_garden, renovated, renovation_year, renovation_parts, features, ad_budget_man_yen,
+      floors, has_garden, renovated, renovation_year, renovation_parts, features, floor_plan_notes, ad_budget_man_yen,
       extensions.st_x(geog::extensions.geometry) as lon, extensions.st_y(geog::extensions.geometry) as lat
     from properties where id = ${propertyId}
   `;

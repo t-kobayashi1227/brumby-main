@@ -29,6 +29,7 @@ interface PropertyRow {
   renovation_year: number | null;
   renovation_parts: string[] | null;
   features: string | null;
+  floor_plan_notes: string | null;
   ad_budget_man_yen: number | null;
   location_source: string | null;
   geocode_title: string | null;
@@ -47,7 +48,7 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
   const sql = getSql();
   const [p] = await sql<PropertyRow[]>`
     select id, code, property_class, price_man_yen, address, layout, building_sqm, land_sqm, parking, building_age, floors,
-      has_garden, renovated, renovation_year, renovation_parts, features, ad_budget_man_yen, location_source, geocode_title,
+      has_garden, renovated, renovation_year, renovation_parts, features, floor_plan_notes, ad_budget_man_yen, location_source, geocode_title,
       extensions.st_x(geog::extensions.geometry) as lon, extensions.st_y(geog::extensions.geometry) as lat
     from properties where id = ${propertyId}
   `;
@@ -78,6 +79,7 @@ export default async function PropertyPage({ params, searchParams }: PageProps<"
     renovation_year: p.renovation_year,
     renovation_parts: p.renovation_parts,
     features: p.features,
+    floor_plan_notes: p.floor_plan_notes,
     ad_budget_man_yen: p.ad_budget_man_yen,
     transports: [...transports],
     competitors: competitors.map((c) => ({ ...c, building_sqm: toNum(c.building_sqm), land_sqm: toNum(c.land_sqm) })),
