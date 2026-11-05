@@ -4,7 +4,7 @@ import type { StrategyResult } from "../../../../lib/agents/run";
 import type { AreaMapData } from "../../../../lib/area-map";
 import type { AreaPriceResult } from "../../../../lib/area-price";
 import type { Fact } from "../../../../lib/facts/types";
-import { concernTopic, factsToCheck, featureText, nextCheck, shortLabel, summaryFeatures, TARGET_IMAGES, targetDefinition, targetPoints, usedFactIds } from "../../../../lib/report";
+import { concernTopic, factsToCheck, featureText, focusToCheck, nextCheck, shortLabel, summaryFeatures, TARGET_IMAGES, targetDefinition, targetPoints, usedFactIds } from "../../../../lib/report";
 import { AlertIcon, ClipboardIcon, HomeIcon, MegaphoneIcon, SearchIcon, SparkIcon, UsersIcon } from "../../../_components/icons";
 import { Ai, Card, Evidence, factIcon, HypothesisBadge, Num, useReportNav } from "./parts";
 import AreaMap from "./AreaMap";
@@ -12,7 +12,7 @@ import AreaPrice from "./AreaPrice";
 import PromptLog from "./PromptLog";
 
 // ① サマリー：販売の基本戦略（メインの買い手・物件のポイント・訴求のポイント・推奨方針。2026-11-04 浩平さん依頼で推奨方針の枠を組み直し）→ 地図と区の価格相場（2カラム、2026-11-03 追加）→ 懸念点 → 次に確かめること → AIに送った内容（最初は閉じておく）
-// AIの sales_focus（この物件でいちばん大事なこと）は画面に出さない（2026-11-05 浩平さん指示で枠ごと外した。答えとDBには残る）
+// AIの sales_focus（この物件でいちばん大事なこと）は枠では出さない（2026-11-05 浩平さん指示）。種類が「確かめる」のときだけ、「最初にやること」を「データの注意点」に1件として出す（lib/report.ts の focusToCheck）
 // 懸念点の対策案（concerns[].action）は出さない（10/26 決定を 2026-11-03 に浩平さんが再確認）。AIの答えとDBには残る
 // 「データの注意点」（2026-11-04 に「次に確かめること」から改名。利用者が作業を求められていると受け取らないように）は、取得できず・要確認の事実から決まった文で作る（AIは使わない。lib/report.ts の nextCheck）
 
@@ -42,7 +42,9 @@ export default function SummaryTab({
   // 取れなかった事実を全部は出さない。災害・学区と、根拠に使った要確認の事実だけ（lib/report.ts の factsToCheck）
   const missingFacts = factsToCheck(factList, usedFactIds(r.戦略, r.媒体));
   // 上の件数は、下の「データの注意点」の項目数（事実とAIの「分からないこと」）とそろえる
-  const notes = missingFacts.length + m.unknown.length;
+  const check = focusToCheck(m);
+  const aiNotes = (check ? 1 : 0) + m.unknown.length;
+  const notes = missingFacts.length + aiNotes;
 
   return (
     <div className="grid gap-4">
@@ -88,10 +90,10 @@ export default function SummaryTab({
       </Card>
 
       <Card title="データの注意点" icon={ClipboardIcon}>
-        {missingFacts.length === 0 && m.unknown.length === 0 ? (
+        {missingFacts.length === 0 && aiNotes === 0 ? (
           <div className="text-[13px] text-sub">注意点はありません。</div>
         ) : (
-          <div className={`grid gap-4 ${missingFacts.length > 0 && m.unknown.length > 0 ? "lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]" : ""}`}>
+          <div className={`grid gap-4 ${missingFacts.length > 0 && aiNotes > 0 ? "lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]" : ""}`}>
             {missingFacts.length > 0 && (
             <div className="min-w-0">
               <div className="mb-2 text-[12px] text-sub">災害・学区で取れなかったデータと、戦略の根拠にした値で確かめが要るものです。確かめ方を添えています。ほかに取れなかったデータは、根拠データタブで見られます。</div>
@@ -116,16 +118,27 @@ export default function SummaryTab({
               </ul>
             </div>
             )}
-            {m.unknown.length > 0 && (
-              <div className="min-w-0">
-                <div className="mb-2 text-[12px] text-sub">AIが「事実シートから分からない」と挙げたこと</div>
-                <ul className="grid gap-1.5">
-                  {m.unknown.map((u, i) => (
-                    <li key={i}>
-                      <Ai size="sm">{u}</Ai>
-                    </li>
-                  ))}
-                </ul>
+            {aiNotes > 0 && (
+              <div className="grid min-w-0 gap-3">
+                {check && (
+                  <div>
+                    <div className="mb-2 text-[12px] text-sub">AIが掲載前に確かめるとしたこと</div>
+                    <Ai size="sm">{check.action}</Ai>
+                    <Evidence ids={check.evidence} facts={facts} max={3} />
+                  </div>
+                )}
+                {m.unknown.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-[12px] text-sub">AIが「事実シートから分からない」と挙げたこと</div>
+                    <ul className="grid gap-1.5">
+                      {m.unknown.map((u, i) => (
+                        <li key={i}>
+                          <Ai size="sm">{u}</Ai>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
           </div>
