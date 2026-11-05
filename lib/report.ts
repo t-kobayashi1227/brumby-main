@@ -1,6 +1,7 @@
 // ⑤レポート画面の組み立て（docs/設計まとめ.md「根拠と出典」）。表示だけを行い、AI は動かさない
 
 import { competitorPart } from "./agents/competitor-part";
+import { salesFocusOf } from "./agents/sales-focus";
 import type { MediaOutput, StrategyOutput } from "./agents/schemas";
 import { sourceOf, type DatasetInfo } from "./facts/build";
 import { FACT_CATEGORIES, type Fact, type FactCategory } from "./facts/types";
@@ -115,6 +116,9 @@ export function factUsage(main: StrategyOutput, media: MediaOutput, mediaName: (
       out.set(id, list);
     }
   };
+  // この物件でいちばん大事なこと（2026-11-05）。以前の答えには無い
+  const focus = salesFocusOf(main);
+  if (focus) add(focus.evidence, { tab: "summary", where: "いちばん大事なこと", text: focus.point });
   add(main.summary.evidence, { tab: "summary", where: "推奨方針（総合評価）", text: main.summary.text });
   main.concerns.forEach((c, i) => add(c.evidence, { tab: "summary", where: `買い手が気にしそうな点${i + 1}`, text: c.text }));
   [...main.targets].sort((a, b) => a.rank - b.rank).forEach((t) => add(t.evidence, { tab: "target", where: `第${t.rank}候補 ${t.name}`, text: t.reason }));

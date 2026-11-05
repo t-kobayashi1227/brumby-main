@@ -1,6 +1,7 @@
 "use client";
 
 import type { StrategyResult } from "../../../../lib/agents/run";
+import { vsNextOf } from "../../../../lib/agents/sales-focus";
 import type { Fact } from "../../../../lib/facts/types";
 import { firstSentence, groupByAspect, pickAspectFact, placeOfAnalysis, TARGET_IMAGES } from "../../../../lib/report";
 import { AlertIcon, ChatIcon, DatabaseIcon, HomeIcon, MegaphoneIcon, PinIcon, TargetIcon, UsersIcon, YenIcon } from "../../../_components/icons";
@@ -96,6 +97,7 @@ function TargetCard({ t, position, facts }: { t: Target; position: number; facts
   const main = position === 0;
   const image = t.source !== "エージェント提案" ? TARGET_IMAGES[t.name] : undefined;
   const { head, rest } = firstSentence(t.reason);
+  const vsNext = vsNextOf(t);
   // 一覧では3つの観点だけ。「買い手の傾向」「その他」の根拠は「説明と根拠をすべて見る」で出す
   const groups = groupByAspect(t.evidence, facts).filter((g) => !g.optional);
 
@@ -124,6 +126,14 @@ function TargetCard({ t, position, facts }: { t: Target; position: number; facts
         <Ai size="sm" strong>
           {head}
         </Ai>
+
+        {/* 第一候補だけ：第二候補より上にした理由（2026-11-05〜。以前の答えには無い） */}
+        {main && vsNext && (
+          <div className="rounded-md bg-white/70 px-2.5 py-1.5 text-[12px]">
+            <span className="text-sub">第二候補より上にした理由：</span>
+            <span className="text-ink">{vsNext}</span>
+          </div>
+        )}
 
         {/* 選んだ理由の観点。根拠の事実を1つ短く出し、ほかは件数だけ。押すと根拠データで開く */}
         <ul className="grid gap-1">

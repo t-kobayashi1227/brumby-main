@@ -1,6 +1,8 @@
 "use client";
 
 import type { StrategyResult } from "../../../../lib/agents/run";
+import { salesFocusOf } from "../../../../lib/agents/sales-focus";
+import type { SalesFocus } from "../../../../lib/agents/schemas";
 import type { AreaMapData } from "../../../../lib/area-map";
 import type { AreaPriceResult } from "../../../../lib/area-price";
 import type { Fact } from "../../../../lib/facts/types";
@@ -11,7 +13,7 @@ import AreaMap from "./AreaMap";
 import AreaPrice from "./AreaPrice";
 import PromptLog from "./PromptLog";
 
-// ① サマリー：販売の基本戦略（メインの買い手・物件のポイント・訴求のポイント・推奨方針。2026-11-04 浩平さん依頼で推奨方針の枠を組み直し）→ 地図と区の価格相場（2カラム、2026-11-03 追加）→ 懸念点 → 次に確かめること → AIに送った内容（最初は閉じておく）
+// ① サマリー：（2026-11-05〜）この物件でいちばん大事なこと → 販売の基本戦略（メインの買い手・物件のポイント・訴求のポイント・推奨方針。2026-11-04 浩平さん依頼で推奨方針の枠を組み直し）→ 地図と区の価格相場（2カラム、2026-11-03 追加）→ 懸念点 → 次に確かめること → AIに送った内容（最初は閉じておく）
 // 懸念点の対策案（concerns[].action）は出さない（10/26 決定を 2026-11-03 に浩平さんが再確認）。AIの答えとDBには残る
 // 「データの注意点」（2026-11-04 に「次に確かめること」から改名。利用者が作業を求められていると受け取らないように）は、取得できず・要確認の事実から決まった文で作る（AIは使わない。lib/report.ts の nextCheck）
 
@@ -147,6 +149,7 @@ const RANK_NAME = ["メイン", "第二", "第三", "第四", "第五"];
 function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts: Map<string, Fact>; factList: Fact[]; notes: number }) {
   const { goTab, openFact } = useReportNav();
   const m = r.戦略;
+  const focus = salesFocusOf(m);
   const targets = [...m.targets].sort((a, b) => a.rank - b.rank);
   const main = targets[0];
   const others = targets.slice(1);
@@ -168,6 +171,8 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
         <h2 className="text-[17px] font-bold text-ink">販売の基本戦略</h2>
         <span className="text-[12px] text-sub">この物件を「誰に、何を訴求して、どう売るか」の全体方針です。</span>
       </div>
+
+      {focus && <SalesFocusBox focus={focus} facts={facts} />}
 
       <div className="grid gap-5 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)_minmax(0,1fr)]">
         {/* メインの買い手 */}
@@ -288,6 +293,60 @@ function BasicStrategy({ r, facts, factList, notes }: { r: StrategyResult; facts
         </div>
       </div>
     </section>
+  );
+}
+
+const FOCUS_KIND_STYLE: Record<SalesFocus["kind"], string> = {
+  強みを伝える: "bg-primary-soft text-primary",
+  不安を取り除く: "bg-[#fdebd9] text-[#9a4a12]",
+  確かめる: "bg-[#fdf1e7] text-accent",
+};
+
+/**
+ * この物件でいちばん大事なこと（2026-11-05 妥当性チェックの結果から。AIの sales_focus）
+ * 1文の結論と最初にやることを大きく出し、「なぜこの物件で」「なぜ先に」は開いて見る（印刷では開いたまま）
+ * 2026-11-05 より前の答えには無いので、枠ごと出さない（作り直すと出る）
+ */
+function SalesFocusBox({ focus, facts }: { focus: SalesFocus; facts: Map<string, Fact> }) {
+  const reasons = (
+    <dl className="mt-2 grid gap-2 text-[13px]">
+      <div>
+        <dt className="text-[12px] text-sub">この物件で大事な理由</dt>
+        <dd>
+          <Ai size="sm">{focus.why_this_property}</Ai>
+        </dd>
+      </div>
+      <div>
+        <dt className="text-[12px] text-sub">ほかの打ち出し方より先にやる理由</dt>
+        <dd>
+          <Ai size="sm">{focus.why_first}</Ai>
+        </dd>
+      </div>
+      <dd>
+        <Evidence ids={focus.evidence} facts={facts} max={4} />
+      </dd>
+    </dl>
+  );
+  return (
+    <div className="mb-5 rounded-lg border border-[#d9cff3] bg-[#f8f6fd] px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[12px] font-bold text-[#5b3fa8]">この物件でいちばん大事なこと</span>
+        <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${FOCUS_KIND_STYLE[focus.kind] ?? "bg-subtle text-sub"}`}>{focus.kind}</span>
+        <HypothesisBadge />
+      </div>
+      <div className="mt-1.5">
+        <Ai strong>{focus.point}</Ai>
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-1 pl-[22px] text-[14px]">
+        <span className="shrink-0 text-sub">最初にやること：</span>
+        <span className="min-w-0 font-bold text-ink">{focus.action}</span>
+      </div>
+      <details className="mt-1 pl-[22px] print:hidden">
+        <summary className="cursor-pointer text-[12px] text-primary underline">なぜこの物件で、なぜ先にやるのか</summary>
+        {reasons}
+      </details>
+      <div className="hidden pl-[22px] print:block">{reasons}</div>
+    </div>
   );
 }
 

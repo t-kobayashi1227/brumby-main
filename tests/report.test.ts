@@ -35,7 +35,8 @@ const main: StrategyOutput = {
   analysis: [{ topic: "立地", fact: "f", meaning: "m", use: "u", evidence: ["T-03"], confidence: "中" }],
   unknown: [],
   summary: s(["P-02", "A-03"]),
-  targets: [{ rank: 1, name: "x", source: "候補", definition: null, reason: "r", evidence: ["A-03"], confidence: "高" }],
+  sales_focus: { kind: "確かめる", point: "p", why_this_property: "w", why_first: "f", action: "a", evidence: ["P-09"] },
+  targets: [{ rank: 1, name: "x", source: "候補", definition: null, reason: "r", vs_next: null, evidence: ["A-03"], confidence: "高" }],
   not_fit: [{ name: "単身", reason: "r", evidence: ["H-99"] }],
   appeals: [{ rank: 1, ...s(["L-11"]) }],
   price_view: { position: "相場なみ", ...s(["P-02"]) },
@@ -49,7 +50,7 @@ const media: MediaOutput = { media: [], cautions: [] };
 
 describe("レポートの根拠と出典", () => {
   it("使った事実ID（使用箇所と同じ集め方。分析は含め、画面に出さない合わない層は含めない）", () => {
-    expect(usedFactIds(main, media)).toEqual(["P-02", "A-03", "H-02", "L-11", "T-03"]);
+    expect(usedFactIds(main, media)).toEqual(["P-09", "P-02", "A-03", "H-02", "L-11", "T-03"]);
   });
 
   it("根拠の書き方。取れなかった事実は「不明」", () => {
@@ -94,6 +95,8 @@ describe("6タブへの振り分け", () => {
     };
     const u = factUsage(strategy, { media: [{ id: "C-01", name: "SUUMO", purpose: "p", target: "t", share: 100, share_reason: "s", reason: "mr", evidence: ["A-03"] }], cautions: [] });
     expect(u.get("P-02")?.map((x) => x.tab)).toEqual(["summary", "price", "price"]);
+    // この物件でいちばん大事なこと（2026-11-05）はサマリー
+    expect(u.get("P-09")?.map((x) => `${x.tab}:${x.where}`)).toEqual(["summary:いちばん大事なこと"]);
     expect(u.get("A-03")?.map((x) => `${x.tab}:${x.where}`)).toEqual(["summary:推奨方針（総合評価）", "target:第1候補 x", "sales:販売の方向性", "sales:媒体 SUUMO"]);
     expect(u.get("L-11")?.map((x) => x.tab)).toEqual(["target", "area"]);
     expect(u.has("T-03")).toBe(false);
@@ -243,7 +246,7 @@ describe("販売の基本戦略", () => {
       { rank: 2, text: "", evidence: ["L-02", "L-03"] },
       { rank: 1, text: "", evidence: ["P-03", "P-09", "L-01"] },
     ],
-    targets: [{ rank: 1, name: "若い夫婦", source: "候補" as const, definition: null, reason: "", evidence: ["P-06"], confidence: "中" as const }],
+    targets: [{ rank: 1, name: "若い夫婦", source: "候補" as const, definition: null, reason: "", vs_next: null, evidence: ["P-06"], confidence: "中" as const }],
   };
 
   it("AIが加えた候補の特徴は訴求の順位順に、物件・立地の取れた事実だけ。価格・相場・要確認・0件・公園と保育の施設は入れない", () => {

@@ -7,10 +7,14 @@
 // 6. 「要確認」の事実だけを根拠にしていないか → 記録だけ（戦略の守ること5。確かめが要ると書き添えてあれば問題ないので、外さない）
 // 7. 競合と比べた部分（2026-11-05）：おすすめポイント・懸念点の根拠に競合（K）とこの物件の事実が両方あるか、懸念点は2つまでか、
 //    競合ごとの見え方が「物件情報」の事実を指しているか → 外す。懸念点の rank の並びと、競合ごとの見え方の数 → 記録だけ
+// 8. この物件でいちばん大事なこと（2026-11-05）：根拠に物件（P）の事実があるか → 作り直し。
+//    新築・リフォーム・交通の事実が sales_focus・appeals・direction のどの根拠にも無いか、direction が「問い合わせ→内見」の型か、
+//    vs_next が第1だけにあるか → 記録だけ（改修の前後を数で比べるため）
 // PoC では作り直さない（docs/設計まとめ.md「処理の流れ」）。action は点検が求める扱いのまま check_results に残す
 
 import type { Fact } from "../facts/types";
 import { competitorPart } from "./competitor-part";
+import { salesFocusOf, vsNextOf } from "./sales-focus";
 import type { MediaOutput, StrategyOutput } from "./schemas";
 
 type CheckTarget = "戦略" | "媒体";
@@ -46,8 +50,10 @@ function sentences(main: StrategyOutput, media: MediaOutput): Sentence[] {
   const list = (target: CheckTarget, key: string, items: { evidence: string[] }[]) =>
     items.map((it, i) => ({ target, location: `${key}[${i}]`, text: textOf(it), evidence: it.evidence, removable: true }));
   const one = (location: string, it: { evidence: string[] }) => ({ target: "戦略" as const, location, text: textOf(it), evidence: it.evidence, removable: false });
+  const focus = salesFocusOf(main);
   return [
     ...list("戦略", "analysis", main.analysis),
+    ...(focus ? [one("sales_focus", focus)] : []),
     one("summary", main.summary),
     ...list("戦略", "targets", main.targets),
     ...list("戦略", "not_fit", main.not_fit),
@@ -118,6 +124,50 @@ export function checkCompetitors(main: StrategyOutput, facts: Fact[]): CheckIssu
   return issues;
 }
 
+/** 「強みの取りこぼし」で見る事実：新築、リフォームあり、物件資料の交通（徒歩分） */
+export function strengthFacts(facts: Fact[]): { label: string; ids: string[] }[] {
+  const ok = (f: Fact) => f.状態 !== "取得できず" && f.値 !== null;
+  const out: { label: string; ids: string[] }[] = [];
+  const isNew = facts.filter((f) => f.id.startsWith("P-") && f.項目 === "物件区分" && f.値 === "新築" && ok(f));
+  if (isNew.length) out.push({ label: "新築", ids: isNew.map((f) => f.id) });
+  const renovated = facts.filter((f) => f.id.startsWith("P-") && f.項目 === "リフォーム" && ok(f) && f.値 !== "なし" && !f.値!.startsWith("不明"));
+  if (renovated.length) out.push({ label: "リフォーム", ids: renovated.map((f) => f.id) });
+  const transport = facts.filter((f) => f.id.startsWith("T-") && f.項目.startsWith("交通") && ok(f));
+  if (transport.length) out.push({ label: "交通", ids: transport.map((f) => f.id) });
+  return out;
+}
+
+/** 「問い合わせ→内見」の案内の流れになっているか（direction の型を数える） */
+export function isGuideFlow(text: string): boolean {
+  return text.includes("問い合わせ") && (text.includes("内見") || text.includes("内覧"));
+}
+
+/** 8. この物件でいちばん大事なこと・強みの取りこぼし・案内の流れの型・第1と第2の差 */
+export function checkSalesFocus(main: StrategyOutput, facts: Fact[]): CheckIssue[] {
+  const issues: CheckIssue[] = [];
+  const add = (location: string, check_name: string, problem: string, action: CheckAction) => issues.push({ target: "戦略", location, check_name, problem, action });
+  if (isGuideFlow(main.direction.text)) add("direction", "案内の流れの型", "「問い合わせ」と「内見・内覧」の両方が出てくる、案内の順番の書き方です", "記録だけ");
+
+  const focus = salesFocusOf(main);
+  if (!focus) return issues;
+  const known = new Set(facts.map((f) => f.id));
+  const focusIds = focus.evidence.map((e) => e.trim()).filter((id) => known.has(id));
+  if (!focusIds.some((id) => id.startsWith("P-"))) add("sales_focus", "いちばん大事なことに物件の根拠がない", "根拠に物件（P）の事実がありません", "作り直し");
+
+  const used = new Set([...focus.evidence, ...main.appeals.flatMap((a) => a.evidence), ...main.direction.evidence].map((e) => e.trim()));
+  for (const s of strengthFacts(facts)) {
+    if (!s.ids.some((id) => used.has(id))) add("sales_focus", "強みの取りこぼし", `${s.label}の事実（${s.ids.join("、")}）が、いちばん大事なこと・訴求・方向性のどの根拠にもありません`, "記録だけ");
+  }
+
+  const targets = [...main.targets].sort((a, b) => a.rank - b.rank);
+  targets.forEach((t, i) => {
+    const v = vsNextOf(t);
+    if (i === 0 && targets.length > 1 && v === null) add(`targets[${main.targets.indexOf(t)}]`, "第1と第2の差", "第1候補に、第2候補より上にした理由（vs_next）がありません", "記録だけ");
+    if (i > 0 && v !== null) add(`targets[${main.targets.indexOf(t)}]`, "第1と第2の差", "第1候補以外に vs_next があります", "記録だけ");
+  });
+  return issues;
+}
+
 const MEDIA_MIN = 3;
 const MEDIA_MAX = 6;
 
@@ -154,6 +204,7 @@ export function checkProgram(main: StrategyOutput, media: MediaOutput, facts: Fa
   }
 
   issues.push(...checkCompetitors(main, facts));
+  issues.push(...checkSalesFocus(main, facts));
 
   const ids = media.media.map((m) => m.id);
   const unknownMedia = ids.filter((id) => !mediaIds.includes(id));
