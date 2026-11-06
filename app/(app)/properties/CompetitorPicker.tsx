@@ -44,7 +44,7 @@ export default function CompetitorPicker({ candidates, initialIds, isNew }: { ca
               <div className="flex items-center gap-2">
                 <span className="rounded bg-[#f59e0b] px-1.5 py-0.5 text-[11px] font-bold text-white">競合{i + 1}</span>
                 <span className="text-[13px] font-bold text-ink">{c.code}</span>
-                <span className={`${badge} ${SALE_BADGE[c.sale]}`}>{c.sale}</span>
+                {c.sale !== "未設定" && <span className={`${badge} ${SALE_BADGE[c.sale]}`}>{c.sale}</span>}
                 <button
                   type="button"
                   onClick={() => setIds(ids.filter((x) => x !== c.id))}
@@ -120,7 +120,7 @@ export default function CompetitorPicker({ candidates, initialIds, isNew }: { ca
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-[13px] font-bold text-ink">{c.code}</span>
                           <span className="text-xs text-body">{c.area}</span>
-                          <span className={`${badge} ${SALE_BADGE[c.sale]}`}>{c.sale}</span>
+                          {c.sale !== "未設定" && <span className={`${badge} ${SALE_BADGE[c.sale]}`}>{c.sale}</span>}
                         </div>
                         <div className="mt-0.5 text-xs text-body">
                           <Specs c={c} />
