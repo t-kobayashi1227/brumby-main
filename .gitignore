@@ -46,3 +46,6 @@ next-env.d.ts
 /data/raw/
 # 戦略の答えの書き出し（scripts/strategy.ts。テスト物件は秘密保持契約の対象）
 /data/out/
+# DBのダンプ・バックアップ・作業用の比較ファイル（運用データを含むため入れない）
+/work/
+/backup_old_local/
