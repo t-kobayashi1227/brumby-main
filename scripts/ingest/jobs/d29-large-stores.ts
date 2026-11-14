@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { geocodeAddress } from "../../../lib/geocode";
+import { geocodeAddress, isInNiigata } from "../../../lib/geocode";
 import { insertFacilities, type FacilityRow } from "../lib/facilities";
 import { parseCsv, RAW_ROOT } from "../lib/files";
 import { sleep } from "../lib/reinfolib";
@@ -165,6 +165,18 @@ export function cleanSearchAddress(address: string): string {
     .replace(/(?<=[0-9０-９])[?？](?=[0-9０-９])/g, "－");
 }
 
+/**
+ * 「位置を出す住所」に書いた緯度経度を読む（例：「37.92252, 139.04315」。Google マップで場所を右クリックして写せる形。緯度が先）
+ * 住所検索が新しい町名を知らないときなどに使う。緯度経度でなければ null。新潟県の範囲の外なら例外にする（緯度と経度の逆など）
+ */
+export function parseLatLon(text: string): { lat: number; lon: number } | null {
+  const m = /^\s*(-?\d+(?:\.\d+)?)\s*[,，、]\s*(-?\d+(?:\.\d+)?)\s*$/.exec(text.normalize("NFKC"));
+  if (!m) return null;
+  const [lat, lon] = [Number(m[1]), Number(m[2])];
+  if (!isInNiigata(lon, lat)) throw new Error(`緯度経度が新潟県の範囲の外です（${text}）。「緯度, 経度」の順に書いてください`);
+  return { lat, lon };
+}
+
 // 県内の市町村（郡は付けても付けなくてもよい）と、新潟市の区
 const MUNICIPALITIES = [
   "新潟市", "長岡市", "三条市", "柏崎市", "新発田市", "小千谷市", "加茂市", "十日町市", "見附市", "村上市",
@@ -202,6 +214,8 @@ interface Store {
   lon: number | null;
   lat: number | null;
   hit: string | null;
+  /** 「位置を出す住所」に書いた緯度経度を使った店 */
+  manual?: boolean;
   /** 位置を借りた店（借りなければ null） */
   borrowed?: NearbyStore | null;
   /** 住所から推定した位置（位置を借りたときに残す） */
@@ -293,6 +307,7 @@ function readdirPdf(dir: string): string | null {
  * npm run ingest -- d29-review：判定の確認用の CSV を書き出す（Excel で開ける UTF-8 BOM つき）
  * 小林さんが「判定」の列を「スーパー」「ドラッグストア」か空欄に直して保存する。「店舗名」も直せる（DB にはその名前で入る）
  * 「位置を出す住所」に住所を書くと、所在地の代わりにその住所で位置を出す（区の無い新潟市の住所に区を足すなど）。「閉店」と書いた店は入れない
+ * 住所検索が当たらない店は、「位置を出す住所」に「緯度, 経度」（例：37.92252, 139.04315）を書けば、その位置を使う
  * 「判定」は「スーパー／ドラッグストア」とも書ける（両方の種類として足す）。「主な小売店舗」も直せる
  * 「所在地」は CSV と PDF の店を突き合わせるのに使うので、直さない
  * 「自動の判定」の列は見比べ用で、使わない
@@ -343,7 +358,8 @@ function readReviewCsv(): Map<string, Review> | null {
       type: (t || null) as Judgement | null,
       name: r[name].trim(),
       tenant: (r[tenant] ?? "").trim(),
-      searchAddress: s === "" ? null : s === CLOSED ? CLOSED : cleanSearchAddress(s),
+      // 緯度経度はそのまま残す（cleanSearchAddress は空白で切るので、緯度経度を壊す）
+      searchAddress: s === "" ? null : s === CLOSED || parseLatLon(s) ? s : cleanSearchAddress(s),
     });
   }
   return map;
@@ -394,6 +410,13 @@ export const d29LargeStores = defineJob<Store[]>({
     let found = 0;
     const coarse: string[] = [];
     for (const s of stores) {
+      // 緯度経度を書いた店は、住所検索をしないでその位置を使う
+      const manual = s.searchAddress ? parseLatLon(s.searchAddress) : null;
+      if (manual) {
+        Object.assign(s, { lon: manual.lon, lat: manual.lat, hit: null, manual: true });
+        found++;
+        continue;
+      }
       const hit = await geocodeAddress(addressForSearch(s.city, s.searchAddress ?? s.address));
       if (hit && isCoarseHit(hit.title)) {
         coarse.push(`${s.city} ${s.name}（${s.searchAddress ?? s.address} → ${hit.title}）`);
@@ -424,6 +447,8 @@ export const d29LargeStores = defineJob<Store[]>({
         and extensions.st_dwithin(f.geog, extensions.st_setsrid(extensions.st_point(x.lon, x.lat), 4326)::extensions.geography, ${SAME_STORE_M})
     `;
     located.forEach((s, i) => {
+      // 手で入れた緯度経度は、近くの店の位置で置き換えない
+      if (s.manual) return;
       const hit = pickSameStore(s.name, nearby.filter((n) => n.i === i).map((n) => ({ ...n, distance_m: Number(n.distance_m) })));
       if (!hit) return;
       s.geocoded = { lon: s.lon!, lat: s.lat! };
@@ -447,9 +472,11 @@ export const d29LargeStores = defineJob<Store[]>({
         主な小売店舗: s.tenant || null,
         開店日: s.opened || null,
         閉店時刻: s.closing || null,
-        位置: s.borrowed
-          ? `${s.borrowed.dataset_id === "D28" ? "OSM" : "医療情報ネット"}の同じ店（${s.borrowed.name}）の位置`
-          : "住所から推定（国土地理院 住所検索）",
+        位置: s.manual
+          ? "手で入れた緯度経度（判定の CSV の「位置を出す住所」）"
+          : s.borrowed
+            ? `${s.borrowed.dataset_id === "D28" ? "OSM" : "医療情報ネット"}の同じ店（${s.borrowed.name}）の位置`
+            : "住所から推定（国土地理院 住所検索）",
         当たった住所: s.hit,
         ...(s.searchAddress ? { 位置を出した住所: s.searchAddress } : {}),
         ...(s.geocoded ? { 住所から推定した位置: s.geocoded } : {}),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressForSearch, buildRows, classify, cleanSearchAddress, isCoarseHit, kindsOf, isSameStore, pickSameStore, storeNameKey } from "../scripts/ingest/jobs/d29-large-stores";
+import { addressForSearch, buildRows, classify, cleanSearchAddress, isCoarseHit, kindsOf, parseLatLon, isSameStore, pickSameStore, storeNameKey } from "../scripts/ingest/jobs/d29-large-stores";
 
 describe("classify", () => {
   it("店名か主な小売店舗のチェーン名で、スーパー・ドラッグストアを決める", () => {
@@ -94,5 +94,19 @@ describe("kindsOf", () => {
     expect(kindsOf("スーパー／ドラッグストア")).toEqual(["スーパー", "ドラッグストア"]);
     expect(kindsOf("スーパー")).toEqual(["スーパー"]);
     expect(kindsOf(null)).toEqual([]);
+  });
+});
+
+describe("parseLatLon", () => {
+  it("「緯度, 経度」を読む（Google マップから写した形）", () => {
+    expect(parseLatLon("37.92252, 139.04315")).toEqual({ lat: 37.92252, lon: 139.04315 });
+    expect(parseLatLon("３７.９２２５２，１３９.０４３１５")).toEqual({ lat: 37.92252, lon: 139.04315 }); // 全角
+  });
+  it("住所は緯度経度ではない", () => {
+    expect(parseLatLon("新潟市中央区馬越２丁目２番17号")).toBeNull();
+    expect(parseLatLon("閉店")).toBeNull();
+  });
+  it("経度と緯度が逆なら止める", () => {
+    expect(() => parseLatLon("139.04315, 37.92252")).toThrow("新潟県の範囲の外");
   });
 });
