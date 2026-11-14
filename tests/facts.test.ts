@@ -13,9 +13,10 @@ import {
   type DatasetInfo,
   type MarketTrade,
   listShares,
+  outsideDataArea,
 } from "../lib/facts/build";
 import { sumMismatches } from "../scripts/ingest/jobs/buyers";
-import { groupBusStops, toD10TownName } from "../lib/facts/collect";
+import { groupBusStops } from "../lib/facts/collect";
 import { ageBand, formatChange, formatDistance, formatManYen1, formatNearby, median } from "../lib/facts/format";
 import { numberFacts, type Fact } from "../lib/facts/types";
 import { competitorColumns } from "../lib/competitor-report";
@@ -38,7 +39,10 @@ const DATASETS: Record<string, DatasetInfo> = Object.fromEntries(
     ds("D08", "住宅の建て方別世帯数（T001086）", "e-Stat 国勢調査", "2020"),
     ds("D10", "町名別5歳階級人口", "新潟市OD", "2026-09"),
     ds("D11", "250mメッシュ将来推計人口（mesh250r6）", "国土数値情報", "R6推計"),
+    ds("D12", "小学校区（A27）", "国土数値情報", "2023"),
+    ds("D13", "中学校区（A32）", "国土数値情報", "2023"),
     ds("D14", "通学区域一覧", "新潟市教育委員会", "2026-04-01"),
+    ds("D41", "長岡市立学校通学区域規則", "長岡市教育委員会", "令和7年3月27日改正の規則（長岡市例規集）"),
     ds("D17", "保育園", "国土数値情報 P14", "2023"),
     ds("D20", "認定こども園", "国土数値情報 P29", "2023"),
     ds("D22", "公園・緑地", "新潟市OD", "2019-12"),
@@ -135,10 +139,10 @@ function sample(overrides: Partial<Collected> = {}): Collected {
     station: { name: "架空", lines: ["越後線"], distance_m: 1450, passengers: null },
     bus: { within1km: [{ name: "架空停", distance_m: 120 }], nearest: { name: "架空停", distance_m: 120, routes: 3, operators: ["架空交通"] }, wardAverage: 16.5 },
     area: {
-      d10Town: { 人口計: 1000, 世帯数: 400, "0〜4歳": 50, "5〜9歳": 50, "10〜14歳": 58, "20〜24歳": 50, "25〜29歳": 50, "30〜34歳": 50, "35〜39歳": 50 },
-      d10Ward: { 人口計: 10000, 世帯数: 4000, "0〜4歳": 400, "5〜9歳": 400, "10〜14歳": 390 },
-      censusTown: { D06: { 一般世帯総数: 400, "18歳未満世帯員のいる一般世帯総数": 100, 核家族以外の世帯: 30 }, D07: { 住宅に住む一般世帯: 400, 持ち家: 300, 民営借家: null } },
-      censusWard: { D06: { 一般世帯総数: 4000, "18歳未満世帯員のいる一般世帯総数": 800, 核家族以外の世帯: 200 } },
+      censusTown: {
+        D05: { "総数、年齢「不詳」含む": 1000, 総数15歳未満: 158, "総数20～24歳": 50, "総数25～29歳": 50, "総数30～34歳": 50, "総数35～39歳": 50 },
+        D06: { 一般世帯総数: 400, "18歳未満世帯員のいる一般世帯総数": 100, 核家族以外の世帯: 30 }, D07: { 住宅に住む一般世帯: 400, 持ち家: 300, 民営借家: null } },
+      censusWard: { D05: { "総数、年齢「不詳」含む": 10000, 総数15歳未満: 1190 }, D06: { 一般世帯総数: 4000, "18歳未満世帯員のいる一般世帯総数": 800, 核家族以外の世帯: 200 } },
       meshNear: { total2025: 10000, total2035: 9180, kids2025: 1200, kids2035: 1000 },
       meshWard: { total2025: 100000, total2035: 94000, kids2025: 11000, kids2035: 9500 },
     },
@@ -392,12 +396,6 @@ describe("取り込み：単一回答の合計の確かめ（sumMismatches）", 
 
 describe("書き方（続き）", () => {
 
-  it("町名の書き方をそろえる", () => {
-    expect(toD10TownName("青山七丁目")).toBe("青山７丁目");
-    expect(toD10TownName("上新栄町十二丁目")).toBe("上新栄町１２丁目");
-    expect(toD10TownName("青山")).toBe("青山");
-  });
-
   it("浸水深の区分の下限", () => {
     expect(depthLower("0.5〜3.0m未満")).toBe(0.5);
     expect(depthLower("0.01m以上〜0.3m未満")).toBe(0.01);
@@ -578,6 +576,25 @@ describe("事実シートの組み立て", () => {
     expect(withAsOf("2025-04").状態).toBe("取得");
   });
 
+  it("生活施設（L）：新潟市の分だけのデータ（公園など）は、新潟市以外の物件では「0件」ではなく「取得できず」", () => {
+    const base = sample();
+    const town = { key_code: "15204999001", name: "架空町", ward: "三条市", city_code: "15204" };
+    const club = { label: "放課後児童クラブ", within1km: [], nearest3km: null, wardAverage: null, datasetIds: ["D21"] };
+    const datasets = { ...base.datasets, D21: ds("D21", "放課後児童クラブ", "新潟市オープンデータ", "2017-03") };
+    const f = buildFacts({ ...base, town, datasets, facilities: [...base.facilities, club] });
+    expect(find(f, "放課後児童クラブ（1km以内）")).toMatchObject({ 値: null, 状態: "取得できず", 出典: "新潟市オープンデータ 放課後児童クラブ（新潟市の分だけのデータ）" });
+    expect(find(f, "公園（1km以内）")).toMatchObject({ 値: null, 状態: "取得できず" });
+    // 新潟市の物件は今までどおり数える
+    expect(find(buildFacts({ ...base, datasets, facilities: [...base.facilities, club] }), "放課後児童クラブ（1km以内）").値).toBe("0件。3km以内になし");
+    // 県全体のデータ（例：Overture の公園）も入っていれば普通に数える
+    expect(outsideDataArea(["D22", "D40"], "15204")).toBeNull();
+    expect(outsideDataArea(["D22"], "15204")).toBe("新潟市");
+    expect(outsideDataArea(["D22"], "15107")).toBeNull();
+    expect(outsideDataArea(["D22"], null)).toBeNull();
+    // D23 図書館は県全体にした（2026-11-14）
+    expect(outsideDataArea(["D23"], "15204")).toBeNull();
+  });
+
   it("相場（M）：取引が無ければ5件とも「取得できず」で、IDの並びは変わらない", () => {
     const f = buildFacts(sample({ market: null, similarMarket: null }));
     const unit = find(f, /^延床の坪単価（西区/);
@@ -590,8 +607,9 @@ describe("事実シートの組み立て", () => {
     expect(find(f, "近くの公示地（住宅地）").id).toBe("M-06");
   });
 
-  it("エリア（A）：町名別人口から割合を計算し、区と並べる", () => {
-    expect(find(facts, "0〜14歳の割合")).toMatchObject({ 値: "15.8%", 比較: "西区 11.9%", 出典: "新潟市OD 町名別5歳階級人口" });
+  it("エリア（A）：国勢調査から人口・世帯数と割合を計算し、区と並べる", () => {
+    expect(find(facts, "町の人口と世帯数")).toMatchObject({ 値: "1,000人・400世帯", 比較: "西区 10,000人・4,000世帯" });
+    expect(find(facts, "0〜14歳の割合")).toMatchObject({ 値: "15.8%", 比較: "西区 11.9%", 出典: "e-Stat 国勢調査 T001082", 時点: "2020" });
     expect(find(facts, "20〜39歳の割合").値).toBe("20.0%");
     // 足す年齢の値が無いときは推測せず「取得できず」
     expect(find(facts, "40〜59歳の割合").状態).toBe("取得できず");
@@ -603,24 +621,60 @@ describe("事実シートの組み立て", () => {
     expect(find(facts, /^将来の人口/)).toMatchObject({ 値: "10,000人→9,180人（-8.2%）", 比較: "西区 -6.0%" });
   });
 
-  it("エリア（A）：町名別人口に町が無ければ国勢調査で年齢を出す", () => {
+  it("エリア（A）：新潟市以外は市町村と並べる（新潟市の町名別人口は使わない）", () => {
     const f = buildFacts(
       sample({
+        town: { key_code: "15202999001", name: "架空町", ward: "長岡市", city_code: "15202" },
         area: {
           ...sample().area,
-          d10Town: null,
           censusTown: { D05: { "総数、年齢「不詳」含む": 200, 総数15歳未満: 30 } },
           censusWard: { D05: { "総数、年齢「不詳」含む": 1000, 総数15歳未満: 100 } },
         },
       }),
     );
-    expect(find(f, "0〜14歳の割合")).toMatchObject({ 値: "15.0%", 比較: "西区 10.0%", 出典: "e-Stat 国勢調査 T001082", 時点: "2020" });
-    expect(f.some((x) => x.項目 === "町の人口と世帯数")).toBe(false);
+    expect(find(f, "0〜14歳の割合")).toMatchObject({ 値: "15.0%", 比較: "長岡市 10.0%", 出典: "e-Stat 国勢調査 T001082", 時点: "2020" });
+    expect(find(f, "町の人口と世帯数")).toMatchObject({ 値: "200人・世帯数不明", 比較: "長岡市 1,000人・世帯数不明" });
   });
 
   it("学区（S）：決まらないときは候補を出して「要確認」", () => {
     expect(find(facts, "小学校区")).toMatchObject({ 値: "架空小学校（物件から直線700m）", 状態: "取得", 出典: "新潟市教育委員会 通学区域一覧（物件の位置の町丁目で照合）" });
     expect(find(facts, "中学校区")).toMatchObject({ 値: "候補：架空中学校、架空西中学校", 状態: "要確認", 出典: "新潟市教育委員会 通学区域一覧（入力の住所で照合）" });
+  });
+
+  it("学区（S）：長岡市は長岡市の通学区域規則で照合し、出典も長岡市にする", () => {
+    const town = { key_code: "15202999001", name: "架空町", ward: "長岡市", city_code: "15202" };
+    const f = buildFacts(
+      sample({
+        town,
+        schools: {
+          elementary: { status: "decided", school: "架空小学校", distance_m: 640, basis: "位置" },
+          juniorHigh: { status: "ambiguous", candidates: ["架空中学校", "架空南中学校"], basis: "位置" },
+        },
+      }),
+    );
+    expect(find(f, "小学校区")).toMatchObject({ 値: "架空小学校（物件から直線640m）", 出典: "長岡市教育委員会 長岡市立学校通学区域規則（物件の位置の町丁目で照合）" });
+    expect(find(f, "中学校区")).toMatchObject({ 状態: "要確認" });
+    // 一覧に町が無いときも、出典は長岡市の規則のまま「取得できず」
+    const none = buildFacts(sample({ town, schools: { elementary: { status: "none" }, juniorHigh: { status: "none" } } }));
+    expect(find(none, "小学校区")).toMatchObject({ 状態: "取得できず", 出典: "長岡市教育委員会 長岡市立学校通学区域規則" });
+  });
+
+  it("学区（S）：通学区域一覧の無い市町村は国土数値情報の学区の形で決め、出典も小学校区・中学校区にする", () => {
+    const town = { key_code: "15204999001", name: "架空町", ward: "三条市", city_code: "15204" };
+    const f = buildFacts(
+      sample({
+        town,
+        schools: {
+          elementary: { status: "decided", school: "架空小学校", distance_m: 1203, basis: "学区の形" },
+          juniorHigh: { status: "ambiguous", candidates: ["架空中学校", "架空東中学校"], basis: "学区の形" },
+        },
+      }),
+    );
+    expect(find(f, "小学校区")).toMatchObject({ 値: "架空小学校（物件から直線1.2km）", 状態: "取得", 出典: "国土数値情報 A27（物件の位置が入る学区で判定）", 時点: "2023" });
+    expect(find(f, "中学校区")).toMatchObject({ 値: "候補：架空中学校、架空東中学校", 状態: "要確認", 出典: "国土数値情報 A32（物件の位置が入る学区で判定）" });
+    // 学区の形に入らない（その市町村の学区が無い）ときは、新潟市の一覧ではなく学区の形を出典にして「取得できず」
+    const none = buildFacts(sample({ town, schools: { elementary: { status: "none" }, juniorHigh: { status: "none" } } }));
+    expect(find(none, "小学校区")).toMatchObject({ 状態: "取得できず", 出典: "国土数値情報 A27" });
   });
 
   it("生活施設（L）：1km以内の件数と一覧、区内の町の平均、3km以内の最寄り", () => {

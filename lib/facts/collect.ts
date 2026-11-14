@@ -30,7 +30,7 @@ import { quoteCompetitorView } from "./competitor-quote";
 import { addressToChome, MAX_COMPETITORS } from "../competitors";
 import type { Fact } from "./types";
 import { todayJst, type NearbyItem } from "./format";
-import { kanjiToNumber, parseAddress, pinAddress, resolveZone, wardFromSourceUrl, type ZoneRow } from "./school-zones";
+import { foldKana, normalizeWidth, parseAddress, pickDistrictSchool, pinAddress, resolveZone, wardFromSourceUrl, ZONE_RULE_CITY_NAMES, zoneRuleCity, type ZoneRow } from "./school-zones";
 import type { FactStepKey } from "./steps";
 
 /** 周りの施設（L）の種類。設計まとめ「周りの施設（L）の渡し方」の順 */
@@ -76,14 +76,6 @@ const NEAR_M = 1000;
 const CAR_M = 3000;
 /** 物件を探した方法などで、物件区分に合う区分 */
 const SEGMENT = { 中古: "中古戸建を買った世帯", 新築: "分譲戸建を買った世帯" } as const;
-
-/** 町の境界（D39）の町名を、町名別5歳階級人口（D10）の書き方にする：「青山七丁目」→「青山７丁目」 */
-export function toD10TownName(name: string): string {
-  return name.replace(/([一二三四五六七八九十]+)丁目$/, (all, k: string) => {
-    const n = kanjiToNumber(k);
-    return n === null ? all : `${String(n).replace(/\d/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xfee0))}丁目`;
-  });
-}
 
 interface CompetitorRow {
   position: number;
@@ -306,37 +298,76 @@ async function collectLandPrice(sql: Sql, pt: Point) {
 async function collectSchools(sql: Sql, pt: Point, address: string, town: TownInfo | null): Promise<{ elementary: SchoolInput; juniorHigh: SchoolInput }> {
   const none = { elementary: { status: "none" } as SchoolInput, juniorHigh: { status: "none" } as SchoolInput };
   const input = parseAddress(address);
-  const pinTown = town && town.city_code.startsWith("151") ? { name: town.name, ward: town.ward } : null;
-  if (!input && !pinTown) return none;
+  // 通学区域一覧のある市（新潟市・長岡市・燕市）は一覧と照らし合わせる。市は物件の位置の町（D39）で決め、町が無ければ入力の住所で決める
+  const city = town ? zoneRuleCity(town.city_code) : (input?.cityCode ?? null);
+  // 一覧の無い市町村は、国土数値情報の学区の形で決める（2026-11-11）
+  if (town && !city) return collectSchoolsByDistrict(sql, pt);
+  if (!city) return none;
+  const addr = input && input.cityCode === city ? input : null;
+  const pinTown = town ? { name: town.name, ward: town.ward } : null;
+  if (!addr && !pinTown) return none;
+  const pinName = pinTown ? foldKana(normalizeWidth(pinTown.name).replace(/^大字/, "")) : "";
   const found = await sql<(ZoneRow & { source_url: string })[]>`
     select ward, town, chome, lot_scope, lot_text, lot_ranges, elementary_school, junior_high_school, source_url
-    from school_zone_rules where starts_with(${pinTown?.name ?? ""}, town) or starts_with(${input?.rest ?? ""}, town)
+    from school_zone_rules_all
+    where city_code = ${city}
+      and (starts_with(${pinName}, translate(town, 'ヶヵ', 'ケカ')) or starts_with(${foldKana(addr?.rest ?? "")}, translate(town, 'ヶヵ', 'ケカ')))
   `;
-  // 区の書かれていない行は、読み取った市のページの区の町とする（同じ町名が別の区にもあるため。中央区と秋葉区の「天神」など）
-  const rows = found.map(({ source_url, ...r }) => ({ ...r, ward: r.ward ?? wardFromSourceUrl(source_url) }));
+  // 区の書かれていない行は、読み取った市のページの区の町とする（新潟市だけ。同じ町名が別の区にもあるため。中央区と秋葉区の「天神」など）
+  const rows = found.map(({ source_url, ...r }) => ({ ...r, ward: r.ward ?? (city === "15100" ? wardFromSourceUrl(source_url) : null) }));
   let basis: "位置" | "住所" = "位置";
-  let zone = pinTown ? resolveZone(rows, pinAddress(pinTown, input, rows)) : null;
-  if ((!zone || zone.elementary.status === "none") && input) {
+  let zone = pinTown ? resolveZone(rows, pinAddress(pinTown, addr, rows, city)) : null;
+  if ((!zone || zone.elementary.status === "none") && addr) {
     basis = "住所";
-    zone = resolveZone(rows, input);
+    zone = resolveZone(rows, addr);
   }
   if (!zone) return none;
   const withDistance = async (r: (typeof zone)["elementary"], kind: "小学校" | "中学校"): Promise<SchoolInput> => {
     if (r.status === "none") return { status: "none" };
     if (r.status === "ambiguous") return { status: "ambiguous", candidates: r.candidates, basis };
-    // 施設の名前は「新潟市立青山小学校」の形。新潟市の学校（city_code 151xx）から探す。同じ名前の学校が他の市にもあるため
+    // 施設の名前は「新潟市立青山小学校」の形。その市の学校（新潟市は city_code 151xx）から探す。同じ名前の学校が他の市にもあるため
     // 名前がそのまま当たるものを先に、無ければ名前の終わりが一致するもの（「東青山小学校」も当たるので後回し）の近い順
+    const cityPattern = city === "15100" ? "151%" : city;
+    const official = `${ZONE_RULE_CITY_NAMES[city]}立${r.school}`;
     const [hit] = await sql<{ distance_m: number }[]>`
       select extensions.st_distance(geog, ${pt}) as distance_m from facilities
-      where kind = ${kind} and attrs ->> 'city_code' like '151%'
-        and (name = ${r.school} or name = ${"新潟市立" + r.school} or name like ${"%" + r.school})
-      order by (name = ${r.school} or name = ${"新潟市立" + r.school}) desc, geog operator(extensions.<->) ${pt}
+      where kind = ${kind} and attrs ->> 'city_code' like ${cityPattern}
+        and (name = ${r.school} or name = ${official} or name like ${"%" + r.school})
+      order by (name = ${r.school} or name = ${official}) desc, geog operator(extensions.<->) ${pt}
       limit 1
     `;
     return { status: "decided", school: r.school, distance_m: hit ? Number(hit.distance_m) : null, basis };
   };
   const z = zone;
   return { elementary: await withDistance(z.elementary, "小学校"), juniorHigh: await withDistance(z.juniorHigh, "中学校") };
+}
+
+/**
+ * 学区（D12 小学校区・D13 中学校区。国土数値情報）。新潟市以外の物件で、物件の位置が入る学区の形から学校を決める
+ * 2つ以上の学区に入るときは「要確認」。決まった学校までの直線距離は、学区の市区町村の学校（P29）から名前で探す
+ */
+async function collectSchoolsByDistrict(sql: Sql, pt: Point): Promise<{ elementary: SchoolInput; juniorHigh: SchoolInput }> {
+  const hits = await sql<{ kind: string; label: string; code: string | null }[]>`
+    select distinct kind, label, attrs ->> '行政区域コード' as code from zones
+    where kind in ('小学校区', '中学校区') and extensions.st_intersects(geom, (${pt})::extensions.geometry)
+  `;
+  const one = async (zoneKind: "小学校区" | "中学校区", facilityKind: "小学校" | "中学校"): Promise<SchoolInput> => {
+    const list = hits.filter((h) => h.kind === zoneKind);
+    const r = pickDistrictSchool(list.map((h) => h.label));
+    if (r.status === "none") return { status: "none" };
+    if (r.status === "ambiguous") return { status: "ambiguous", candidates: r.candidates, basis: "学区の形" };
+    const code = list.find((h) => h.label.trim() === r.school)?.code ?? null;
+    // 施設の名前は「長岡市立○○小学校」の形のことがあるので、名前の終わりが一致するものも当てる。同じ市区町村の学校を、名前がそのまま当たるものから近い順に
+    const [hit] = await sql<{ distance_m: number }[]>`
+      select extensions.st_distance(geog, ${pt}) as distance_m from facilities
+      where kind = ${facilityKind} and (${code}::text is null or attrs ->> 'city_code' = ${code})
+        and (name = ${r.school} or name like ${"%" + r.school})
+      order by (name = ${r.school}) desc, geog operator(extensions.<->) ${pt}
+      limit 1
+    `;
+    return { status: "decided", school: r.school, distance_m: hit ? Number(hit.distance_m) : null, basis: "学区の形" };
+  };
+  return { elementary: await one("小学校区", "小学校"), juniorHigh: await one("中学校区", "中学校") };
 }
 
 /** 周りの施設（L）。3km以内をまとめて取り、種類ごとに1km以内の一覧と3km以内の最寄りに分ける */
@@ -450,7 +481,7 @@ async function collectTransport(sql: Sql, pt: Point, ward: string | null) {
 
 /** エリア（A）。町と区の統計、将来推計人口のメッシュ */
 async function collectArea(sql: Sql, pt: Point, town: TownInfo | null): Promise<AreaInput> {
-  const empty: AreaInput = { d10Town: null, d10Ward: null, censusTown: {}, censusWard: {}, meshNear: null, meshWard: null };
+  const empty: AreaInput = { censusTown: {}, censusWard: {}, meshNear: null, meshWard: null };
   const meshSum = (where: Point) => sql<{ n: number; t25: string | null; t35: string | null; k25: string | null; k35: string | null }[]>`
     select count(*)::int as n,
       sum((population -> '2025' ->> '総数')::numeric) as t25, sum((population -> '2035' ->> '総数')::numeric) as t35,
@@ -463,28 +494,28 @@ async function collectArea(sql: Sql, pt: Point, town: TownInfo | null): Promise<
   const [near] = await meshSum(sql`extensions.st_dwithin(extensions.st_centroid(geom)::extensions.geography, ${pt}, ${NEAR_M})`);
   if (!town) return { ...empty, meshNear: toTotals(near) };
 
-  const d10Key = `${town.ward}:${toD10TownName(town.name)}`;
+  // 比べる相手は、新潟市の町なら区、それ以外は市町村（国勢調査の area_stats では、区は「区」、市町村は「市」の段階。どちらも area_key は ward の名前）
+  // 町名別5歳階級人口（D10）は新潟市だけで、ほかの市町村とそろわないため使わない（2026-11-12 小林さんと決定）
   const [stats, [wardMesh]] = await inOrder(
     () => sql<{ dataset_id: string; area_level: string; metric: string; value: string | null }[]>`
       select dataset_id, area_level, metric, value from area_stats
-      where (area_level = '町' and area_key in (${town.key_code}, ${d10Key})) or (area_level = '区' and area_key = ${town.ward})
+      where dataset_id in ('D05', 'D06', 'D07', 'D08')
+        and ((area_level = '町' and area_key = ${town.key_code}) or (area_level in ('区', '市') and area_key = ${town.ward}))
     `,
     () => meshSum(sql`population ->> '市区町村コード' = ${town.city_code}`),
   );
-  const pick = (dataset: string, level: string): MetricMap | null => {
-    const rows = stats.filter((s) => s.dataset_id === dataset && s.area_level === level);
+  const pick = (dataset: string, levels: string[]): MetricMap | null => {
+    const rows = stats.filter((s) => s.dataset_id === dataset && levels.includes(s.area_level));
     return rows.length ? Object.fromEntries(rows.map((r) => [r.metric, r.value === null ? null : Number(r.value)])) : null;
   };
-  const census = (level: string) =>
+  const census = (levels: string[]) =>
     Object.fromEntries(["D05", "D06", "D07", "D08"].flatMap((ds) => {
-      const m = pick(ds, level);
+      const m = pick(ds, levels);
       return m ? [[ds, m]] : [];
     }));
   return {
-    d10Town: pick("D10", "町"),
-    d10Ward: pick("D10", "区"),
-    censusTown: census("町"),
-    censusWard: census("区"),
+    censusTown: census(["町"]),
+    censusWard: census(["区", "市"]),
     meshNear: toTotals(near),
     meshWard: toTotals(wardMesh),
   };

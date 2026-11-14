@@ -2,9 +2,9 @@ import { decode, parseCsv } from "../lib/files";
 import { insertFacilities, type FacilityRow } from "../lib/facilities";
 import { defineJob, insertRows } from "../lib/runner";
 
-// D21・D22・D23 新潟市オープンデータ（GISデータの CSV、UTF-8）
+// D21・D22 新潟市オープンデータ（GISデータの CSV、UTF-8）
 // npm run ingest -- niigata-od
-// data/raw/niigata-od/ に、放課後児童クラブ・公園・緑地・図書館の CSV を置く（ファイル名は市のページのまま）
+// data/raw/niigata-od/ に、放課後児童クラブ・公園・緑地の CSV を置く（ファイル名は市のページのまま）
 // 列は longitude, latitude, SAUID, SAFIELD000〜。SAFIELD の中身は CSV ごとに違うので、下の表で決める
 // 時点は市のページの最終更新日（2026-10-25 に小林さんが確認）：放課後児童クラブ 2017-03-14、公園・緑地 2019-12-09、図書館 2019-01-31
 
@@ -23,8 +23,8 @@ interface Source {
 const SOURCES: Source[] = [
   { dataset: "D21", kind: "放課後児童クラブ", file: /放課後児童クラブ.*\.csv$/, hint: "放課後児童クラブ.csv", name: 0, address: 2, extra: { 3: "電話" } },
   { dataset: "D22", kind: "公園", file: /公園.*\.csv$/, hint: "公園・緑地.csv", name: 0, address: 1, extra: { 2: "面積_㎡" } },
-  { dataset: "D23", kind: "図書館", file: /図書館.*\.csv$/, hint: "図書館.csv", name: 0, address: 1, extra: { 2: "電話", 3: "区", 4: "延床面積_㎡" } },
 ];
+// D23 図書館は県全体にしたため、d23-libraries（data/manual/図書館.csv）で入れる（2026-11-14）。ここに戻すと D23 が新潟市の分だけで上書きされる
 
 export const niigataOd = defineJob({
   datasets: SOURCES.map((s) => s.dataset),

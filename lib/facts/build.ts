@@ -18,6 +18,7 @@ import {
   type NearbyItem,
 } from "./format";
 import { numberFacts, type Fact, type FactCategory, type FactDraft, type FactStatus } from "./types";
+import { ZONE_RULE_DATASETS, zoneRuleCity } from "./school-zones";
 
 // ---- 入力の形 ----
 
@@ -104,9 +105,12 @@ interface LandPriceInput {
 }
 
 /** basis：何で照らし合わせたか（物件の位置の町丁目か、入力の住所か） */
+/** 学区の決め方。位置・住所：新潟市の通学区域一覧（D14）と照合。学区の形：新潟市以外で、物件の位置が入る国土数値情報の学区（D12・D13） */
+export type SchoolBasis = "位置" | "住所" | "学区の形";
+
 export type SchoolInput =
-  | { status: "decided"; school: string; distance_m: number | null; basis: "位置" | "住所" }
-  | { status: "ambiguous"; candidates: string[]; basis: "位置" | "住所" }
+  | { status: "decided"; school: string; distance_m: number | null; basis: SchoolBasis }
+  | { status: "ambiguous"; candidates: string[]; basis: SchoolBasis }
   | { status: "none" };
 
 export interface NearbyKindInput {
@@ -157,10 +161,7 @@ export interface MeshTotals {
 }
 
 export interface AreaInput {
-  /** 町名別5歳階級人口（D10）の町と区。町が見つからなければ null */
-  d10Town: MetricMap | null;
-  d10Ward: MetricMap | null;
-  /** 国勢調査（D05〜D08）の町と区。キーは dataset_id */
+  /** 国勢調査（D05〜D08）の町と、比べる相手（新潟市は区、それ以外は市町村）。キーは dataset_id */
   censusTown: Record<string, MetricMap>;
   censusWard: Record<string, MetricMap>;
   meshNear: MeshTotals | null;
@@ -582,15 +583,14 @@ function range5(from: number, to: number, fmt: (a: number) => string): string[] 
   return out;
 }
 
-const D10_AGE = (a: number) => `${a}〜${a + 4}歳`;
 const D05_AGE = (a: number) => `総数${a}～${a + 4}歳`;
 
-/** 年齢の区切り。D10（町名別5歳階級人口）と、町が見つからないときに使う D05（国勢調査） */
-const AGE_GROUPS: { label: string; d10: string[]; d05: string[] }[] = [
-  { label: "0〜14歳", d10: range5(0, 10, D10_AGE), d05: ["総数15歳未満"] },
-  { label: "20〜39歳", d10: range5(20, 35, D10_AGE), d05: range5(20, 35, D05_AGE) },
-  { label: "40〜59歳", d10: range5(40, 55, D10_AGE), d05: range5(40, 55, D05_AGE) },
-  { label: "65歳以上", d10: [...range5(65, 110, D10_AGE), "115歳〜"], d05: ["総数65歳以上"] },
+/** 年齢の区切り（国勢調査 D05 の列） */
+const AGE_GROUPS: { label: string; d05: string[] }[] = [
+  { label: "0〜14歳", d05: ["総数15歳未満"] },
+  { label: "20〜39歳", d05: range5(20, 35, D05_AGE) },
+  { label: "40〜59歳", d05: range5(40, 55, D05_AGE) },
+  { label: "65歳以上", d05: ["総数65歳以上"] },
 ];
 
 function areaFacts(c: Collected): FactDraft[] {
@@ -600,23 +600,21 @@ function areaFacts(c: Collected): FactDraft[] {
   const out: FactDraft[] = [];
   out.push(fact("A", "物件のある町", t ? `${t.ward} ${t.name}` : null, sourcesOf(c, ["D39"])));
 
-  // 年齢構成：町名別5歳階級人口（新しい）を使い、町が見つからなければ国勢調査
-  const useD10 = a.d10Town !== null && sum(a.d10Town, ["人口計"]) !== null;
-  const ageSrc = useD10 ? sourcesOf(c, ["D10"]) : sourcesOf(c, ["D05"]);
-  if (useD10) {
-    const pop = sum(a.d10Town, ["人口計"]);
-    const hh = sum(a.d10Town, ["世帯数"]);
-    const wp = sum(a.d10Ward, ["人口計"]);
-    const wh = sum(a.d10Ward, ["世帯数"]);
-    out.push(
-      fact("A", "町の人口と世帯数", pop !== null ? `${formatNumber(pop)}人・${hh !== null ? `${formatNumber(hh)}世帯` : "世帯数不明"}` : null, ageSrc, {
-        比較: wp !== null ? `${ward} ${formatNumber(wp)}人・${wh !== null ? `${formatNumber(wh)}世帯` : "世帯数不明"}` : undefined,
-      }),
-    );
-  }
+  // 人口・世帯数と年齢構成：国勢調査（D05・D06）。比べる相手は、新潟市の町なら区、それ以外は市町村
+  // 新潟市の町名別5歳階級人口（D10）は新しいが新潟市だけのため、県内の物件をそろえて比べられるよう使わない（2026-11-12 小林さんと決定）
+  const pop = sum(a.censusTown.D05, ["総数、年齢「不詳」含む"]);
+  const hh = sum(a.censusTown.D06, ["一般世帯総数"]);
+  const wp = sum(a.censusWard.D05, ["総数、年齢「不詳」含む"]);
+  const wh = sum(a.censusWard.D06, ["一般世帯総数"]);
+  out.push(
+    fact("A", "町の人口と世帯数", pop !== null ? `${formatNumber(pop)}人・${hh !== null ? `${formatNumber(hh)}世帯` : "世帯数不明"}` : null, sourcesOf(c, ["D05", "D06"]), {
+      比較: wp !== null ? `${ward} ${formatNumber(wp)}人・${wh !== null ? `${formatNumber(wh)}世帯` : "世帯数不明"}` : undefined,
+    }),
+  );
+  const ageSrc = sourcesOf(c, ["D05"]);
   for (const g of AGE_GROUPS) {
-    const town = useD10 ? ratio(a.d10Town, g.d10, "人口計") : ratio(a.censusTown.D05, g.d05, "総数、年齢「不詳」含む");
-    const wardV = useD10 ? ratio(a.d10Ward, g.d10, "人口計") : ratio(a.censusWard.D05, g.d05, "総数、年齢「不詳」含む");
+    const town = ratio(a.censusTown.D05, g.d05, "総数、年齢「不詳」含む");
+    const wardV = ratio(a.censusWard.D05, g.d05, "総数、年齢「不詳」含む");
     out.push(fact("A", `${g.label}の割合`, town !== null ? formatPct(town) : null, ageSrc, { 比較: wardV !== null ? `${ward} ${formatPct(wardV)}` : undefined }));
   }
 
@@ -671,9 +669,13 @@ function areaFacts(c: Collected): FactDraft[] {
 // ---- S 学区 ----
 
 function schoolFact(c: Collected, label: string, s: SchoolInput): FactDraft {
-  const base = sourcesOf(c, ["D14"]);
+  // 通学区域一覧のある市は一覧（新潟市 D14・長岡市 D41・燕市 D42）、それ以外の市町村は国土数値情報の学区（小学校区 D12・中学校区 D13）
+  const ruleCity = c.town === null ? "15100" : zoneRuleCity(c.town.city_code);
+  const byDistrict = s.status === "none" ? ruleCity === null : s.basis === "学区の形";
+  const base = sourcesOf(c, [byDistrict ? (label === "小学校区" ? "D12" : "D13") : ZONE_RULE_DATASETS[ruleCity ?? "15100"]]);
   if (s.status === "none") return fact("S", label, null, base);
-  const src = { ...base, 出典: `${base.出典}（${s.basis === "位置" ? "物件の位置の町丁目" : "入力の住所"}で照合）` };
+  const how = s.basis === "位置" ? "物件の位置の町丁目で照合" : s.basis === "住所" ? "入力の住所で照合" : "物件の位置が入る学区で判定";
+  const src = { ...base, 出典: `${base.出典}（${how}）` };
   if (s.status === "ambiguous") return fact("S", label, `候補：${s.candidates.join("、")}`, src, { 状態: "要確認" });
   return fact("S", label, s.distance_m !== null ? `${s.school}（物件から${formatDistance(s.distance_m)}）` : s.school, src);
 }
@@ -693,10 +695,32 @@ export const NO_WARD_COMPARE = new Set(["小学校", "中学校", "保育園", "
 const OLD_DATA_DATASETS = new Set(["D21"]);
 const OLD_DATA_YEARS = 5;
 
+/**
+ * 一部の市町村の分しか無いデータ（データの番号 → 入っている市町村のコードの頭）
+ * 新潟市オープンデータ（D21 放課後児童クラブ・D22 公園）は新潟市の分だけ。新潟市以外の物件で「0件」と書くと
+ * 「無い」と誤って伝わるため、その種類のデータがすべてこれに当たり、物件の市町村が入っていなければ「取得できず」にする（2026-11-12）
+ * 県全体のデータ（Overture の公園など）が加われば、その種類は普通に数える
+ * D23 図書館は県全体にしたので外した（2026-11-14、scripts/ingest/jobs/d23-libraries.ts）
+ */
+const PARTIAL_AREA_DATASETS: Record<string, { cityPrefix: string; area: string }> = {
+  D21: { cityPrefix: "151", area: "新潟市" },
+  D22: { cityPrefix: "151", area: "新潟市" },
+};
+
+/** その種類のデータが、物件の市町村を含まないか（含まないなら「取得できず」にする）。町が分からないときは判断しない */
+export function outsideDataArea(datasetIds: string[], cityCode: string | null): string | null {
+  if (cityCode === null || datasetIds.length === 0) return null;
+  const areas = datasetIds.map((id) => PARTIAL_AREA_DATASETS[id]);
+  if (areas.some((a) => a === undefined || cityCode.startsWith(a.cityPrefix))) return null;
+  return [...new Set(areas.map((a) => a!.area))].join("・");
+}
+
 function nearbyFact(c: Collected, f: NearbyKindInput): FactDraft {
   const ward = c.town?.ward;
   const compare = f.wardAverage !== null && ward && !NO_WARD_COMPARE.has(f.label);
   const src = sourcesOf(c, f.datasetIds);
+  const area = outsideDataArea(f.datasetIds, c.town?.city_code ?? null);
+  if (area) return fact("L", `${f.label}（1km以内）`, null, { ...src, 出典: `${src.出典}（${area}の分だけのデータ）` });
   const year = Number(src.時点.slice(0, 4));
   const old = f.datasetIds.some((id) => OLD_DATA_DATASETS.has(id)) && Number.isFinite(year) && Number(c.today.slice(0, 4)) - year >= OLD_DATA_YEARS;
   return fact("L", `${f.label}（1km以内）`, formatNearby(f.within1km, f.nearest3km), src, {

@@ -7,6 +7,7 @@
 // 取り込みの一覧と件数・時点：npm run ingest -- status
 // 洪水（a31a-flood）は図形をまとめるのにメモリを 5GB 以上使うので、package.json で Node.js のメモリの上限を 10GB にしている
 // 大規模小売店舗の判定の確認用 CSV：npm run ingest -- d29-review
+// 図書館の CSV の下書き（XKT017 から）：npm run ingest -- d23-review。取り込みは d23-libraries（data/manual/図書館.csv）
 // 区内の町の平均件数の計算：npm run ingest -- ward-averages
 // データの行を消して表を詰める（大きなデータを入れ直す前に）：npm run ingest -- clear D31
 import { parseArgs } from "node:util";
@@ -16,16 +17,21 @@ import { d05Census } from "./jobs/d05-census";
 import { d39Towns } from "./jobs/d39-towns";
 import { a31aFlood, a33Landslide, a40Tsunami, a54Embankment } from "./jobs/ksj-zones";
 import { iryou } from "./jobs/iryou";
+import { overture } from "./jobs/overture";
 import { niigataOd, niigataPopulation } from "./jobs/niigata-od";
 import { n02Stations, p05Offices, p11BusStops, p14Childcare, p29Schools } from "./jobs/ksj-facilities";
 import { landPrices, mesh250 } from "./jobs/ksj-prices-mesh";
 import { osm } from "./jobs/osm";
 import { d29LargeStores, writeReviewCsv } from "./jobs/d29-large-stores";
+import { d23Libraries, writeLibraryDraft } from "./jobs/d23-libraries";
 import { d14SchoolZones } from "./jobs/d14-school-zones";
+import { d41NagaokaSchoolZones } from "./jobs/d41-nagaoka-school-zones";
+import { d42TsubameSchoolZones } from "./jobs/d42-tsubame-school-zones";
 import { buyers } from "./jobs/buyers";
 import { computeWardAverages } from "./ward-averages";
 import { clearDataset } from "./clear";
 import { d04Zoning, d35Liquefaction } from "./jobs/xkt-zones";
+import { a27SchoolDistricts, a32SchoolDistricts } from "./jobs/ksj-school-districts";
 import { runIngest, type IngestJob } from "./lib/runner";
 
 const jobs: Record<string, IngestJob<unknown>> = {
@@ -41,6 +47,7 @@ const jobs: Record<string, IngestJob<unknown>> = {
   "p11-bus-stops": p11BusStops,
   "niigata-od": niigataOd,
   iryou,
+  overture,
   "a31a-flood": a31aFlood,
   "a33-landslide": a33Landslide,
   "a40-tsunami": a40Tsunami,
@@ -50,7 +57,12 @@ const jobs: Record<string, IngestJob<unknown>> = {
   "niigata-population": niigataPopulation,
   osm,
   "d29-large-stores": d29LargeStores,
+  "d23-libraries": d23Libraries,
   "d14-school-zones": d14SchoolZones,
+  "d41-nagaoka-school-zones": d41NagaokaSchoolZones,
+  "d42-tsubame-school-zones": d42TsubameSchoolZones,
+  "a27-school-districts": a27SchoolDistricts,
+  "a32-school-districts": a32SchoolDistricts,
   buyers,
 };
 
@@ -74,6 +86,8 @@ async function main() {
   if (name === "status") return status();
   // 大規模小売店舗の判定の確認用 CSV を書き出す（DB は使わない）
   if (name === "d29-review") return console.log(writeReviewCsv());
+  // 図書館の CSV の下書きを XKT017 から書き出す（DB は町の境界と API のアクセスログに使う。facilities には入れない）
+  if (name === "d23-review") return console.log(await writeLibraryDraft(getSql(), rest.includes("refresh")));
   // データの行を消して表を詰める（大きなデータを入れ直す前に。例：clear D31）
   if (name === "clear") {
     const id = rest[0];

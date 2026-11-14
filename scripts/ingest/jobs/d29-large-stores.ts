@@ -35,6 +35,16 @@ const RAW_DIR = "niigata-pref";
 const SAME_STORE_M = 500;
 const REVIEW_CSV = "大規模小売店舗_判定.csv";
 type StoreType = "スーパー" | "ドラッグストア";
+/** 判定の CSV に書ける判定。「スーパー／ドラッグストア」は両方の種類として足す（食品も売るドラッグストアなど） */
+type Judgement = StoreType | "スーパー／ドラッグストア";
+const BOTH = "スーパー／ドラッグストア" as const;
+/** 判定 → 足す種類 */
+export function kindsOf(t: Judgement | null): StoreType[] {
+  if (t === null) return [];
+  return t === BOTH ? ["スーパー", "ドラッグストア"] : [t];
+}
+/** 「位置を出す住所」にこう書いた店は、閉店しているので入れない */
+const CLOSED = "閉店";
 
 interface Fragment {
   x: number;
@@ -136,8 +146,41 @@ export function buildRows(pages: Fragment[][]): Record<string, string>[] {
 /** 住所を住所検索に渡せる形にする。市町村名が無ければ足し、「外」「ほか」などを外す */
 export function addressForSearch(city: string, address: string): string {
   let a = address.replace(/\s/g, "").replace(/(外|ほか|他)(\d*筆)?$/, "");
-  if (!a.startsWith("新潟県") && !a.startsWith(city)) a = `${city}${a}`;
+  // 郡から書いた住所（西蒲原郡弥彦村…）は市町村が入っているので、市町村を足さない
+  const withCounty = /^[^郡]+郡/.test(a) && a.replace(/^[^郡]+郡/, "").startsWith(city);
+  if (!a.startsWith("新潟県") && !a.startsWith(city) && !withCounty) a = `${city}${a}`;
   return a;
+}
+
+/**
+ * CSV の「位置を出す住所」を検索に渡せる形にする。手で書いた住所なので、
+ * 郵便番号（〒950-8589）と、空白のあとの注記（「道の駅 新潟ふるさと村」「原信豊栄店内」など）を除き、
+ * 文字化けで「?」になったハイフン（数字と数字の間）を「－」に戻す
+ */
+export function cleanSearchAddress(address: string): string {
+  return address
+    .trim()
+    .replace(/^〒?\s*[0-9０-９]{3}[-－−‐ー][0-9０-９]{4}\s*/, "")
+    .split(/\s+/)[0]
+    .replace(/(?<=[0-9０-９])[?？](?=[0-9０-９])/g, "－");
+}
+
+// 県内の市町村（郡は付けても付けなくてもよい）と、新潟市の区
+const MUNICIPALITIES = [
+  "新潟市", "長岡市", "三条市", "柏崎市", "新発田市", "小千谷市", "加茂市", "十日町市", "見附市", "村上市",
+  "燕市", "糸魚川市", "妙高市", "五泉市", "上越市", "阿賀野市", "佐渡市", "魚沼市", "南魚沼市", "胎内市",
+  "聖籠町", "弥彦村", "田上町", "阿賀町", "出雲崎町", "湯沢町", "津南町", "刈羽村", "関川村", "粟島浦村",
+];
+const NIIGATA_WARDS = ["北区", "東区", "中央区", "江南区", "秋葉区", "南区", "西区", "西蒲区"];
+const COARSE_HIT = new RegExp(`^新潟県(?:[^郡]+郡)?(?:${MUNICIPALITIES.join("|")})(?:${NIIGATA_WARDS.join("|")})?$`);
+
+/**
+ * 住所検索が市町村か区までしか当たらなかったか（例：「新潟県新潟市」「新潟県新潟市中央区」）
+ * その位置は市役所・区役所などの代表点で、店から何kmも離れる。使うと遠くの店が「1km以内」に数えられるので、位置を出せなかった店にする
+ * （2026-11-12 に、県の PDF の新潟市の所在地に区が無く、147店が新潟市役所の位置に集まっていたのが見つかった）
+ */
+export function isCoarseHit(title: string): boolean {
+  return COARSE_HIT.test(title.replace(/\s/g, ""));
 }
 
 interface Store {
@@ -146,6 +189,8 @@ interface Store {
   city: string;
   name: string;
   address: string;
+  /** 位置を出すのに使う住所（確認用の CSV の「位置を出す住所」。空なら所在地を使う） */
+  searchAddress?: string | null;
   areaSqm: number | null;
   tenant: string;
   opened: string;
@@ -153,7 +198,7 @@ interface Store {
   /** チェーン名で決めた判定 */
   auto: StoreType | null;
   /** 使う判定（確認用の CSV があればそれ、無ければ auto） */
-  type: StoreType | null;
+  type: Judgement | null;
   lon: number | null;
   lat: number | null;
   hit: string | null;
@@ -247,6 +292,9 @@ function readdirPdf(dir: string): string | null {
 /**
  * npm run ingest -- d29-review：判定の確認用の CSV を書き出す（Excel で開ける UTF-8 BOM つき）
  * 小林さんが「判定」の列を「スーパー」「ドラッグストア」か空欄に直して保存する。「店舗名」も直せる（DB にはその名前で入る）
+ * 「位置を出す住所」に住所を書くと、所在地の代わりにその住所で位置を出す（区の無い新潟市の住所に区を足すなど）。「閉店」と書いた店は入れない
+ * 「判定」は「スーパー／ドラッグストア」とも書ける（両方の種類として足す）。「主な小売店舗」も直せる
+ * 「所在地」は CSV と PDF の店を突き合わせるのに使うので、直さない
  * 「自動の判定」の列は見比べ用で、使わない
  * すでに CSV があるときは、直した判定を消さないよう、別の名前（…_新.csv）で書き出す
  */
@@ -256,16 +304,24 @@ export function writeReviewCsv(): string {
   const name = existsSync(join(dir, REVIEW_CSV)) ? REVIEW_CSV.replace(/\.csv$/, "_新.csv") : REVIEW_CSV;
   const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = [
-    ["番号", "ページ", "市町村名", "店舗名", "主な小売店舗", "所在地", "店舗面積_㎡", "自動の判定", "判定"].join(","),
-    ...stores.map((s) => [s.no, s.page, s.city, s.name, s.tenant, s.address, s.areaSqm, s.auto, s.auto].map(esc).join(",")),
+    ["番号", "ページ", "市町村名", "店舗名", "主な小売店舗", "所在地", "店舗面積_㎡", "自動の判定", "判定", "位置を出す住所"].join(","),
+    ...stores.map((s) => [s.no, s.page, s.city, s.name, s.tenant, s.address, s.areaSqm, s.auto, s.auto, ""].map(esc).join(",")),
   ];
   writeFileSync(join(dir, name), "﻿" + lines.join("\r\n"));
   const count = (t: StoreType) => stores.filter((s) => s.auto === t).length;
   return `data/raw/${RAW_DIR}/${name} に ${stores.length}店を書き出しました（自動の判定：スーパー ${count("スーパー")}、ドラッグストア ${count("ドラッグストア")}）`;
 }
 
-/** 確認用の CSV の「判定」と「店舗名」（店のキー → 中身）。CSV が無ければ null */
-function readReviewCsv(): Map<string, { type: StoreType | null; name: string }> | null {
+interface Review {
+  type: Judgement | null;
+  name: string;
+  /** 主な小売店舗（CSV で直したもの。空なら PDF のまま） */
+  tenant: string;
+  searchAddress: string | null;
+}
+
+/** 確認用の CSV の「判定」「店舗名」「位置を出す住所」（店のキー → 中身）。CSV が無ければ null */
+function readReviewCsv(): Map<string, Review> | null {
   const path = join(RAW_ROOT, RAW_DIR, REVIEW_CSV);
   if (!existsSync(path)) return null;
   const [header, ...rows] = parseCsv(readFileSync(path, "utf-8").replace(/^﻿/, ""));
@@ -274,12 +330,21 @@ function readReviewCsv(): Map<string, { type: StoreType | null; name: string }> 
     if (i < 0) throw new Error(`${REVIEW_CSV} に「${n}」の列がありません`);
     return i;
   };
-  const [city, name, address, area, type] = ["市町村名", "店舗名", "所在地", "店舗面積_㎡", "判定"].map(col);
-  const map = new Map<string, { type: StoreType | null; name: string }>();
+  const [city, name, tenant, address, area, type] = ["市町村名", "店舗名", "主な小売店舗", "所在地", "店舗面積_㎡", "判定"].map(col);
+  // 「位置を出す住所」は後から足した列なので、無くてもよい
+  const search = header.indexOf("位置を出す住所");
+  const map = new Map<string, Review>();
   for (const r of rows) {
     const t = (r[type] ?? "").trim();
-    if (t !== "" && t !== "スーパー" && t !== "ドラッグストア") throw new Error(`${REVIEW_CSV} の判定は「スーパー」「ドラッグストア」か空欄にしてください（${r[name]}：${t}）`);
-    map.set(storeKey({ city: r[city], address: r[address], areaSqm: r[area] ? Number(r[area]) : null }), { type: (t || null) as StoreType | null, name: r[name].trim() });
+    if (t !== "" && t !== "スーパー" && t !== "ドラッグストア" && t !== BOTH)
+      throw new Error(`${REVIEW_CSV} の判定は「スーパー」「ドラッグストア」「${BOTH}」か空欄にしてください（${r[name]}：${t}）`);
+    const s = search >= 0 ? (r[search] ?? "").trim() : "";
+    map.set(storeKey({ city: r[city], address: r[address], areaSqm: r[area] ? Number(r[area]) : null }), {
+      type: (t || null) as Judgement | null,
+      name: r[name].trim(),
+      tenant: (r[tenant] ?? "").trim(),
+      searchAddress: s === "" ? null : s === CLOSED ? CLOSED : cleanSearchAddress(s),
+    });
   }
   return map;
 }
@@ -296,28 +361,43 @@ export const d29LargeStores = defineJob<Store[]>({
     if (review) {
       const missing = stores.filter((s) => !review.has(storeKey(s)));
       const renamed: string[] = [];
+      const retenanted: string[] = [];
       for (const s of stores) {
         const r = review.get(storeKey(s));
         if (!r) continue;
         s.type = r.type;
+        s.searchAddress = r.searchAddress;
         if (r.name && r.name !== s.name) {
           renamed.push(`${s.name} → ${r.name}`);
           s.name = r.name;
         }
+        if (r.tenant && r.tenant !== s.tenant) {
+          retenanted.push(`${s.name}：${s.tenant} → ${r.tenant}`);
+          s.tenant = r.tenant;
+        }
       }
+      // 閉店した店は入れない
+      const closed = stores.filter((s) => s.searchAddress === CLOSED);
+      check("閉店のため入れない店", closed.map((s) => `${s.city} ${s.name}（${s.address}）`));
+      stores.splice(0, stores.length, ...stores.filter((s) => s.searchAddress !== CLOSED));
+      check("主な小売店舗を直した店", retenanted);
       check("判定の CSV に無く、チェーン名で決めた店", missing.map((s) => `${s.city} ${s.name}`));
       check("判定を直した店", stores.filter((s) => s.type !== s.auto).map((s) => `${s.name}：${s.auto ?? "なし"} → ${s.type ?? "なし"}`));
       check("店舗名を直した店", renamed);
+      check("位置を出す住所を書いた店", stores.filter((s) => s.searchAddress).map((s) => `${s.city} ${s.name}：${s.address} → ${s.searchAddress}`));
       log(`判定は ${REVIEW_CSV} を使います（CSV に無い店 ${missing.length}店はチェーン名で決めます）`);
     } else {
       log(`${REVIEW_CSV} が無いので、判定はチェーン名で決めます（確かめるときは npm run ingest -- d29-review）`);
     }
-    log(`PDF から ${stores.length}店を読みました（スーパー ${stores.filter((s) => s.type === "スーパー").length}、ドラッグストア ${stores.filter((s) => s.type === "ドラッグストア").length}）。住所から位置を出します`);
+    log(`PDF から ${stores.length}店を使います（スーパー ${stores.filter((s) => kindsOf(s.type).includes("スーパー")).length}、ドラッグストア ${stores.filter((s) => kindsOf(s.type).includes("ドラッグストア")).length}）。住所から位置を出します`);
 
     let found = 0;
+    const coarse: string[] = [];
     for (const s of stores) {
-      const hit = await geocodeAddress(addressForSearch(s.city, s.address));
-      if (hit) {
+      const hit = await geocodeAddress(addressForSearch(s.city, s.searchAddress ?? s.address));
+      if (hit && isCoarseHit(hit.title)) {
+        coarse.push(`${s.city} ${s.name}（${s.searchAddress ?? s.address} → ${hit.title}）`);
+      } else if (hit) {
         Object.assign(s, { lon: hit.lon, lat: hit.lat, hit: hit.title });
         found++;
       }
@@ -325,7 +405,9 @@ export const d29LargeStores = defineJob<Store[]>({
     }
     check("PDF から読んだ店", stores.length);
     check("位置を出せた店", found);
-    check("位置を出せなかった店", stores.filter((s) => s.lon === null).map((s) => `${s.city} ${s.name}（${s.address}）`));
+    check("市町村・区までしか当たらず、位置を出さなかった店（CSV の「位置を出す住所」で直す）", coarse);
+    check("位置を出せなかった店", stores.filter((s) => s.lon === null).map((s) => `${s.city} ${s.name}（${s.searchAddress ?? s.address}）`));
+    if (coarse.length) log(`市町村・区までしか当たらなかった ${coarse.length}店は入れません。${REVIEW_CSV} の「位置を出す住所」に区や番地を足した住所を書いて、取り込み直してください`);
     return stores;
   },
 
@@ -369,6 +451,7 @@ export const d29LargeStores = defineJob<Store[]>({
           ? `${s.borrowed.dataset_id === "D28" ? "OSM" : "医療情報ネット"}の同じ店（${s.borrowed.name}）の位置`
           : "住所から推定（国土地理院 住所検索）",
         当たった住所: s.hit,
+        ...(s.searchAddress ? { 位置を出した住所: s.searchAddress } : {}),
         ...(s.geocoded ? { 住所から推定した位置: s.geocoded } : {}),
         ...(kind === "大規模小売店舗" ? { スーパー等の判定: s.type } : { 補った理由: "OSM に同じ種類の店が約200m以内に無い" }),
       },
@@ -380,9 +463,10 @@ export const d29LargeStores = defineJob<Store[]>({
     await insertFacilities(sql, located.map((s) => base(s, "大規模小売店舗")));
 
     // 2. スーパー・ドラッグストアのうち、OSM に同じ種類の店が約200m以内に無いものを足す
-    const candidates = located.filter((s) => s.type !== null);
+    // 「スーパー／ドラッグストア」の店は、種類ごとに1つずつ候補にする
+    const candidates = located.flatMap((s) => kindsOf(s.type).map((kind) => ({ ...s, kind })));
     const near = await sql<{ i: number }[]>`
-      select x.i from jsonb_to_recordset(${sql.json(candidates.map((s, i) => ({ i, kind: s.type, lon: s.lon, lat: s.lat })) as never)})
+      select x.i from jsonb_to_recordset(${sql.json(candidates.map((s, i) => ({ i, kind: s.kind, lon: s.lon, lat: s.lat })) as never)})
         as x(i int, kind text, lon float8, lat float8)
       where exists (
         select 1 from facilities f
@@ -392,8 +476,8 @@ export const d29LargeStores = defineJob<Store[]>({
     `;
     const nearSet = new Set(near.map((r) => r.i));
     const added = candidates.filter((_, i) => !nearSet.has(i));
-    await insertFacilities(sql, added.map((s) => base(s, s.type!)));
+    await insertFacilities(sql, added.map((s) => base(s, s.kind)));
     log(`大規模小売店舗 ${located.length}店を入れ、OSM に無いスーパー・ドラッグストア ${added.length}店を足しました（候補 ${candidates.length}店）`);
-    check("OSM に無いため足した店", added.map((s) => `${s.type}：${s.city} ${s.name}`));
+    check("OSM に無いため足した店", added.map((s) => `${s.kind}：${s.city} ${s.name}`));
   },
 });

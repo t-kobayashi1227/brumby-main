@@ -14,7 +14,7 @@ import { defineJob, type PrepareContext } from "../lib/runner";
 // 座標は JGD2011 の緯度経度（.prj で確認）。WGS84 と同じに扱う
 //
 // 範囲：DB の容量（Supabase の無料枠 500MB）のため、洪水・土砂・津波は新潟市にかかる区域だけを入れる（PoC の対象）
-// 県全体を入れるときは area=pref を付ける。盛土は小さい（県で185区域）ので、いつも県全体を入れる
+// 県全体を入れるときは area=pref を付ける（新潟県の町の範囲で切る。北陸地方整備局の zip には他の県の川も入っているため）。盛土は小さい（県で185区域）ので、いつも県全体を入れる
 //
 // 洪水と津波は、元のデータが数十mのます目の集まりで、新潟市の範囲だけでも洪水は約39万区域ある（2026-10-25）
 // そのまま DB に送ると20分以上かかり、容量も足りない。そこで手元で mapshaper を使い、
@@ -26,6 +26,7 @@ import { defineJob, type PrepareContext } from "../lib/runner";
 // コードの意味は国土数値情報のコードリストで 2026-10-25 に確かめた
 
 const CITY_PREFIX = "151"; // 新潟市（区の市区町村コード 15101〜15108）
+const PREF_PREFIX = "15"; // 新潟県（area=pref のとき。北陸地方整備局の洪水の zip には富山県などの川も入っているため、県の範囲で切る）
 const SIMPLIFY_M = 10; // 輪郭を単純にするときの精度（m）
 const TILE_DEG = 0.01; // まとめる枠の大きさ（度）。新潟では約0.9km（東西）×1.1km（南北）
 
@@ -37,7 +38,8 @@ interface ZoneRow {
 
 interface Prepared {
   rows: ZoneRow[];
-  cityOnly: boolean;
+  /** 残す切れ端の範囲（町の市区町村コードの先頭）。null は絞らない */
+  within: string | null;
 }
 
 type Bbox = [number, number, number, number];
@@ -60,16 +62,16 @@ function bboxOf(geometry: Geometry): Bbox {
 
 const overlaps = (a: Bbox, b: Bbox) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
 
-/** 新潟市の範囲（町の境界から）。area=pref のときは null（絞らない） */
-async function areaBbox({ sql, args }: PrepareContext): Promise<Bbox | null> {
-  if (args.area === "pref") return null;
-  if (args.area !== undefined && args.area !== "city") throw new Error("area は city（新潟市、既定）か pref（県全体）です");
+/** 取り込む範囲（町の境界から）。既定は新潟市、area=pref は新潟県。範囲の四角と、残す町の市区町村コードの先頭を返す */
+async function areaBbox({ sql, args }: PrepareContext): Promise<{ bbox: Bbox; within: string }> {
+  if (args.area !== undefined && args.area !== "city" && args.area !== "pref") throw new Error("area は city（新潟市、既定）か pref（県全体）です");
+  const within = args.area === "pref" ? PREF_PREFIX : CITY_PREFIX;
   const [b] = await sql<{ w: number; s: number; e: number; n: number }[]>`
     select extensions.st_xmin(e) as w, extensions.st_ymin(e) as s, extensions.st_xmax(e) as e, extensions.st_ymax(e) as n
-    from (select extensions.st_extent(geom) as e from towns where city_code like ${CITY_PREFIX + "%"}) t
+    from (select extensions.st_extent(geom) as e from towns where city_code like ${within + "%"}) t
   `;
   if (b?.w == null) throw new Error("町の境界（towns）がありません。先に npm run ingest -- d39-towns を動かしてください");
-  return [b.w, b.s, b.e, b.n];
+  return { bbox: [b.w, b.s, b.e, b.n], within };
 }
 
 /** zip の中の、名前が pattern に合う .shp と .dbf を取り出す（zip 全体は展開しない）。名前はフォルダを除いたもの */
@@ -81,6 +83,24 @@ function shapefileParts(zips: Uint8Array[], pattern: RegExp): Record<string, Uin
   }
   if (!Object.keys(out).some((n) => /\.shp$/i.test(n))) throw new Error(`zip の中に ${pattern} に合う Shapefile がありません`);
   return out;
+}
+
+/** Shapefile（.shp）の先頭に書かれた、ファイル全体の範囲 [西, 南, 東, 北]（ヘッダーの 36〜68 バイト目） */
+export function shpBbox(shp: Uint8Array): Bbox {
+  const view = new DataView(shp.buffer, shp.byteOffset, shp.byteLength);
+  return [view.getFloat64(36, true), view.getFloat64(44, true), view.getFloat64(52, true), view.getFloat64(60, true)];
+}
+
+/** zip の中の、名前が pattern に合う .shp の名前の一覧（展開はしない）。名前は zip の中のパスのまま */
+function shpNamesInZip(zip: Uint8Array, pattern: RegExp): string[] {
+  const names: string[] = [];
+  unzipSync(zip, {
+    filter: (f) => {
+      if (pattern.test(f.name) && /\.shp$/i.test(f.name)) names.push(f.name);
+      return false;
+    },
+  });
+  return names.sort();
 }
 
 /**
@@ -125,9 +145,9 @@ async function* shapefilesInZip(zip: Uint8Array, pattern: RegExp, encoding: stri
 
 /**
  * 区域を zones に入れる。大きな図形は ST_Subdivide で切れ端に分けて、切れ端ごとに1行にする（ラベルと属性は同じ）
- * cityOnly のときは、新潟市の町に重なる切れ端だけを残す。入れた区域の数と行の数を返す
+ * within があるときは、その範囲（新潟市・新潟県）の町に重なる切れ端だけを残す。入れた区域の数と行の数を返す
  */
-async function insertZones(sql: Sql, dataset: string, kind: string, rows: ZoneRow[], cityOnly: boolean, log: (m: string) => void, maxVertices: number) {
+async function insertZones(sql: Sql, dataset: string, kind: string, rows: ZoneRow[], within: string | null, log: (m: string) => void, maxVertices: number) {
   // 洪水のようにまとめた区域は1つで数MBあり、全部を1つの命令で処理すると DB の時間制限（10分）を超える（2026-10-25）
   // そこで約1MBずつに分けて送り、命令を分ける。一番大きい形（阿賀野川、約4.6MB）でも1つの命令で約70秒
   const BATCH_BYTES = 1_000_000;
@@ -165,8 +185,8 @@ async function insertZones(sql: Sql, dataset: string, kind: string, rows: ZoneRo
       )
       insert into zones (dataset_id, kind, label, attrs, geom)
       select ${dataset}, ${kind}, label, attrs || jsonb_build_object('区域の通し番号', n), geom from pieces
-      where not ${cityOnly} or exists (
-        select 1 from towns t where t.city_code like ${CITY_PREFIX + "%"} and extensions.st_intersects(t.geom, pieces.geom)
+      where ${within === null} or exists (
+        select 1 from towns t where t.city_code like ${(within ?? "") + "%"} and extensions.st_intersects(t.geom, pieces.geom)
       )
       returning (attrs->>'区域の通し番号')::int as n
     `;
@@ -181,7 +201,7 @@ async function insertZones(sql: Sql, dataset: string, kind: string, rows: ZoneRo
  * 洪水・津波は 1024（256 だと洪水だけで約15万行・約150MB になり、無料枠 500MB に近づいた。2026-10-25）
  */
 async function loadZones(ctx: { sql: Sql; prepared: Prepared; log: (m: string) => void; check: (k: string, v: unknown) => void }, dataset: string, kind: string, maxVertices = 256) {
-  const { areas, pieces } = await insertZones(ctx.sql, dataset, kind, ctx.prepared.rows, ctx.prepared.cityOnly, ctx.log, maxVertices);
+  const { areas, pieces } = await insertZones(ctx.sql, dataset, kind, ctx.prepared.rows, ctx.prepared.within, ctx.log, maxVertices);
   ctx.log(`${kind}：${areas}区域を、${pieces}行（切れ端）に分けて入れました`);
   ctx.check("入れた区域", areas);
   ctx.check("行（切れ端）の数", pieces);
@@ -209,30 +229,53 @@ export const a31aFlood = defineJob<Prepared>({
 
   async prepare(ctx) {
     const { raw, log, check } = ctx;
-    const bbox = await areaBbox(ctx);
+    const { bbox, within } = await areaBbox(ctx);
     const zips = raw.findAll(/\.zip$/i, "国土数値情報 洪水浸水想定区域（A31a、2025、新潟）の zip");
     log(`${zips.map((z) => z.name).join("、")} から想定最大規模の区域をまとめます（数分かかります）`);
     // 15 は新潟県が管理する川、84 は北陸地方整備局（国）が管理する川（信濃川・阿賀野川など。富山県などの川も入っているが、範囲で切る）
-    const parts = shapefileParts(
-      zips.map((z) => z.body),
-      /A31a-20-\d+_(15|84)_\w+\.(shp|dbf)$/i,
-    );
-    const { features, files } = await dissolve(parts, { encoding: "shift_jis", bbox, fields: ["A31a_201", "A31a_202", "A31a_205"], splitBy: "A31a_201" });
-    const rows: ZoneRow[] = features.map((f) => {
-      const p = f.properties;
-      const label = DEPTH_RANK[String(p.A31a_205)];
-      if (!label) throw new Error(`知らない浸水深ランクです：${p.A31a_205}`);
-      return {
-        label,
-        // 行が多いので、属性は事実に使うものだけにする（想定最大規模であること・輪郭の精度は、このファイルの説明と datasets に書く）
-        attrs: { 河川名: p.A31a_202, 河川番号: p.A31a_201, 浸水深ランク: Number(p.A31a_205) },
-        geojson: JSON.stringify(f.geometry),
-      };
-    });
-    log(`河川のファイル ${files}個から、「河川×浸水深×約1km四方の枠」の区域 ${rows.length}個にまとめました`);
+    // 全部の川を一度に展開・まとめると、県全体ではメモリ（10GB）が足りない（2026-11-11 に約1時間で止まった）
+    // そこで川のファイルを1つずつ展開してまとめる。ファイル全体の範囲が取り込む範囲に重ならない川（他の県の川）は、読まずに飛ばす
+    const pattern = /A31a-20-\d+_(15|84)_\w+\.shp$/i;
+    const targets = zips.flatMap((z) => shpNamesInZip(z.body, pattern).map((name) => ({ zip: z.body, name })));
+    if (targets.length === 0) throw new Error(`zip の中に ${pattern} に合う Shapefile がありません`);
+    const rows: ZoneRow[] = [];
+    let files = 0;
+    let skipped = 0;
+    const started = Date.now();
+    for (const [i, t] of targets.entries()) {
+      const base = t.name.replace(/\.shp$/i, "");
+      const parts = unzipSync(t.zip, { filter: (f) => f.name === t.name || f.name.toLowerCase() === `${base}.dbf`.toLowerCase() });
+      const shp = parts[t.name];
+      const dbfName = Object.keys(parts).find((n) => /\.dbf$/i.test(n));
+      if (!shp || !dbfName) continue;
+      if (!overlaps(shpBbox(shp), bbox)) {
+        skipped++;
+        continue;
+      }
+      const short = (n: string) => n.split(/[\\/]/).pop()!;
+      const { features } = await dissolve(
+        { [short(t.name)]: shp, [short(dbfName)]: parts[dbfName] },
+        { encoding: "shift_jis", bbox, fields: ["A31a_201", "A31a_202", "A31a_205"], splitBy: "A31a_201" },
+      );
+      for (const f of features) {
+        const p = f.properties;
+        const label = DEPTH_RANK[String(p.A31a_205)];
+        if (!label) throw new Error(`知らない浸水深ランクです：${p.A31a_205}`);
+        rows.push({
+          label,
+          // 行が多いので、属性は事実に使うものだけにする（想定最大規模であること・輪郭の精度は、このファイルの説明と datasets に書く）
+          attrs: { 河川名: p.A31a_202, 河川番号: p.A31a_201, 浸水深ランク: Number(p.A31a_205) },
+          geojson: JSON.stringify(f.geometry),
+        });
+      }
+      files++;
+      if (features.length > 0) log(`${i + 1} / ${targets.length}：${short(t.name)}（${features.length}区域、ここまで ${rows.length}区域・${Math.round((Date.now() - started) / 1000)}秒）`);
+    }
+    log(`河川のファイル ${files}個から（範囲の外の ${skipped}個は飛ばした）、「河川×浸水深×約1km四方の枠」の区域 ${rows.length}個にまとめました`);
     check("河川のファイルの数", files);
+    check("範囲の外で飛ばしたファイルの数", skipped);
     check("まとめた区域", rows.length);
-    return { rows, cityOnly: bbox !== null };
+    return { rows, within };
   },
 
   load: (ctx) => loadZones(ctx, "D31", "洪水浸水想定", 1024),
@@ -259,13 +302,13 @@ export const a33Landslide = defineJob<Prepared>({
 
   async prepare(ctx) {
     const { raw, check } = ctx;
-    const bbox = await areaBbox(ctx);
+    const { bbox, within } = await areaBbox(ctx);
     const zip = raw.find(/\.zip$/i, "国土数値情報 土砂災害警戒区域（A33、2025、新潟）の zip");
     const rows: ZoneRow[] = [];
     let read = 0;
     for await (const f of shapefilesInZip(zip.body, /Polygon\.(shp|dbf)$/i, "shift_jis")) {
       read++;
-      if (bbox && !overlaps(bboxOf(f.geometry), bbox)) continue;
+      if (!overlaps(bboxOf(f.geometry), bbox)) continue;
       const p = f.properties;
       const zone = ZONE[String(p.A33_002)];
       const phenomenon = PHENOMENON[String(p.A33_001)];
@@ -287,7 +330,7 @@ export const a33Landslide = defineJob<Prepared>({
     }
     check("読んだ区域", read);
     check("範囲の四角に入った区域", rows.length);
-    return { rows, cityOnly: bbox !== null };
+    return { rows, within };
   },
 
   load: (ctx) => loadZones(ctx, "D33", "土砂災害警戒区域"),
@@ -303,7 +346,7 @@ export const a40Tsunami = defineJob<Prepared>({
 
   async prepare(ctx) {
     const { raw, log, setAsOf, check } = ctx;
-    const bbox = await areaBbox(ctx);
+    const { bbox, within } = await areaBbox(ctx);
     const zip = raw.find(/\.zip$/i, "国土数値情報 津波浸水想定（A40、新潟）の zip");
     const parts = shapefileParts([zip.body], /A40-\d+_15\.(shp|dbf)$/i);
     const year = /A40-(\d{2})_15/.exec(Object.keys(parts)[0])?.[1];
@@ -317,7 +360,7 @@ export const a40Tsunami = defineJob<Prepared>({
     }));
     log(`「浸水深の区分×約1km四方の枠」ごとに ${rows.length}区域にまとめました`);
     check("まとめた区域", rows.length);
-    return { rows, cityOnly: bbox !== null };
+    return { rows, within };
   },
 
   load: (ctx) => loadZones(ctx, "D34", "津波浸水想定", 1024),
@@ -347,7 +390,7 @@ export const a54Embankment = defineJob<Prepared>({
       });
     }
     check("読んだ区域", rows.length);
-    return { rows, cityOnly: false };
+    return { rows, within: null };
   },
 
   load: (ctx) => loadZones(ctx, "D36", "大規模盛土造成地"),
