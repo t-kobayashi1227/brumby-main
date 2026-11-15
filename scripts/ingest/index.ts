@@ -8,6 +8,7 @@
 // 洪水（a31a-flood）は図形をまとめるのにメモリを 5GB 以上使うので、package.json で Node.js のメモリの上限を 10GB にしている
 // 大規模小売店舗の判定の確認用 CSV：npm run ingest -- d29-review
 // 図書館の CSV の下書き（XKT017 から）：npm run ingest -- d23-review。取り込みは d23-libraries（data/manual/図書館.csv）
+// 放課後児童クラブ：npm run ingest -- d21-clubs（data/manual/放課後児童クラブ.csv）。公園の OSM（新潟市以外）：npm run ingest -- osm-parks
 // 区内の町の平均件数の計算：npm run ingest -- ward-averages
 // データの行を消して表を詰める（大きなデータを入れ直す前に）：npm run ingest -- clear D31
 import { parseArgs } from "node:util";
@@ -24,6 +25,8 @@ import { landPrices, mesh250 } from "./jobs/ksj-prices-mesh";
 import { osm } from "./jobs/osm";
 import { d29LargeStores, writeReviewCsv } from "./jobs/d29-large-stores";
 import { d23Libraries, writeLibraryDraft } from "./jobs/d23-libraries";
+import { d21Clubs } from "./jobs/d21-clubs";
+import { osmParks } from "./jobs/osm-parks";
 import { d14SchoolZones } from "./jobs/d14-school-zones";
 import { d41NagaokaSchoolZones } from "./jobs/d41-nagaoka-school-zones";
 import { d42TsubameSchoolZones } from "./jobs/d42-tsubame-school-zones";
@@ -58,6 +61,8 @@ const jobs: Record<string, IngestJob<unknown>> = {
   osm,
   "d29-large-stores": d29LargeStores,
   "d23-libraries": d23Libraries,
+  "d21-clubs": d21Clubs,
+  "osm-parks": osmParks,
   "d14-school-zones": d14SchoolZones,
   "d41-nagaoka-school-zones": d41NagaokaSchoolZones,
   "d42-tsubame-school-zones": d42TsubameSchoolZones,

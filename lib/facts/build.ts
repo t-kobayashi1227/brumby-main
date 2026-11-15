@@ -689,30 +689,52 @@ function schoolFact(c: Collected, label: string, s: SchoolInput): FactDraft {
 export const NO_WARD_COMPARE = new Set(["小学校", "中学校", "保育園", "地域型保育", "幼稚園", "認定こども園", "放課後児童クラブ", "図書館", "役所", "大規模小売店舗"]);
 
 /**
- * 時点が古く、今も同じかを確かめたいデータ（2026-11-03）。放課後児童クラブ（D21）は 2017-03 時点の一覧で、
- * 閉所・新設が反映されていない。公園・図書館などに広げるかは別に決める
+ * 時点が古く、今も同じかを確かめたいデータ（2026-11-03）。放課後児童クラブ（D21）は 2017-03 時点の一覧だった。
+ * 2026-11-15 に各市町村のホームページの最新の一覧に入れ替えたので、今は当たらない（時点が5年以上前になったら当たる）
  */
 const OLD_DATA_DATASETS = new Set(["D21"]);
 const OLD_DATA_YEARS = 5;
 
 /**
- * 一部の市町村の分しか無いデータ（データの番号 → 入っている市町村のコードの頭）
- * 新潟市オープンデータ（D21 放課後児童クラブ・D22 公園）は新潟市の分だけ。新潟市以外の物件で「0件」と書くと
- * 「無い」と誤って伝わるため、その種類のデータがすべてこれに当たり、物件の市町村が入っていなければ「取得できず」にする（2026-11-12）
- * 県全体のデータ（Overture の公園など）が加われば、その種類は普通に数える
- * D23 図書館は県全体にしたので外した（2026-11-14、scripts/ingest/jobs/d23-libraries.ts）
+ * 一部の市町村の分しか無いデータ。物件の市町村が入っていなければ、「0件」ではなく「取得できず」にする（2026-11-12）
+ * 「0件」と書くと「無い」と誤って伝わるため。その種類のデータがすべてこれに当たるときだけ（県全体のデータが混ざれば普通に数える）
+ * - only：入っている市町村のコードの頭と、その名前（例：新潟市オープンデータは新潟市の分だけ）
+ * - missing：入っていない市町村（コード → 名前）。県全体を集めたが、一覧が見つからなかった市町村
+ * D22 公園は、新潟市以外を OSM（D43）で補う。D43 と合わせると県全体なので、D22 だけのときに当たる（2026-11-15）
+ * D21 放課後児童クラブは各市町村のホームページから県全体にした（2026-11-15、scripts/ingest/jobs/d21-clubs.ts）。
+ * 一覧が見つからなかった市町村を「取得できず」にする
+ * （docs/参考/放課後児童クラブ調査_2026-11-14.md。一覧が見つかって CSV に足したら、ここから外す。
+ * 阿賀野市・胎内市・田上町・刈羽村・関川村は、県の社会福祉施設等名簿（令和7年度）から足したので外した。
+ * 妙高市は小林さんが所在地を調べて CSV に入れたので外した。2026-11-15）
  */
-const PARTIAL_AREA_DATASETS: Record<string, { cityPrefix: string; area: string }> = {
-  D21: { cityPrefix: "151", area: "新潟市" },
-  D22: { cityPrefix: "151", area: "新潟市" },
+type DataArea = { only: { cityPrefix: string; area: string } } | { missing: Record<string, string> };
+const PARTIAL_AREA_DATASETS: Record<string, DataArea> = {
+  D21: {
+    missing: { "15586": "粟島浦村" },
+  },
+  D22: { only: { cityPrefix: "151", area: "新潟市" } },
 };
 
-/** その種類のデータが、物件の市町村を含まないか（含まないなら「取得できず」にする）。町が分からないときは判断しない */
+/**
+ * その種類のデータが、物件の市町村を含まないか。含まないなら、出典に添える説明（例：「新潟市の分だけのデータ」）を返す
+ * 町が分からないときは判断しない
+ */
 export function outsideDataArea(datasetIds: string[], cityCode: string | null): string | null {
   if (cityCode === null || datasetIds.length === 0) return null;
-  const areas = datasetIds.map((id) => PARTIAL_AREA_DATASETS[id]);
-  if (areas.some((a) => a === undefined || cityCode.startsWith(a.cityPrefix))) return null;
-  return [...new Set(areas.map((a) => a!.area))].join("・");
+  const notes: string[] = [];
+  for (const id of datasetIds) {
+    const a = PARTIAL_AREA_DATASETS[id];
+    if (!a) return null;
+    if ("only" in a) {
+      if (cityCode.startsWith(a.only.cityPrefix)) return null;
+      notes.push(`${a.only.area}の分だけのデータ`);
+    } else {
+      const name = a.missing[cityCode];
+      if (!name) return null;
+      notes.push(`${name}の一覧が見つからないデータ`);
+    }
+  }
+  return [...new Set(notes)].join("・");
 }
 
 function nearbyFact(c: Collected, f: NearbyKindInput): FactDraft {
@@ -720,7 +742,7 @@ function nearbyFact(c: Collected, f: NearbyKindInput): FactDraft {
   const compare = f.wardAverage !== null && ward && !NO_WARD_COMPARE.has(f.label);
   const src = sourcesOf(c, f.datasetIds);
   const area = outsideDataArea(f.datasetIds, c.town?.city_code ?? null);
-  if (area) return fact("L", `${f.label}（1km以内）`, null, { ...src, 出典: `${src.出典}（${area}の分だけのデータ）` });
+  if (area) return fact("L", `${f.label}（1km以内）`, null, { ...src, 出典: `${src.出典}（${area}）` });
   const year = Number(src.時点.slice(0, 4));
   const old = f.datasetIds.some((id) => OLD_DATA_DATASETS.has(id)) && Number.isFinite(year) && Number(c.today.slice(0, 4)) - year >= OLD_DATA_YEARS;
   return fact("L", `${f.label}（1km以内）`, formatNearby(f.within1km, f.nearest3km), src, {

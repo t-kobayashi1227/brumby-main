@@ -576,23 +576,34 @@ describe("事実シートの組み立て", () => {
     expect(withAsOf("2025-04").状態).toBe("取得");
   });
 
-  it("生活施設（L）：新潟市の分だけのデータ（公園など）は、新潟市以外の物件では「0件」ではなく「取得できず」", () => {
+  it("生活施設（L）：新潟市の分だけのデータ（公園の D22 だけ）は、新潟市以外の物件では「0件」ではなく「取得できず」", () => {
     const base = sample();
     const town = { key_code: "15204999001", name: "架空町", ward: "三条市", city_code: "15204" };
-    const club = { label: "放課後児童クラブ", within1km: [], nearest3km: null, wardAverage: null, datasetIds: ["D21"] };
-    const datasets = { ...base.datasets, D21: ds("D21", "放課後児童クラブ", "新潟市オープンデータ", "2017-03") };
-    const f = buildFacts({ ...base, town, datasets, facilities: [...base.facilities, club] });
-    expect(find(f, "放課後児童クラブ（1km以内）")).toMatchObject({ 値: null, 状態: "取得できず", 出典: "新潟市オープンデータ 放課後児童クラブ（新潟市の分だけのデータ）" });
+    const f = buildFacts({ ...base, town });
     expect(find(f, "公園（1km以内）")).toMatchObject({ 値: null, 状態: "取得できず" });
-    // 新潟市の物件は今までどおり数える
-    expect(find(buildFacts({ ...base, datasets, facilities: [...base.facilities, club] }), "放課後児童クラブ（1km以内）").値).toBe("0件。3km以内になし");
-    // 県全体のデータ（例：Overture の公園）も入っていれば普通に数える
-    expect(outsideDataArea(["D22", "D40"], "15204")).toBeNull();
-    expect(outsideDataArea(["D22"], "15204")).toBe("新潟市");
+    expect(find(f, "公園（1km以内）").出典).toContain("（新潟市の分だけのデータ）");
+    // 新潟市以外を補う OSM（D43）も入っていれば普通に数える（2026-11-15）
+    expect(outsideDataArea(["D22", "D43"], "15204")).toBeNull();
+    expect(outsideDataArea(["D22"], "15204")).toBe("新潟市の分だけのデータ");
     expect(outsideDataArea(["D22"], "15107")).toBeNull();
     expect(outsideDataArea(["D22"], null)).toBeNull();
     // D23 図書館は県全体にした（2026-11-14）
     expect(outsideDataArea(["D23"], "15204")).toBeNull();
+  });
+
+  it("生活施設（L）：放課後児童クラブは県全体。一覧が見つからない市町村の物件だけ「取得できず」", () => {
+    const base = sample();
+    const club = { label: "放課後児童クラブ", within1km: [], nearest3km: null, wardAverage: null, datasetIds: ["D21"] };
+    const datasets = { ...base.datasets, D21: ds("D21", "放課後児童クラブ", "各市町村のホームページ", "2026-11") };
+    const at = (city_code: string, ward: string) =>
+      find(buildFacts({ ...base, town: { key_code: `${city_code}999001`, name: "架空町", ward, city_code }, datasets, facilities: [...base.facilities, club] }), "放課後児童クラブ（1km以内）");
+    expect(at("15586", "粟島浦村")).toMatchObject({ 値: null, 状態: "取得できず", 出典: "各市町村のホームページ 放課後児童クラブ（粟島浦村の一覧が見つからないデータ）" });
+    // 県の名簿から足した市町村は数える
+    expect(at("15223", "阿賀野市").値).toBe("0件。3km以内になし");
+    // 一覧のある市町村と新潟市は数える
+    expect(at("15204", "三条市").値).toBe("0件。3km以内になし");
+    expect(at("15107", "西区").値).toBe("0件。3km以内になし");
+    expect(outsideDataArea(["D21"], "15217")).toBeNull(); // 妙高市は所在地を入れた（2026-11-15）
   });
 
   it("相場（M）：取引が無ければ5件とも「取得できず」で、IDの並びは変わらない", () => {
