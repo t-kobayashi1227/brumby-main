@@ -10,9 +10,21 @@ import { defineJob } from "../lib/runner";
 // data/raw/iryou/ に、ダウンロードした zip（施設票・診療科票・薬局の CSV が入ったもの）を置く。date はダウンロードした日（データの時点）
 // 新潟県（都道府県コード 15）だけを入れる
 // 緯度経度が 0 の行は、住所から国土地理院の住所検索で位置を出す（設計まとめ「DBを作るときに確かめること」）。出せなかった行は入れない
+// 緯度経度が新潟県の外（下の枠の外）になる行も、元データの誤りとして住所から位置を出し直す（2026-11-15。村上市の診療所が秋田・山形、
+// 五泉市の歯科が東京駅の位置になっていた）
 // 診療科は、同じ施設・同じ科が診療時間帯ごとに複数行あるので、施設ごとにまとめて departments に入れる
 
 const PREF = "15";
+
+/** 新潟県を囲む枠（町の境界 D39 の範囲 137.63〜139.90、36.74〜38.55 に少し余白を足した） */
+const PREF_BOX = { minLon: 137.5, maxLon: 140.0, minLat: 36.6, maxLat: 38.7 };
+
+/** 緯度経度が使えないか（0・空、または新潟県の枠の外）。使えないなら住所から位置を出す */
+export function needsGeocode(lon: number, lat: number): "missing" | "outside" | null {
+  if (!lon || !lat || !Number.isFinite(lon) || !Number.isFinite(lat)) return "missing";
+  if (lon < PREF_BOX.minLon || lon > PREF_BOX.maxLon || lat < PREF_BOX.minLat || lat > PREF_BOX.maxLat) return "outside";
+  return null;
+}
 
 interface Source {
   kind: string;
@@ -99,25 +111,30 @@ export const iryou = defineJob<Prepared>({
       log(`${s.kind}：新潟県 ${ids.size}件`);
     }
 
-    // 緯度経度が 0 の行は、住所から位置を出す
-    const missing = facilities.filter((f) => !f.lon || !f.lat);
-    log(`緯度経度が 0 の ${missing.length}件を、住所から探します`);
+    // 緯度経度が 0 の行と、県の外になる行は、住所から位置を出す
+    const missing = facilities.filter((f) => needsGeocode(f.lon, f.lat) === "missing");
+    const outside = facilities.filter((f) => needsGeocode(f.lon, f.lat) === "outside");
+    log(`緯度経度が 0 の ${missing.length}件と、県の外の ${outside.length}件を、住所から探します`);
     let found = 0;
-    for (const f of missing) {
+    for (const f of [...missing, ...outside]) {
       const hit = await geocodeAddress(f.address);
-      if (hit) {
+      // 住所から出した位置も県の外なら使わない
+      if (hit && needsGeocode(hit.lon, hit.lat) === null) {
         Object.assign(f, { lon: hit.lon, lat: hit.lat, geocoded: hit.title });
         found++;
+      } else {
+        Object.assign(f, { lon: 0, lat: 0 });
       }
       await sleep(200);
     }
     check("緯度経度が0の行", Object.fromEntries(SOURCES.map((s) => [s.kind, missing.filter((f) => f.kind === s.kind).length])));
+    check("緯度経度が県の外の行", outside.map((f) => `${f.kind} ${f.name}（${f.address}）`));
     check("住所から位置を出せた行", found);
-    check("位置を出せず入れなかった行", missing.length - found);
-    log(`住所から ${found}件の位置を出しました（出せなかった ${missing.length - found}件は入れません）`);
+    check("位置を出せず入れなかった行", missing.length + outside.length - found);
+    log(`住所から ${found}件の位置を出しました（出せなかった ${missing.length + outside.length - found}件は入れません）`);
 
     const rows: FacilityRow[] = facilities
-      .filter((f) => f.lon && f.lat)
+      .filter((f) => needsGeocode(f.lon, f.lat) === null)
       .map((f) => ({
         dataset_id: "D30",
         kind: f.kind,
