@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAddress, parseAddressDetail, parseLotText, parseTownCell, pinAddress, resolveZone, wardFromSourceUrl, type ZoneRow } from "../lib/facts/school-zones";
+import { parseAddress, parseAddressDetail, parseLotText, parseTownCell, pickDistrictSchool, pinAddress, resolveZone, wardFromSourceUrl, type ZoneRow } from "../lib/facts/school-zones";
 
 // 新潟市の通学区域ページの実際の書き方（2026-10-12に確認）
 
@@ -55,6 +55,7 @@ describe("地番等の読み取り", () => {
 describe("住所の読み取り", () => {
   it("市・区・残りに分ける", () => {
     expect(parseAddress("新潟県新潟市西区青山７丁目２番５号")).toEqual({ cityCode: "15100", ward: "西区", rest: "青山7丁目2番5号" });
+    // 通学区域一覧があるのは新潟市・長岡市・燕市。ほかの市町村は一覧と照らし合わせない（市町村の列で分けて照合する）
     expect(parseAddress("長岡市大手通1丁目")).toEqual({ cityCode: "15202", ward: null, rest: "大手通1丁目" });
     expect(parseAddress("三条市中心部")).toBeNull();
   });
@@ -193,5 +194,15 @@ describe("物件の位置（ピン）の町丁目で照らし合わせる", () =
   it("番地で分かれる町で番地が分からなければ、候補を出す（要確認）", () => {
     const a = pinAddress({ name: "青山七丁目", ward: "西区" }, null, rows);
     expect(resolveZone(rows, a).juniorHigh).toMatchObject({ status: "ambiguous", candidates: ["関屋中学校", "小針中学校"] });
+  });
+});
+
+describe("学区の形（国土数値情報）から学校を決める", () => {
+  it("1校なら確定、2校以上なら候補、無ければなし", () => {
+    expect(pickDistrictSchool(["架空小学校"])).toEqual({ status: "decided", school: "架空小学校" });
+    // 同じ学校の学区が切れ端に分かれていても1校
+    expect(pickDistrictSchool(["架空小学校", "架空小学校 "])).toEqual({ status: "decided", school: "架空小学校" });
+    expect(pickDistrictSchool(["西小学校", "東小学校"])).toEqual({ status: "ambiguous", candidates: ["東小学校", "西小学校"] });
+    expect(pickDistrictSchool([])).toEqual({ status: "none" });
   });
 });

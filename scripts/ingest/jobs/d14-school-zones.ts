@@ -58,7 +58,7 @@ interface Prepared {
 export const d14SchoolZones = defineJob<Prepared>({
   datasets: ["D14"],
   rawDir: "school-zones",
-  table: "school_zone_rules",
+  table: "school_zone_rules_all",
   options: [],
 
   async prepare({ raw, log, setAsOf }) {
@@ -130,6 +130,7 @@ export const d14SchoolZones = defineJob<Prepared>({
         for (const t of parseTownCell(townText)) {
           rows.push({
             dataset_id: "D14",
+            city_code: "15100",
             ward: t.ward ?? (prepared.multiWardTowns.has(t.town) ? page.ward : null),
             town: t.town,
             chome: t.chome,
@@ -146,7 +147,7 @@ export const d14SchoolZones = defineJob<Prepared>({
       }
       if (count === 0) throw new Error(`町名の行がありません：${page.url}`);
     }
-    await insertRows(sql, "school_zone_rules", rows);
+    await insertRows(sql, "school_zone_rules_all", rows);
     log(`${prepared.pages.length}ページから ${rows.length}行を入れました（地番の範囲を読み取れなかった行：${unparsedLots}）`);
     check("学校ページの数", prepared.pages.length);
     check("地番の範囲を読み取れなかった行", unparsedLots);

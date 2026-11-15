@@ -39,3 +39,15 @@ describe("wardOf", () => {
     expect(wardOf("北蒲原郡聖籠町")).toBe("北蒲原郡聖籠町");
   });
 });
+
+describe("国土数値情報の学区の属性を見分ける", () => {
+  it("学校名は「〜小学校」で終わる項目、市区町村コードは5桁の数字の項目", async () => {
+    const { detectDistrictFields } = await import("../scripts/ingest/jobs/ksj-school-districts");
+    const samples = [
+      { A27_001: "15202", A27_002: "市", A27_003: "15202001", A27_004: "架空小学校", A27_005: "長岡市架空町1" },
+      { A27_001: "15202", A27_002: "市", A27_003: "15202002", A27_004: "架空東小学校", A27_005: "長岡市架空町2" },
+    ];
+    expect(detectDistrictFields(samples, "小学校")).toEqual({ name: "A27_004", code: "A27_001" });
+    expect(() => detectDistrictFields([{ X: "1" }], "中学校")).toThrow(/学校名/);
+  });
+});

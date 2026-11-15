@@ -2,7 +2,7 @@
 // 取り込み（scripts/ingest/jobs/d14-school-zones.ts）と事実シートの作成（段階3）で共通に使う
 
 /** 地番の範囲。ban は番（番地）の範囲、go は号の範囲（なければ番の全部） */
-interface LotRange {
+export interface LotRange {
   ban: [number, number];
   go?: [number, number][];
 }
@@ -108,7 +108,35 @@ interface ParsedAddress {
   rest: string;
 }
 
-const CITIES: Record<string, string> = { 新潟市: "15100", 長岡市: "15202" };
+// 通学区域一覧があるのは新潟市（D14）・長岡市（D41）・燕市（D42）。一覧は市町村の列（city_code）で分けて照らし合わせる
+// ほかの市町村は、国土数値情報の学区の形（D12・D13）で決める（lib/facts/collect.ts）
+const CITIES: Record<string, string> = { 新潟市: "15100", 長岡市: "15202", 燕市: "15213" };
+
+/** 通学区域一覧のある市町村の市区町村コード → データの番号。新潟市は区のコード（151xx）も新潟市として扱う */
+export const ZONE_RULE_DATASETS: Record<string, string> = { "15100": "D14", "15202": "D41", "15213": "D42" };
+
+/** 市のコード → 市の名前（学校の正式名「長岡市立○○小学校」を探すのに使う） */
+export const ZONE_RULE_CITY_NAMES: Record<string, string> = Object.fromEntries(Object.entries(CITIES).map(([name, code]) => [code, name]));
+
+/** 「ヶ」「ヵ」を「ケ」「カ」にそろえる（「釜ヶ島」と「釜ケ島」の書き方の違い）。文字数は変わらない */
+export function foldKana(text: string): string {
+  return text.replace(/ヶ/g, "ケ").replace(/ヵ/g, "カ");
+}
+
+/** 市区町村コード（新潟市の区のコード 15101 など）→ 通学区域一覧の市のコード。一覧の無い市町村は null */
+export function zoneRuleCity(cityCode: string): string | null {
+  const code = cityCode.startsWith("151") ? "15100" : cityCode;
+  return code in ZONE_RULE_DATASETS ? code : null;
+}
+
+/** 長岡市の表の略した学校名「阪之上小」「南中」を「阪之上小学校」「南中学校」にする */
+export function schoolFullName(name: string): string {
+  const text = name.replace(/\s/g, "");
+  if (/(小学校|中学校|義務教育学校)$/.test(text)) return text;
+  if (text.endsWith("小")) return `${text}学校`;
+  if (text.endsWith("中")) return `${text}学校`;
+  return text;
+}
 
 /** 「新潟県新潟市西区青山7丁目2番5号」→ 市コード・区・残り。通学区域のデータがない市は null */
 export function parseAddress(address: string): ParsedAddress | null {
@@ -155,7 +183,7 @@ export function parseAddressDetail(afterTown: string, hasChome: boolean, hasChom
 
 /** 町名のあとに続いてよい文字（数字・漢数字・ハイフン・終わり）。「青山」が「青山新町」に当たらないようにする */
 function townMatches(rest: string, town: string): boolean {
-  return rest.startsWith(town) && /^($|[\d一二三四五六七八九十-])/.test(rest.slice(town.length));
+  return foldKana(rest).startsWith(foldKana(town)) && /^($|[\d一二三四五六七八九十-])/.test(rest.slice(town.length));
 }
 
 const URL_WARDS: Record<string, string> = {
@@ -184,7 +212,8 @@ export interface ZoneRow {
   chome: number | null;
   lot_scope: "全部" | "一部";
   lot_text: string;
-  lot_ranges: LotRange[] | null;
+  /** 読み取った番地の範囲。except は「附表に示す区域を除く」（範囲の外が学区）。読み取れなければ null */
+  lot_ranges: LotRange[] | { except: LotRange[] } | null;
   elementary_school: string;
   junior_high_school: string;
 }
@@ -198,8 +227,18 @@ function matchRow(row: ZoneRow, detail: AddressDetail): Match {
   }
   if (row.lot_scope === "全部") return "yes";
   if (!row.lot_ranges || detail.ban === null) return "maybe";
+  if (!Array.isArray(row.lot_ranges)) {
+    // 除く区域に当たれば外れ、当たらなければ学区。号が分からず外せなければ候補に残す
+    const inExcluded = inRanges(row.lot_ranges.except, detail);
+    return inExcluded === "yes" ? "no" : inExcluded === "maybe" ? "maybe" : "yes";
+  }
+  return inRanges(row.lot_ranges, detail);
+}
+
+function inRanges(ranges: LotRange[], detail: AddressDetail): Match {
+  if (detail.ban === null) return "maybe";
   let result: Match = "no";
-  for (const r of row.lot_ranges) {
+  for (const r of ranges) {
     if (detail.ban < r.ban[0] || detail.ban > r.ban[1]) continue;
     if (!r.go) return "yes";
     if (detail.go === null) result = "maybe";
@@ -254,16 +293,28 @@ export function resolveZone(rows: ZoneRow[], address: ParsedAddress): { elementa
  * 町丁目は町の境界（D39）の名前（例：天神一丁目）。住所の書き方（「天神1」が丁目か番地か）に左右されない
  * 番地は位置から出せないので、入力の住所が同じ町・丁目を指していれば、その番・号を足す（番地で学区が分かれる町のため）
  */
-export function pinAddress(pinTown: { name: string; ward: string }, input: ParsedAddress | null, rows: ZoneRow[]): ParsedAddress {
+export function pinAddress(pinTown: { name: string; ward: string | null }, input: ParsedAddress | null, rows: ZoneRow[], cityCode = "15100"): ParsedAddress {
+  // 町の名前は全角の数字のことがある（「学校町３丁目」）。「大字」は住所の表の町名に無いので外す
+  const name = normalizeWidth(pinTown.name).replace(/^大字/, "");
   let lot = "";
   if (input) {
     const fromInput = resolveZone(rows, input);
     const d = fromInput.detail;
-    if (fromInput.town && d?.ban != null && townMatches(pinTown.name, fromInput.town)) {
+    if (fromInput.town && d?.ban != null && townMatches(name, fromInput.town)) {
       // ピンの町の丁目（無ければ null）と、入力の住所の丁目が食い違わないときだけ番地を使う
-      const pinChome = parseAddressDetail(pinTown.name.slice(fromInput.town.length), true).chome;
+      const pinChome = parseAddressDetail(name.slice(fromInput.town.length), true).chome;
       if (d.chome === null || pinChome === null || d.chome === pinChome) lot = `${d.ban}番${d.go != null ? `${d.go}号` : ""}`;
     }
   }
-  return { cityCode: "15100", ward: pinTown.ward, rest: `${pinTown.name}${lot}` };
+  return { cityCode, ward: cityCode === "15100" ? pinTown.ward : null, rest: `${name}${lot}` };
+}
+
+/**
+ * 学区の形（国土数値情報 A27・A32）から学校を決める。names は物件の位置が入る学区の学校名（重なりがあれば2つ以上）
+ * 1校なら確定、2校以上なら候補を出して「要確認」（学区の境目や、選べる学区のとき）
+ */
+export function pickDistrictSchool(names: string[]): { status: "none" } | { status: "decided"; school: string } | { status: "ambiguous"; candidates: string[] } {
+  const schools = [...new Set(names.map((n) => n.trim()).filter(Boolean))].sort();
+  if (schools.length === 0) return { status: "none" };
+  return schools.length === 1 ? { status: "decided", school: schools[0] } : { status: "ambiguous", candidates: schools };
 }

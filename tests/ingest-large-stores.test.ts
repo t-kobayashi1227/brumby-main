@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressForSearch, buildRows, classify, isSameStore, pickSameStore, storeNameKey } from "../scripts/ingest/jobs/d29-large-stores";
+import { addressForSearch, buildRows, classify, cleanSearchAddress, isCoarseHit, kindsOf, parseLatLon, isSameStore, pickSameStore, storeNameKey } from "../scripts/ingest/jobs/d29-large-stores";
 
 describe("classify", () => {
   it("店名か主な小売店舗のチェーン名で、スーパー・ドラッグストアを決める", () => {
@@ -59,5 +59,54 @@ describe("名前の合う店の位置を借りる", () => {
     expect(pickSameStore("ウエルシア新潟上所中店", [d30])).toBe(d30);
     expect(pickSameStore("ウエルシア新潟上所中店", [{ ...osm, distance_m: 499 }])?.distance_m).toBe(499);
     expect(pickSameStore("ウエルシア新潟上所中店", [{ ...osm, distance_m: 501 }])).toBeNull();
+  });
+});
+
+describe("isCoarseHit", () => {
+  it("市町村か区までしか当たらない住所は、位置に使わない", () => {
+    expect(isCoarseHit("新潟県新潟市")).toBe(true);
+    expect(isCoarseHit("新潟県新潟市中央区")).toBe(true);
+    expect(isCoarseHit("新潟県十日町市")).toBe(true); // 市の名前に「町」が入る
+    expect(isCoarseHit("新潟県北蒲原郡聖籠町")).toBe(true);
+    expect(isCoarseHit("新潟県刈羽村")).toBe(true);
+  });
+  it("町丁目・大字まで当たった住所は使う", () => {
+    expect(isCoarseHit("新潟県新潟市中央区上近江一丁目")).toBe(false);
+    expect(isCoarseHit("新潟県新潟市中央区本町")).toBe(false);
+    expect(isCoarseHit("新潟県十日町市本町一丁目")).toBe(false);
+    expect(isCoarseHit("新潟県北蒲原郡聖籠町大字東港")).toBe(false);
+    expect(isCoarseHit("")).toBe(false);
+  });
+});
+
+describe("cleanSearchAddress", () => {
+  it("郵便番号・空白のあとの注記を除き、文字化けしたハイフンを戻す", () => {
+    expect(cleanSearchAddress("新潟市中央区堀之内南１丁目１６?５６")).toBe("新潟市中央区堀之内南１丁目１６－５６");
+    expect(cleanSearchAddress("新潟県新潟市秋葉区中野５丁目２?１０２?１１")).toBe("新潟県新潟市秋葉区中野５丁目２－１０２－１１");
+    expect(cleanSearchAddress("〒950-8589 新潟県新潟市中央区八千代１丁目６?１")).toBe("新潟県新潟市中央区八千代１丁目６－１");
+    expect(cleanSearchAddress("新潟県新潟市西区山田２３０７ 道の駅 新潟ふるさと村")).toBe("新潟県新潟市西区山田２３０７");
+    expect(cleanSearchAddress("新潟市東区錦町４－３７")).toBe("新潟市東区錦町４－３７");
+  });
+});
+
+describe("kindsOf", () => {
+  it("「スーパー／ドラッグストア」は両方の種類として足す", () => {
+    expect(kindsOf("スーパー／ドラッグストア")).toEqual(["スーパー", "ドラッグストア"]);
+    expect(kindsOf("スーパー")).toEqual(["スーパー"]);
+    expect(kindsOf(null)).toEqual([]);
+  });
+});
+
+describe("parseLatLon", () => {
+  it("「緯度, 経度」を読む（Google マップから写した形）", () => {
+    expect(parseLatLon("37.92252, 139.04315")).toEqual({ lat: 37.92252, lon: 139.04315 });
+    expect(parseLatLon("３７.９２２５２，１３９.０４３１５")).toEqual({ lat: 37.92252, lon: 139.04315 }); // 全角
+  });
+  it("住所は緯度経度ではない", () => {
+    expect(parseLatLon("新潟市中央区馬越２丁目２番17号")).toBeNull();
+    expect(parseLatLon("閉店")).toBeNull();
+  });
+  it("経度と緯度が逆なら止める", () => {
+    expect(() => parseLatLon("139.04315, 37.92252")).toThrow("新潟県の範囲の外");
   });
 });
