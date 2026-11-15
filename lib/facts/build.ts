@@ -810,7 +810,10 @@ export function floodDepthText(flood: ZoneHit[]): string {
     const cur = deepestByRiver.get(river);
     if (!cur || rank(z) > rank(cur)) deepestByRiver.set(river, z);
   }
-  const entries = [...deepestByRiver.entries()].map(([river, z]) => ({ river, label: z.label, rank: rank(z) }));
+  // 河川の並びは名前順（DBの行の順に左右されないように。河川名なしは最後。2026-11-15）
+  const entries = [...deepestByRiver.entries()]
+    .map(([river, z]) => ({ river, label: z.label, rank: rank(z) }))
+    .sort((a, b) => (a.river === b.river ? 0 : a.river === null ? 1 : b.river === null ? -1 : a.river < b.river ? -1 : 1));
 
   // 深さが1種類だけなら、対応関係を失わないので今までどおりの書き方にする
   if (new Set(entries.map((e) => e.label)).size === 1) {

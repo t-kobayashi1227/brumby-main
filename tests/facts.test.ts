@@ -741,6 +741,16 @@ describe("事実シートの組み立て", () => {
     expect(find(buildFacts(sample({ datasets: { ...DATASETS, D31: { ...DATASETS.D31, row_count: 10 } } })), "洪水の想定浸水深（想定最大規模）").値).toBe("浸水想定区域の外");
   });
 
+  it("災害（H）：洪水の河川の並びは、DBの行の順によらず名前順（2026-11-15）", () => {
+    const zone = (label: string, rank: number, river: string) => ({ dataset_id: "D31", kind: "洪水浸水想定", label, attrs: { 浸水深ランク: rank, 河川名: river } });
+    const value = (zones: ReturnType<typeof zone>[]) =>
+      find(buildFacts(sample({ datasets: { ...DATASETS, D31: { ...DATASETS.D31, row_count: 10 } }, zones })), "洪水の想定浸水深（想定最大規模）").値;
+    const zones = [zone("0.5〜3.0m未満", 2, "小阿賀野川"), zone("0.5〜3.0m未満", 2, "阿賀野川"), zone("0.5〜3.0m未満", 2, "信濃川"), zone("0〜0.5m未満", 1, "鳥屋野潟")];
+    expect(value(zones)).toBe(value([...zones].reverse()));
+    expect(value([zones[1], zones[3], zones[2], zones[0]])).toBe(value(zones));
+    expect(value(zones)).toBe("最大0.5〜3.0m未満（信濃川・小阿賀野川・阿賀野川）。鳥屋野潟は0〜0.5m未満");
+  });
+
   it("災害（H）：洪水は河川で深さが異なるとき、対応関係を失わない（F05）", () => {
     const f = buildFacts(
       sample({
@@ -767,7 +777,7 @@ describe("事実シートの組み立て", () => {
         ],
       }),
     );
-    expect(find(f, "洪水の想定浸水深（想定最大規模）").値).toBe("最大0.5〜3.0m未満（信濃川・阿賀野川・小阿賀野川）。鳥屋野潟は0〜0.5m未満");
+    expect(find(f, "洪水の想定浸水深（想定最大規模）").値).toBe("最大0.5〜3.0m未満（信濃川・小阿賀野川・阿賀野川）。鳥屋野潟は0〜0.5m未満"); // 河川は名前順（2026-11-15）
   });
 
   it("買い手（B）：見本のローン計算と、必要年収以上の割合", () => {

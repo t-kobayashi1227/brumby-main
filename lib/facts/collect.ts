@@ -137,7 +137,7 @@ export async function collect(sql: Sql, propertyId: number, today = todayJst(), 
       where extensions.st_intersects(geom, ${ptGeom}) and coalesce(hcode, 0) <> 8154 and name is not null
       limit 1
     `),
-    step("zones", () => sql<ZoneHit[]>`select dataset_id, kind, label, attrs from zones where extensions.st_intersects(geom, ${ptGeom})`),
+    step("zones", () => sql<ZoneHit[]>`select dataset_id, kind, label, attrs from zones where extensions.st_intersects(geom, ${ptGeom}) order by dataset_id, kind, label, attrs ->> '河川名'`),
   );
 
   const [market, landPrice, schools, nearby, transportNearby, area, buyers, assumptions, targets, competitors, media] = await inOrder(
@@ -350,6 +350,7 @@ async function collectSchoolsByDistrict(sql: Sql, pt: Point): Promise<{ elementa
   const hits = await sql<{ kind: string; label: string; code: string | null }[]>`
     select distinct kind, label, attrs ->> '行政区域コード' as code from zones
     where kind in ('小学校区', '中学校区') and extensions.st_intersects(geom, (${pt})::extensions.geometry)
+    order by kind, label, code
   `;
   const one = async (zoneKind: "小学校区" | "中学校区", facilityKind: "小学校" | "中学校"): Promise<SchoolInput> => {
     const list = hits.filter((h) => h.kind === zoneKind);
@@ -377,7 +378,7 @@ async function collectNearby(sql: Sql, pt: Point, ward: string | null): Promise<
       select kind, name, departments, dataset_id, extensions.st_distance(geog, ${pt}) as distance_m
       from facilities
       where kind <> all (array['駅', 'バス停']) and extensions.st_dwithin(geog, ${pt}, ${CAR_M})
-      order by distance_m
+      order by distance_m, name, dataset_id
     `,
     () => (ward ? sql<{ kind: string; avg_count: string }[]>`select kind, avg_count from ward_facility_averages where ward = ${ward} and radius_m = ${NEAR_M}` : Promise.resolve([])),
     () => sql<{ kind: string; ids: string[] }[]>`select kind, array_agg(distinct dataset_id order by dataset_id) as ids from facilities group by kind`,
@@ -446,7 +447,7 @@ async function collectTransport(sql: Sql, pt: Point, ward: string | null) {
     `,
     () => sql<{ name: string; attrs: Record<string, unknown> | null; distance_m: number }[]>`
       select name, attrs, extensions.st_distance(geog, ${pt}) as distance_m from facilities
-      where kind = 'バス停' and extensions.st_dwithin(geog, ${pt}, ${NEAR_M}) order by distance_m
+      where kind = 'バス停' and extensions.st_dwithin(geog, ${pt}, ${NEAR_M}) order by distance_m, name, attrs ->> '事業者'
     `,
     () => sql<{ name: string; attrs: Record<string, unknown> | null; distance_m: number }[]>`
       select name, attrs, extensions.st_distance(geog, ${pt}) as distance_m from facilities
